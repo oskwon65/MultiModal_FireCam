@@ -222,6 +222,8 @@ static COLORREF ShadeColor(COLORREF c, double f)
 BEGIN_MESSAGE_MAP(CFancyButton, CButton)
     ON_WM_MOUSEMOVE()
     ON_MESSAGE(WM_MOUSELEAVE, &CFancyButton::OnMouseLeave)
+    ON_WM_KEYDOWN()
+    ON_WM_KEYUP()
 END_MESSAGE_MAP()
 
 CFancyButton::CFancyButton()
@@ -230,7 +232,36 @@ CFancyButton::CFancyButton()
     , m_bHover(false)
     , m_bTracking(false)
     , m_radius(FANCY_BTN_RADIUS)
+    , m_bNoKeyActivate(false)
 {
+}
+
+void CFancyButton::SetNoKeyActivate(bool bNoKey)
+{
+    m_bNoKeyActivate = bNoKey;
+}
+
+// 키보드로는 눌리지 않게 한다 (마우스 클릭은 그대로 동작).
+//   포커스를 쥔 버튼은 스페이스바나 엔터만으로도 눌린다. 종료처럼 되돌릴 수
+//   없는 동작에 이 경로가 열려 있으면 오타 한 번에 감시가 중단된다.
+//   실제로 X 버튼이 포커스를 가진 상태에서 눌린 기록이 otg_events.log 에 남았다.
+//
+//   포커스 자체를 거부하는 방법(OnSetFocus 에서 부모로 넘기기)은 쓰면 안 된다.
+//   버튼은 WM_LBUTTONDOWN 에서 포커스를 잡고 WM_LBUTTONUP 에서 BN_CLICKED 를
+//   보내는데, 그 사이에 포커스를 빼앗으면 클릭 처리가 취소되어 마우스로도
+//   눌리지 않게 된다. 그래서 키 입력만 걸러낸다.
+void CFancyButton::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
+{
+    if (m_bNoKeyActivate && (nChar == VK_SPACE || nChar == VK_RETURN))
+        return;
+    CButton::OnKeyDown(nChar, nRepCnt, nFlags);
+}
+
+void CFancyButton::OnKeyUp(UINT nChar, UINT nRepCnt, UINT nFlags)
+{
+    if (m_bNoKeyActivate && (nChar == VK_SPACE || nChar == VK_RETURN))
+        return;
+    CButton::OnKeyUp(nChar, nRepCnt, nFlags);
 }
 
 void CFancyButton::SetRadius(int radius)
@@ -469,6 +500,10 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
     m_btnFolder.SetAccent(FANCY_FACE_BUTTON,   FANCY_TEXT_LIGHT);
     m_btnProcList.SetAccent(FANCY_FACE_BUTTON, FANCY_TEXT_LIGHT);
     m_btnClose.SetAccent(FANCY_FACE_BUTTON,    FANCY_TEXT_LIGHT);
+
+    // 종료 버튼은 키보드로 눌리지 않게 한다. 포커스를 쥐면 스페이스/엔터로도
+    // 눌려서, 오타 한 번에 감시가 통째로 중단될 수 있다.
+    m_btnClose.SetNoKeyActivate(true);
     int nBase_X_Msg = 50;
     int nBase_Y_Msg = 60;
 
@@ -693,9 +728,15 @@ void CMmCammonitoringDlg::KillOrphanedProcesses()
 
     if (killedCount > 0)
     {
+        // 예전에는 AfxMessageBox 로 알렸는데, 시작 시점(OnInitDialog)에 뜨면
+        // 누군가 확인을 누를 때까지 프로그램 전체가 멈춘다. 무인 재시작이
+        // 막히므로 모달 창 대신 로그와 상태줄에만 남긴다.
         CString msg;
         msg.Format(_T("[INFO] 이전 실행에서 남은 유령 프로세스 %d개를 정리했습니다."), killedCount);
-        AfxMessageBox(msg);
+        LogEvent(CStringA(msg));
+
+        if (m_lbStatus_0.GetSafeHwnd())
+            m_lbStatus_0.SetWindowText(msg);
     }
 }
 
@@ -816,6 +857,26 @@ void CMmCammonitoringDlg::OnBnClickedFolder()
 // ---------------------------------------------------------
 void CMmCammonitoringDlg::OnBnClickedClose()
 {
+    // 감시 중이면 한 번 되묻는다. 종료하면 python 프로세스까지 모두 내려가므로
+    // 실수로 닫히면 감시에 구멍이 생긴다. 기본 선택은 "아니오"라서
+    // 무심코 엔터를 눌러도 종료되지 않는다.
+    int running = 0;
+    for (DWORD pid : m_rowPids)
+        if (pid != 0) ++running;
+
+    if (running > 0)
+    {
+        CString ask;
+        ask.Format(_T("실행 중인 프로세스 %d개가 함께 종료됩니다.\n\n정말 종료하시겠습니까?"), running);
+
+        if (MessageBox(ask, _T("종료 확인"),
+            MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
+        {
+            LogEvent("종료 취소 (사용자가 아니오 선택)");
+            return;
+        }
+    }
+
     LogEvent("종료: 'X' 버튼 (OnBnClickedClose)");
 
     KillTimer(TIMER_ID_BLINK);

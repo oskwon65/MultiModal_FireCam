@@ -39,6 +39,9 @@ public:
 	// 모서리 둥글기 지정 (작은 버튼은 작게)
 	void SetRadius(int radius);
 
+	// 키보드(스페이스/엔터)로는 눌리지 않게 한다. 마우스 클릭은 그대로.
+	void SetNoKeyActivate(bool bNoKey);
+
 	virtual void DrawItem(LPDRAWITEMSTRUCT lpDIS);
 
 protected:
@@ -47,9 +50,12 @@ protected:
 	bool     m_bHover;      // 마우스가 위에 있는가
 	bool     m_bTracking;   // WM_MOUSELEAVE 추적 중인가
 	int      m_radius;      // 모서리 둥글기(px)
+	bool     m_bNoKeyActivate;  // 키보드로 눌리는 것을 막는가
 
 	afx_msg void    OnMouseMove(UINT nFlags, CPoint point);
 	afx_msg LRESULT OnMouseLeave(WPARAM wParam, LPARAM lParam);
+	afx_msg void    OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
+	afx_msg void    OnKeyUp(UINT nChar, UINT nRepCnt, UINT nFlags);
 	DECLARE_MESSAGE_MAP()
 };
 // CMmCammonitoringDlg 대화 상자
