@@ -18,13 +18,36 @@ from datetime import datetime
 from sklearn.preprocessing import StandardScaler
 
 # ==================================================
-# sys.path : db_utils, cv_utils path setup
+# 프로젝트 모듈(source 폴더) 연결 : sys.path 를 직접 넣는 이유
 # ==================================================
-
-# 프로젝트 source 폴더를 import 경로 맨 앞에 넣는다.
-# 경로를 상수로 박으면 설치 위치가 바뀔 때마다 동명의 PyPI 패키지(db_utils)가
-# 대신 임포트되어 조용히 죽으므로, 실행 환경에서 찾아낸다.
-#   1) 환경변수 MMCAM_ROOT   2) 현재 작업 폴더   3) 이 파일 기준 상위 폴더
+#
+# 이 파일은 predict_machine/ 폴더에 있고, 쓰려는 모듈(db_utils, cv_utils 등)은
+# source/ 폴더에 있다. 서로 다른 폴더다.
+#
+# 파이썬이 스크립트를 실행하면 sys.path[0] 에 "그 스크립트가 있는 폴더"를
+# 자동으로 넣는다. 실행할 때 cd 로 이동한 현재 폴더가 아니다.
+#   실행 : (D:/MultiModal_FireCam 에서) python predict_machine/predict_machine.py
+#   결과 : sys.path[0] = D:/MultiModal_FireCam/predict_machine
+# 즉 source/ 는 저절로 들어오지 않으므로 직접 넣어 주어야 한다.
+#
+# [ 경로를 상수로 박으면 안 되는 이유 ]
+#   예전에는 이렇게 되어 있었다.
+#       sys.path.insert(0, r"D:\multi_modal\source")
+#   그 폴더가 사라지자 경로 추가가 무효가 되었고, import db_utils 가 계속
+#   내려가다 site-packages 에 설치된 "동명의 무관한 PyPI 패키지 db_utils"를
+#   집어버렸다. 이름이 같아 임포트 자체는 성공하고, 함수가 없어서 죽는다.
+#       ImportError: cannot import name 'read_from_current_value_median'
+#                    from 'db_utils' (.../site-packages/db_utils/__init__.py)
+#   에러 메시지가 원인(경로가 틀림)을 전혀 가리키지 않아 찾기 어렵다.
+#
+# [ 그래서 실행 환경에서 찾아낸다 ]
+#   아래 _resolve_source_dir() 는 후보를 순서대로 보며 db_utils.py 가 실제로
+#   있는 폴더만 고른다. 잘못된 경로를 넣어 PyPI 패키지가 끼어드는 일을 막는다.
+#     1) 환경변수 MMCAM_ROOT    2) 현재 작업 폴더    3) 이 파일 기준 상위 폴더
+#
+# 참고: source/ 안에 있는 파일들(server_to_db.py 등)은 sys.path[0] 이 곧
+#       source/ 이므로 이런 처리가 필요 없다.
+#
 def _resolve_source_dir():
     candidates = []
     env_root = os.environ.get("MMCAM_ROOT")

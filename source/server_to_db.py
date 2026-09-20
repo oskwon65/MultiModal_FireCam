@@ -18,6 +18,27 @@ import argparse
 import traceback
 
 
+
+# ==================================================
+# 프로젝트 모듈 연결 : 이 파일은 sys.path 손질이 필요 없다
+# ==================================================
+#
+# 파이썬은 스크립트를 실행할 때 sys.path[0] 에 "그 스크립트가 있는 폴더"를
+# 자동으로 넣는다. 이 파일은 source/ 안에 있으므로 sys.path[0] 이 곧 source/ 다.
+#   실행 : (D:/MultiModal_FireCam 에서) python source/server_to_db.py
+#   결과 : sys.path[0] = D:/MultiModal_FireCam/source
+# 그래서 같은 폴더의 형제 모듈(put_data_2_db, viewer_utils, db_utils, utils,
+# constants)이 아무 설정 없이 그대로 임포트된다.
+#
+# 반면 predict_machine/predict_machine.py 와 fall_detection/fall_detection.py 는
+# 다른 폴더에 있어서 source/ 를 sys.path 에 직접 넣어 준다. 두 파일의 주석 참고.
+#
+# [ utils 의 이력 ]
+#   utils.py 는 원래 프로젝트 밖(D:\common)에 있었고, 여기서 이렇게 불러왔다.
+#       sys.path.insert(0, r"D:\common")   # utils.py 위치
+#   프로젝트 폴더 밖이라 백업에서도 빠지고 절대경로에 묶여 있어서,
+#   source/ 로 옮기고 그 줄을 삭제했다. 지금은 형제 모듈이라 그냥 임포트된다.
+#
 from put_data_2_db import put_data_to_db
 from viewer_utils import show_flir_image
 from db_utils import (
