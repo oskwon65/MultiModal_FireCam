@@ -81,8 +81,38 @@ from cv_utils import (
 
 from constants import MIN_WINDOW_WIDTH
 
-# 패키지 안이 아니라 프로젝트 폴더에서 실행되므로 절대 임포트를 쓴다.
-# (예전에는 site-packages/openpifpaf/ 안에 두고 "from . import ..." 로 상대 임포트했다)
+# ==================================================
+# openpifpaf 라이브러리 연결 : 절대 임포트를 쓰는 이유
+# ==================================================
+#
+#   from . import decoder            # 예전 - 실패
+#   from openpifpaf import decoder   # 지금 - 성공
+#
+# 두 문장은 "찾는 방법"이 근본적으로 다르다.
+#
+# [ from . import ... ]  상대 임포트
+#   '.' 은 "내가 속한 패키지"를 뜻하며, 파이썬은 이를 __package__ 변수로만
+#   판단한다. sys.path 는 아예 쳐다보지 않는다.
+#   이 파일을 스크립트로 직접 실행하면 __name__ 은 "__main__", __package__ 는
+#   None 이 되어 '.' 이 가리킬 대상이 없다. 그래서 openpifpaf 가 site-packages
+#   에 멀쩡히 설치되어 있어도 경로를 찾아보지도 않고 즉시 거부한다.
+#       ImportError: attempted relative import with no known parent package
+#   과거에 이 파일이 site-packages/openpifpaf/ 안에 있어야만 했고
+#   'python -m openpifpaf.fall_detection' 으로만 실행되던 이유가 이것이다.
+#   -m 으로 적재하면 __package__ 가 "openpifpaf" 로 설정되기 때문이다.
+#
+# [ from openpifpaf import ... ]  절대 임포트
+#   패키지를 "이름"으로 찾으므로 sys.path 를 순서대로 뒤진다.
+#   activate.bat 로 conda 환경(mmc)을 켜면 그 환경의 site-packages 가
+#   sys.path 에 들어가고, openpifpaf 는 거기에 pip 으로 설치되어 있다.
+#   즉 파일이 패키지 폴더 "안"에 있을 필요가 없고, 패키지를 "찾을 수만"
+#   있으면 된다.
+#
+# 이 차이 덕분에 이 파일을 프로젝트 폴더에 둘 수 있게 되었다.
+# conda 환경을 다시 만들어도 파일이 사라지지 않는다.
+#
+#   실행 : python fall_detection/fall_detection.py "<user_ID>"
+#
 from openpifpaf import decoder, logger, network, show, visualizer
 from openpifpaf.predictor import Predictor
 
