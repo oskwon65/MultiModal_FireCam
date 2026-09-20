@@ -1,0 +1,55 @@
+# =====================================================================
+# MultiModal FireCam - .gitignore
+#   원칙: 다시 만들 수 있는 것은 제외, 잃으면 복구 못 하는 것은 추적
+# =====================================================================
+
+# --- 실행 중 생성되는 분석 결과 이미지 (약 1GB, 2만여 파일) ---
+users/*/log/
+
+# --- 기준 이미지 : 비어 있으면 프로그램이 스스로 다시 채운다 ---
+users/*/base_img/
+
+# --- Visual Studio 빌드 산출물 ---
+otg_monitoring/x64/
+otg_monitoring/dist/
+otg_monitoring/.vs/
+otg_monitoring/*.aps
+*.obj
+*.pch
+*.iobj
+*.ipdb
+*.tlog
+*.pdb
+*.res
+*.exe
+*.ilk
+*.exp
+*.lib
+
+# --- 파이썬 캐시 ---
+__pycache__/
+*.pyc
+*.pyo
+
+# --- 실행 로그 ---
+debug_logs/
+logs/
+*.log
+
+# --- 배포용 DLL (MySQL/OpenSSL 재설치로 복구 가능) ---
+libmysql.dll
+libcrypto-3-x64.dll
+libssl-3-x64.dll
+
+# --- 실행 중 덮어쓰이는 임시 이미지 ---
+output.jpg
+
+# --- openpifpaf 포크 : GitHub 클론이며 로컬 수정 없음 (2026-09-20 확인) ---
+#     https://github.com/cwlroda/falldetection_openpifpaf.git  @ 615f1f8
+#     복구: git clone <위 URL> falldetection_openpifpaf
+#     주의: 이 프로젝트가 실제로 쓰는 fall_detection.py 는 여기 없고
+#           fall_detection/fall_detection.py 에 있다(직접 작성한 파일).
+falldetection_openpifpaf/
+
+# --- DB 비밀번호 : 절대 추적하지 않는다 (users/secrets.ini.sample 로 형식만 공유) ---
+users/*/secrets.ini

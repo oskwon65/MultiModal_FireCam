@@ -1,0 +1,23 @@
+폴더[step_0] : 영역별 최고온도값 리스트 파일 (라즈베리파이센서->raw(0~65536)->변환함(0~255)
+폴더[step_1] : 폴더[step_0] 에 노이즈 필터링(Median)으로 변환한 파일
+폴더[step_2] : 폴더[step_1] 에서 딥러닝 학습용 샘플데이터 출력
+
+폴더[step_0] -> Filtering_median.py ->폴더[step_1] -> Gen_Learning_Sample.py -> 폴더[step_2]
+
+Filtering_median.py : 서버 수집 데이터의 노이즈 제거
+Gen_Learning_Sample.py : 수집데이터를 학습 샘플로 변경
+Show_step_1.py : 노이즈 제거된 형태[step_1]의 내용을 그래프로 확인
+
+작동순서 ;
+ 1) Filtering_median.py ; 폴더[step_0] ->폴더[step_1] 
+ 2) Gen_Learning_Sample.py ; 폴더[step_1] ->폴더[step_2] 
+ 3) python autoencoder-3.py ; 딥러닝 학습 샘플폴더:[step_2]  
+
+-----------------------------------
+학습/예측 동일한 scikit-learn 버전을 사용해야 함(일치시켜야 함)
+pip install --upgrade scikit-learn==1.4.2
+
+-----------------------------------
+실시간 예측
+1) DB 생성(create_db.py)
+2) 예측 프로그램(predict_sqlite.py) 램 상주

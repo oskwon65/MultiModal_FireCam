@@ -1,0 +1,76 @@
+[Fall Detection using Pose Estimation]
+https://github.com/cwlroda/falldetection_openpifpaf?tab=readme-ov-file
+
+[아나콘다 설치]
+
+sudo apt update
+sudo apt install curl -y
+curl --output anaconda.sh https://repo.anaconda.com/archive/Anaconda3-2022.10-Linux-x86_64.sh
+sha256sum anaconda.sh
+bash anaconda.sh
+conda 명령어 환경변수 추가 : sudo vi ~/.bashrc
+마지막 줄에 추가 : export PATH=~/anaconda3/bin:~/anaconda3/condabin:$PATH
+source ~/.bashrc
+conda -V
+
+[falldetection_openpifpaf 설치]
+
+conda create -n joint39 python=3.9 -y
+conda activate joint39
+git clone https://github.com/cwlroda/falldetection_openpifpaf.git
+pip install openpifpaf
+cd falldetection_openpifpaf
+pip install torch==1.10.2 torchvision==0.11.3 numpy==1.26.4 openpifpaf==0.12.14
+
+pip install opencv-python
+pip install numpy==1.26.4
+pip install "scipy<1.10"
+pip install matplotlib
+
+[ultralytics 설치]
+
+pip install ultralytics
+
+[for autoencoder]
+pip install joblib 
+pip install scikit-learn
+
+[for app_monitor]
+pip install PyQt5
+pip install psutil
+
+[openpifpaf 설치 경로]
+
+/home/sangchu/anaconda3/envs/joint39/lib/python3.9/site-packages/openpifpaf
+
+[predict 실행 명령]
+
+python -m openpifpaf.predict --checkpoint shufflenetv2k16 20251111-115857.jpg --image-output output.jpg
+
+[MySQL 설치 관련]
+
+MySQL 설치 : https://www.mysql.com/downloads/
+
+admin pw : sangchoo
+
+
+mysql -u root -p 
+#실행하면 비밀번호를 요구함(sangchoo)
+# mysql> 표시됨
+CREATE DATABASE score_log
+CHARACTER SET utf8mb4
+COLLATE utf8mb4_general_ci;
+#score_log라는 DB 컨테이너 생성
+#문자 인코딩 문제 방지 (한글/로그 안전)
+GRANT ALL PRIVILEGES
+ON score_log.*
+TO 'otg_user'@'localhost';
+#score_log.*
+→ score_log DB 안의 모든 테이블
+#ALL PRIVILEGES
+→ SELECT / INSERT / UPDATE / DELETE / CREATE TABLE 가능
+FLUSH PRIVILEGES;
+#권한 즉시 반영
+SHOW GRANTS FOR 'otg_user'@'localhost';
+#권한이 제대로 들어갔는지 확인
+

@@ -1,0 +1,30 @@
+conda create -n mmc python=3.9 -y
+conda activate mmc
+cd multi_modal
+
+[ultralytics 설치]
+pip install ultralytics
+
+[falldetection_openpifpaf 설치]
+conda install git -y #git 설치되지 않은 경우에  실행
+git clone https://github.com/cwlroda/falldetection_openpifpaf.git
+python -m pip install "setuptools==69.5.1" wheel packaging
+#윈도우즈 환경은 vidual studio 설치 후 진행함
+pip install --no-build-isolation openpifpaf==0.13.11
+pip install torch==1.10.2 torchvision==0.11.3 numpy==1.26.4 openpifpaf==0.12.14
+
+pip install opencv-python
+pip install numpy==1.26.4
+pip install db_utils
+pip install "scipy<1.10"
+
+[for autoencoder]
+pip install joblib 
+pip install scikit-learn
+
+[for app_monitor]
+pip install PyQt5
+
+[MySQL 윈도우즈 설치]
+설치파일 ; mysql-installer-web-community-8.0.46.0.msi
+https://dev.mysql.com/downloads/installer/

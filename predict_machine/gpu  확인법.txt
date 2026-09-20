@@ -1,0 +1,17 @@
+gpu  확인법 : gpu 가동되지 않을 때 확인 방법
+
+nvidia-smi 확인 후
+PyTorch는 CUDA 12.1, 12.4까지만 공식 지원합니다 (2025년 11월 기준).
+
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+설치후, 다음 사항을 확인함
+
+python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+python -c "import torch; print('CUDA version:', torch.version.cuda)"
+python -c "import torch; print('Device name:', torch.cuda.get_device_name(0))"
+정상이라면 아래처럼 나와야 합니다 👇
+
+CUDA available: True
+CUDA version: 12.1
+Device name: NVIDIA GeForce RTX 4050 Laptop GPU
