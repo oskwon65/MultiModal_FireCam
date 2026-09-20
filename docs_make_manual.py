@@ -633,9 +633,112 @@ write(tf, [("선택한 현장의 목록과 이미지 뷰어만 화면에 표시�
             dict(size=12.5, color=INK), dict(space_after=0, line=1.25))])
 page_num(s, 12)
 
-# =================================================================== 13 문제 해결
+# =================================================================== 13 학습 파이프라인
+s = slide_light(prs)
+title_bar(s, "12  TRAINING PIPELINE", "모델은 어디서 만들어지는가")
+
+tf = textbox(s, M, 1.72, 11.5, 0.35)
+write(tf, [("운영 시스템이 쓰는 모델은 별도 폴더 D:\\autoencoder 에서 만듭니다. conda 환경도 otg 로 다릅니다.",
+            dict(size=14, color=MUTED), dict(space_after=0))])
+
+pipe = [
+    ("download_ir_raw.py", "서버 → ir_raw", "현장 서버에서 raw 파일을 내려받습니다."),
+    ("conv_raw.py", "ir_raw → step_0", "raw 값을 온도 값으로 변환합니다."),
+    ("gen-samples.py", "step_0 → step_1", "160x120 을 64개 격자 값으로 축약합니다."),
+    ("apply_median.py", "step_1 → step_2", "median 필터로 노이즈를 제거합니다."),
+    ("apply_mask_extract.py", "step_2 → step_3", "mach_area_mask.ini 의 설비 영역만 추출합니다."),
+    ("autoencoder-7.py", "step_3 → saved_models", "오토인코더를 학습해 모델을 저장합니다."),
+]
+y = 2.3
+for i, (name, io, desc) in enumerate(pipe):
+    circle(s, M, y, 0.36, EMBER if i < 5 else TEAL, str(i + 1), WHITE, 12)
+    tf = textbox(s, M + 0.52, y - 0.02, 2.5, 0.28)
+    write(tf, [(name, dict(name=MONO, size=11.5, bold=True, color=INK), dict(space_after=0))])
+    tf = textbox(s, M + 3.1, y - 0.01, 2.35, 0.28)
+    write(tf, [(io, dict(name=MONO, size=10, color=EMBER if i < 5 else TEAL), dict(space_after=0))])
+    tf = textbox(s, M + 0.52, y + 0.3, 6.6, 0.28)
+    write(tf, [(desc, dict(size=11, color=MUTED), dict(space_after=0))])
+    y += 0.7
+
+bx = M + 7.7
+tf = textbox(s, bx, 2.24, 3.91, 0.3)
+write(tf, [("한 번에 실행", dict(size=14, bold=True, color=INK), dict(space_after=0))])
+code_block(s, bx, 2.62, 3.91, [
+    "$ conda activate otg",
+    "$ cd /d D:\\autoencoder",
+    "$ run_pipeline.bat kict1",
+], size=11)
+
+card(s, bx, 4.34, 3.91, 2.18, fill=PAPER)
+tf = textbox(s, bx + 0.28, 4.56, 3.35, 0.3)
+write(tf, [("현장별 데이터 폴더", dict(size=13, bold=True, color=INK), dict(space_after=0))])
+tf = textbox(s, bx + 0.28, 4.96, 3.35, 1.4)
+write(tf, [("D:\\autoencoder\\<user>\\", dict(name=MONO, size=10, color=INK), dict(space_after=5)),
+           ("  ir_raw  raw", dict(name=MONO, size=10, color=MUTED), dict(space_after=3)),
+           ("  step_0  step_1  step_2  step_3", dict(name=MONO, size=10, color=MUTED), dict(space_after=3)),
+           ("  saved_models", dict(name=MONO, size=10, color=TEAL), dict(space_after=0))])
+page_num(s, 13)
+
+# =================================================================== 14 학습과 운영
+s = slide_light(prs)
+title_bar(s, "13  HANDOVER", "학습과 운영의 관계")
+
+lw = 4.7
+card(s, M, 1.9, lw, 2.9, fill=PAPER)
+circle(s, M + 0.3, 2.18, 0.46, EMBER, "학습", WHITE, 11)
+tf = textbox(s, M + 0.9, 2.24, 3.5, 0.3)
+write(tf, [("D:\\autoencoder", dict(name=MONO, size=13, bold=True, color=INK), dict(space_after=0))])
+tf = textbox(s, M + 0.3, 2.86, lw - 0.6, 1.8)
+write(tf, [("conda 환경 : otg  (numpy 2.x)", dict(size=11.5, color=MUTED), dict(space_after=7)),
+           ("6단계 파이프라인으로 모델을 만듭니다.", dict(size=11.5, color=MUTED), dict(space_after=7)),
+           ("산출물은 saved_models 에 쌓입니다.", dict(size=11.5, color=MUTED), dict(space_after=7)),
+           ("프로젝트 폴더 밖이라 git 추적 대상이 아닙니다.", dict(size=11.5, color=EMBER), dict(space_after=0, line=1.2))])
+
+rx = M + lw + 2.5
+card(s, rx, 1.9, lw, 2.9, fill=PAPER)
+circle(s, rx + 0.3, 2.18, 0.46, TEAL, "운영", WHITE, 11)
+tf = textbox(s, rx + 0.9, 2.24, 3.5, 0.3)
+write(tf, [("D:\\MultiModal_FireCam", dict(name=MONO, size=13, bold=True, color=INK), dict(space_after=0))])
+tf = textbox(s, rx + 0.3, 2.86, lw - 0.6, 1.8)
+write(tf, [("conda 환경 : mmc  (numpy 1.x)", dict(size=11.5, color=MUTED), dict(space_after=7)),
+           ("predict_machine.py 가 모델을 읽습니다.", dict(size=11.5, color=MUTED), dict(space_after=7)),
+           ("users\\<user>\\ 에 모델을 둡니다.", dict(size=11.5, color=MUTED), dict(space_after=7)),
+           ("git 으로 백업됩니다.", dict(size=11.5, color=TEAL), dict(space_after=0, line=1.2))])
+
+ar = s.shapes.add_shape(MSO_SHAPE.RIGHT_ARROW,
+                        Inches(M + lw + 0.42), Inches(3.14), Inches(1.66), Inches(0.42))
+ar.fill.solid()
+ar.fill.fore_color.rgb = AMBER
+ar.line.fill.background()
+ar.shadow.inherit = False
+tf = textbox(s, M + lw + 0.2, 2.62, 2.1, 0.5, align=PP_ALIGN.CENTER)
+write(tf, [("복사", dict(size=12, bold=True, color=INK), dict(space_after=2)),
+           ("scaler.pkl", dict(name=MONO, size=9, color=MUTED), dict(space_after=0))])
+tf = textbox(s, M + lw + 0.2, 3.66, 2.1, 0.3, align=PP_ALIGN.CENTER)
+write(tf, [("autoencoder_final.pth", dict(name=MONO, size=8.5, color=MUTED), dict(space_after=0))])
+
+cautions = [
+    ("같은 회차의 짝을 유지", "scaler 와 autoencoder 는 한 번의 학습에서 함께 나온 것이어야 합니다. "
+     "따로 복사하면 점수가 조용히 틀어집니다."),
+    ("numpy 버전 차이", "otg(2.x)에서 만든 scaler.pkl 은 mmc(1.x)에서 읽히지 않아, "
+     "같은 폴더의 scaler.npz 로 대체합니다."),
+    ("학습 폴더도 백업", "D:\\autoencoder 는 프로젝트 밖이라 백업에서 빠지기 쉽습니다. "
+     "스크립트만이라도 보관하십시오."),
+]
+cw3 = 3.86
+for i, (head, body) in enumerate(cautions):
+    x = M + i * (cw3 + 0.26)
+    card(s, x, 5.06, cw3, 1.56, fill=RGBColor(0xFD, 0xF1, 0xEC))
+    circle(s, x + 0.26, 5.3, 0.34, EMBER, "!", WHITE, 12)
+    tf = textbox(s, x + 0.72, 5.32, 2.9, 0.3)
+    write(tf, [(head, dict(size=12.5, bold=True, color=EMBER), dict(space_after=0))])
+    tf = textbox(s, x + 0.26, 5.76, cw3 - 0.52, 0.75)
+    write(tf, [(body, dict(size=10.5, color=INK), dict(space_after=0, line=1.2))])
+page_num(s, 14)
+
+# =================================================================== 15 문제 해결
 s = slide_dark(prs)
-title_bar(s, "12  TROUBLESHOOTING", "자주 겪는 문제", dark=True)
+title_bar(s, "14  TROUBLESHOOTING", "자주 겪는 문제", dark=True)
 
 probs = [
     ("점수가 계속 같은 값", "현장 서버의 파일이 갱신되지 않는 경우입니다.",
@@ -658,11 +761,11 @@ for i, (title, cause, fix) in enumerate(probs):
     tf = textbox(s, M + 4.7, y + 0.32, 6.9, 0.6)
     write(tf, [(fix, dict(size=12, color=RGBColor(0xC8, 0xD3, 0xE3)), dict(space_after=0, line=1.25))])
     y += 1.26
-page_num(s, 13, dark=True)
+page_num(s, 15, dark=True)
 
 # =================================================================== 14 체크리스트
 s = slide_light(prs)
-title_bar(s, "13  CHECKLIST", "설치 점검표")
+title_bar(s, "15  CHECKLIST", "설치 점검표")
 
 left = [
     "Visual Studio (MFC 포함) 설치",
@@ -677,7 +780,7 @@ right = [
     "otg_monitoring.ini 작성 (ROOT_PATH · ANACONDA)",
     "users\\<user>\\env.ini 배치",
     "users\\<user>\\secrets.ini 작성",
-    "scaler · autoencoder 모델 파일 확인",
+    "scaler · autoencoder 복사 (D:\\autoencoder 에서)",
     "Release x64 빌드 후 시작 버튼으로 6개 기동 확인",
 ]
 for col_i, items in enumerate([left, right]):
@@ -700,7 +803,7 @@ card(s, M, 6.2, W - 2 * M, 0.6, fill=RGBColor(0xEC, 0xF6, 0xF4))
 tf = textbox(s, M + 0.34, 6.36, W - 2 * M - 0.68, 0.32)
 write(tf, [("모두 완료되면 상태줄에 [3] processes | err=0000 이 표시됩니다.",
             dict(size=12.5, bold=True, color=TEAL), dict(space_after=0))])
-page_num(s, 14)
+page_num(s, 16)
 
 out = r"D:\MultiModal_FireCam\멀티모달_화재감지_모니터링_설치매뉴얼.pptx"
 prs.save(out)
