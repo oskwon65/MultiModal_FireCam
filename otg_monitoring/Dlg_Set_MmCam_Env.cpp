@@ -36,6 +36,13 @@ extern const char* GetMmCamStartPath();
 // 계산 기준일은 기본값이 없다. 빈 값 = 제한 없이 전체 기간 사용.
 #define DEF_CALC_BASE_DATE	""
 
+// 체크박스를 없앴으므로 "전체 기간" 을 날짜로 나타내야 한다. 이 시스템이
+// 수집을 시작(2025-08)하기 한참 전이라 이 날짜 이후를 쓰면 전체와 같다.
+// 이 값이 그대로 저장되면 env.ini 에는 빈 값(= 전체)으로 적는다.
+#define ALL_PERIOD_Y	2000
+#define ALL_PERIOD_M	1
+#define ALL_PERIOD_D	1
+
 extern std::string ini_read_utf8(const std::string&, const std::string&,
                                  const std::string&, const std::string&);
 extern int  ini_read_int_utf8(const std::string&, const std::string&,
@@ -79,28 +86,13 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 {
 	CDialogEx::OnInitDialog();
 
-	CWnd* pParent = GetParent(); // 부모 창(this로 전달받은 메인 다이얼로그) 가져오기
-	if (pParent != nullptr)
-	{
-		CRect rectParent;
-		pParent->GetWindowRect(&rectParent); // 부모 창의 전체 화면 좌표(좌,우,상,하) 구하기
-
-		CRect rectMe;
-		GetWindowRect(&rectMe); // 현재 내 다이얼로그의 크기 구하기
-
-		// 새 위치 계산: 
-		// 좌측 X 좌표는 부모 창의 좌측(left)과 일치시킴
-		// 상단 Y 좌표는 부모 창의 하단(bottom)에 딱 붙임
-		int newX = rectParent.left;
-		int newY = rectParent.bottom-70;
-		int newWidth = rectParent.Width();
-		// 연속 학습 단계 설정란(4행)이 아래에 붙으면서 200 -> 290 으로 늘렸다.
-		int newHeight = 290;
-
-		// 내 다이얼로그 위치 이동 (크기는 유지, 위치만 변경)
-		// SWP_NOZORDER: 윈도우 겹침 순서 유지, SWP_NOSIZE: 원래 리소스 뷰 크기 유지
-		::SetWindowPos(m_hWnd, HWND_TOP, newX, newY, newWidth, newHeight, SWP_NOZORDER );
-	}
+	// 위치와 크기는 정하지 않는다.
+	//
+	// 예전에는 여기서 부모 창 아래에 붙는 팝업으로 스스로 자리를 잡았다.
+	// 지금은 메인 창 안에 자식으로 끼워 넣어 "목록" 처럼 펼쳐지는 영역으로
+	// 쓰므로, 배치는 전적으로 메인 창(ApplyExpandLayout)이 맡는다.
+	//
+	// 내용이 차지하는 높이는 SETTING_AREA_H 로 메인 창과 맞춰 두었다.
 
 	SetWindowText("[설정]");
 
@@ -116,7 +108,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		CLIP_DEFAULT_PRECIS,
 		DEFAULT_QUALITY,
 		DEFAULT_PITCH | FF_DONTCARE,
-		_T("맑은 고딕")             // ◀ 여기에 "Segoe UI" 나 "Tahoma"를 넣으셔도 됩니다.
+		_T(UI_FONT_NAME)            // 프로그램 전체 공통 (MmCam_monitoringDlg.h)
 	);
 
 	SetFont(&m_stdFont);
@@ -126,7 +118,9 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	long ctrl_btn_top = 65;
 	const long nBase_X = 10;
 
-	m_btnClose.Create("x", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, CRect(nBase_X + 530, ctrl_btn_top, nBase_X + 530 + 50, ctrl_btn_top + ctrl_btn_hei), this, ID_BTN_CLOSE);
+	// x 버튼은 두지 않는다. 메인 창의 [설정] 버튼이 토글이라 닫는 길이
+	// 이미 있고, 영역 안에 또 닫기 버튼이 있으면 어느 쪽이 무엇을 닫는지
+	// 헷갈린다.
 	m_btnGetMask_Server.Create("격자 마스크 초기화 : SVR지정", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, CRect(nBase_X, ctrl_btn_top, nBase_X + 250, ctrl_btn_top + ctrl_btn_hei), this, ID_BTN_GET_MASK_SVR);
 	m_btnSetMask_CamPos.Create("격자 마스크 초기화 : 위치이동", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, CRect(nBase_X + 250 + 10, ctrl_btn_top, nBase_X + 250 +10 +250, ctrl_btn_top + ctrl_btn_hei), this, ID_BTN_SET_MASK_CAM_POS);
 
@@ -147,20 +141,20 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// -------------------------------------------------------------
 
 	// 폰트를 25% 줄였으므로 라벨 폭과 행 높이도 같이 줄인다.
-	const long lbl_w = 170, ed_w = 80, row_h = 26;
+	const long lbl_w = 155, ed_w = 80, row_h = 34;
 	const long stage_top = ctrl_btn_top + ctrl_btn_hei + 16;
 	long y = stage_top;
 
-	m_capStage.Create("[ 연속 학습 단계 전환 조건 ]",
+	m_capStage.Create("[ 연속학습 조건 ]",
 		WS_CHILD | WS_VISIBLE | SS_LEFT,
 		CRect(nBase_X, y, nBase_X + 520, y + 22), this);
 	y += 26;
 
 	struct Row { CStatic* lbl; CEdit* ed; const char* text; UINT id; };
 	Row rows[] = {
-		{ &m_lblBaseSamples, &m_edBaseSamples, "1단계 기준선 최소 표본 (건)",   ID_ED_BASE_SAMPLES },
-		{ &m_lblBaseHours,   &m_edBaseHours,   "1단계 최소 관측 시간대 (1~24)", ID_ED_BASE_HOURS   },
-		{ &m_lblAeSamples,   &m_edAeSamples,   "2단계 재학습 최소 표본 (건)",   ID_ED_AE_SAMPLES   },
+		{ &m_lblBaseSamples, &m_edBaseSamples, "1단계 필터링 표본수",   ID_ED_BASE_SAMPLES },
+		{ &m_lblBaseHours,   &m_edBaseHours,   "1단계 관측 시간",       ID_ED_BASE_HOURS     },
+		{ &m_lblAeSamples,   &m_edAeSamples,   "2단계 필터링 표본수",   ID_ED_AE_SAMPLES    },
 	};
 
 	const int nRows = (int)(sizeof(rows) / sizeof(rows[0]));
@@ -184,15 +178,19 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 검사해 막아도 사용자는 무엇이 틀렸는지 알기 어렵다. 달력은 애초에
 	// 잘못된 날짜를 고를 수 없다.
 	//
-	// DTS_SHOWNONE 은 앞에 체크박스를 붙인다. 체크를 풀면 "기준일 없음"
-	// (= 전체 기간 사용) 이 된다. 날짜 칸을 비운다는 개념을 달력으로
-	// 표현할 방법이 이것뿐이다.
-	m_lblBaseDate.Create("계산 기준일 (체크 해제 시 전체)",
+	// 체크박스(DTS_SHOWNONE)는 쓰지 않는다. 체크를 풀면 날짜가 흐리게
+	// 표시되어 지금 어느 날짜가 잡혀 있는지 읽기 어려웠다. 항상 선택된
+	// 날짜를 또렷하게 보여준다.
+	//
+	// 대신 "전체 기간" 을 표현할 자리가 없어진다. 그 경우는 데이터가
+	// 시작되기 전 날짜를 고르면 된다. 기준일은 "이 날짜 이전을 버린다" 는
+	// 뜻이므로, 충분히 이른 날짜는 전체를 쓰는 것과 같다.
+	m_lblBaseDate.Create("계산기준일",
 		WS_CHILD | WS_VISIBLE | SS_LEFT,
 		CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
 
 	m_dtBaseDate.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER
-		| DTS_SHORTDATEFORMAT | DTS_SHOWNONE,
+		| DTS_SHORTDATEFORMAT,
 		CRect(nBase_X + lbl_w + 10, y, nBase_X + lbl_w + 10 + ed_w + 60, y + 22),
 		this, ID_ED_BASE_DATE);
 
@@ -202,29 +200,40 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 
 	y += row_h;
 
-	m_btnSaveStage.Create("저장", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-		CRect(nBase_X + lbl_w + 10 + ed_w + 60, stage_top + 30,
-		      nBase_X + lbl_w + 10 + ed_w + 60 + 80, stage_top + 30 + 30),
+	// 적용 버튼은 설정란 마지막 줄 아래, 라벨과 같은 왼쪽 끝에 둔다.
+	// 오른쪽은 현황 열이 차지하므로 비워 두어야 한다.
+	//
+	// 캡션이 "적용" 인 이유: 파일에 쓰는 것으로 끝이 아니라 파이썬을 다시
+	// 기동해야 실제로 반영된다. "저장" 이라고 하면 눌렀으니 됐다고 여기기
+	// 쉽다.
+	m_btnSaveStage.Create("연속학습 적용", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+		CRect(nBase_X, y + 4, nBase_X + 135, y + 4 + 24),
 		this, ID_BTN_SAVE_STAGE);
 
 	// -------------------------------------------------------------
-	// 현재 진행 상황
+	// 현재 진행 상황 — 설정란 오른편
 	//
-	// 설정값만 보여주면 "그래서 지금 몇 단계인가" 를 알 수 없다. 조건을
-	// 바로 옆에 두고 얼마나 찼는지 함께 보여준다.
+	// 설정값만 보여주면 "그래서 지금 몇 단계인가" 를 알 수 없다. 조건과
+	// 진행 상황을 나란히 두어 한눈에 비교하게 한다.
+	//
+	// 메인 창 너비가 678 이라 오른편에 300 남짓 쓸 수 있다. 그런데
+	// "1단계 사용 중  표본 12,345/3,000 · 시간대 20/18" 은 한 줄로 400 이
+	// 넘어 잘린다. 그래서 단계마다 두 줄로 적는다. 컨트롤을 6개로 늘리는
+	// 대신 라벨 하나를 두 줄 높이로 만들고 \r\n 으로 줄을 나눈다.
 	// -------------------------------------------------------------
-	const long col2_x = nBase_X + 330;
+	const long col2_x = nBase_X + 320;
+	const long col2_w = 320;
 
 	m_capNow.Create("[ 현재 진행 ]", WS_CHILD | WS_VISIBLE | SS_LEFT,
-		CRect(col2_x, stage_top, col2_x + 250, stage_top + 22), this);
+		CRect(col2_x, stage_top, col2_x + col2_w, stage_top + 22), this);
 
 	long ny = stage_top + 26;
 	CStatic* stg[3] = { &m_lblStage1, &m_lblStage2, &m_lblStage3 };
 	for (int i = 0; i < 3; ++i)
 	{
 		stg[i]->Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
-			CRect(col2_x, ny + 3, col2_x + 250, ny + 3 + 20), this);
-		ny += row_h;
+			CRect(col2_x, ny, col2_x + col2_w, ny + 54), this);
+		ny += 62;
 	}
 
 	LoadStageSettings();
@@ -259,12 +268,11 @@ void CDlg_Set_MmCam_Env::LoadStageSettings()
 	s.Format("%d", ini_read_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_SAMPLES", DEF_AE_SAMPLES));
 	m_edAeSamples.SetWindowTextA(s);
 
-	// 저장된 기준일이 있으면 그 날짜로, 없으면 오늘 날짜를 띄우되 체크는
-	// 풀어 둔다.
+	// 저장된 기준일이 있으면 그 날짜를, 없으면 오늘을 보여준다.
 	//
-	// 체크까지 켜 두면 "기본값이 오늘" 이 되어, 아무 생각 없이 저장만 해도
-	// 기준일이 오늘로 박히고 그동안 쌓은 기준선이 통째로 날아간다. 오늘
-	// 날짜는 고를 때 편하라고 미리 채워 두는 것이지 적용된 값이 아니다.
+	// 오늘을 띄우면 다른 항목만 고치고 [적용] 을 눌렀을 때 기준일이 오늘로
+	// 박혀 그동안 쌓은 기준선이 날아갈 수 있다. 그래서 적용 단계에서
+	// 기준일이 바뀌는 경우 한 번 물어본다 (OnBnClickedSaveStage 참고).
 	const std::string d = ini_read_utf8(ini, "CONSTANTS", "CALC_BASE_DATE", DEF_CALC_BASE_DATE);
 
 	int yy = 0, mm = 0, dd = 0;
@@ -277,8 +285,7 @@ void CDlg_Set_MmCam_Env::LoadStageSettings()
 	else
 	{
 		CTime today = CTime::GetCurrentTime();
-		m_dtBaseDate.SetTime(&today);      // 표시값을 오늘로
-		m_dtBaseDate.SetTime((CTime*)NULL); // 체크는 해제 (= 전체 기간)
+		m_dtBaseDate.SetTime(&today);
 	}
 }
 
@@ -297,7 +304,7 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	const std::string updated = ini_read_utf8(st, "STATUS", "UPDATED_AT", "");
 
 	if (updated.empty()) {
-		m_lblStage1.SetWindowTextA("1단계  확인 전 (감시를 돌리면 표시됩니다)");
+		m_lblStage1.SetWindowTextA("1단계  확인 전\r\n    감시를 돌리면 표시됩니다");
 		m_lblStage2.SetWindowTextA("2단계  확인 전");
 		m_lblStage3.SetWindowTextA("3단계  확인 전");
 		return;
@@ -320,20 +327,22 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 
 	// 1단계 — 채점에 쓰이는 중인지까지 구분한다. 준비됐어도 2단계가 있으면
 	// 둘이 함께 쓰이므로 "사용 중" 이 맞다.
-	t.Format("1단계  %s   표본 %d/%d · 시간대 %d/%d",
+	// 좁은 열에 맞추려고 두 줄로 적는다. 첫 줄은 상태, 둘째 줄은 근거.
+	t.Format("1단계  %s\r\n    표본 %d/%d · 시간대 %d/%d",
 		s1 ? "사용 중" : "누적 중", samples, min_smp, hours, min_hr);
 	m_lblStage1.SetWindowTextA(t);
 
-	t.Format("2단계  %s", s2 ? "사용 중   오토인코더 적재됨"
-	                        : "없음   모델 파일이 아직 없습니다");
+	t.Format("2단계  %s\r\n    %s",
+		s2 ? "사용 중" : "없음",
+		s2 ? "오토인코더 적재됨" : "모델 파일이 아직 없습니다");
 	m_lblStage2.SetWindowTextA(t);
 
 	if (s3 && !gen_at.empty())
-		t.Format("3단계  적용됨   최근 승격 %s", gen_at.c_str());
+		t.Format("3단계  적용됨\r\n    최근 승격 %s", gen_at.c_str());
 	else if (db_rows >= 0 && min_rtr > 0)
-		t.Format("3단계  대기   재학습 가능 %d/%d건", db_rows, min_rtr);
+		t.Format("3단계  대기\r\n    재학습 가능 %d/%d건", db_rows, min_rtr);
 	else
-		t.Format("3단계  대기   아직 재학습 이력이 없습니다");
+		t.Format("3단계  대기\r\n    아직 재학습 이력이 없습니다");
 	m_lblStage3.SetWindowTextA(t);
 
 	// 기준일과 갱신 시각은 상단 안내줄에 함께 보여준다.
@@ -363,9 +372,16 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	m_edBaseSamples.GetWindowTextA(a);
 	m_edBaseHours.GetWindowTextA(b);
 	m_edAeSamples.GetWindowTextA(c);
+	// 달력에는 늘 날짜가 들어 있다. 다만 "전체 기간" 표시용으로 쓰는
+	// 아주 이른 날짜라면 env.ini 에는 빈 값으로 적는다. 그래야 파이썬 쪽이
+	// 지금처럼 "제한 없음" 으로 동작하고, 기준일이 바뀌었다고 오해해
+	// 기준선을 헛되이 버리는 일도 없다.
 	CTime dt;
-	const bool has_date = (m_dtBaseDate.GetTime(dt) == GDT_VALID);
-	if (has_date) d = dt.Format("%Y-%m-%d");
+	if (m_dtBaseDate.GetTime(dt) == GDT_VALID)
+	{
+		const CTime all(ALL_PERIOD_Y, ALL_PERIOD_M, ALL_PERIOD_D, 0, 0, 0);
+		if (dt > all) d = dt.Format("%Y-%m-%d");
+	}
 
 	const int base_samples = atoi(a);
 	const int base_hours   = atoi(b);
@@ -391,6 +407,37 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	const std::string prev_date = ini_read_utf8(ini, "CONSTANTS", "CALC_BASE_DATE", "");
 	const std::string new_date  = (const char*)CStringA(d);
 
+	// 기준일이 바뀌면 셀별 기준선을 버리고 처음부터 다시 쌓는다. 며칠치
+	// 누적이 사라지는 일이라 그냥 진행하지 않고 한 번 물어본다.
+	//
+	// 지정된 값이 없을 때 달력에 오늘이 떠 있으므로, 다른 항목만 고치고
+	// [적용] 을 눌러도 기준일이 오늘로 바뀌는 상황이 생긴다. 그 경우를
+	// 사용자가 알아채지 못한 채 지나가게 두면 안 된다.
+	if (prev_date != new_date)
+	{
+		const std::string st = std::string(GetMmCamStartPath())
+			+ "users\\" + gUserID + "\\stage_status.ini";
+		const int samples = ini_read_int_utf8(st, "STATUS", "SAMPLES", -1);
+
+		CStringA q;
+		q.Format("계산기준일을 %s -> %s 로 바꿉니다.\r\n\r\n"
+			"셀별 기준선을 버리고 처음부터 다시 쌓습니다.\r\n",
+			prev_date.empty() ? "전체" : prev_date.c_str(),
+			new_date.empty() ? "전체" : new_date.c_str());
+
+		if (samples > 0) {
+			CStringA add;
+			add.Format("지금까지 쌓인 표본 %d건이 사라집니다.\r\n", samples);
+			q += add;
+		}
+		q += "\r\n진행할까요?";
+
+		if (AfxMessageBox(q, MB_YESNO | MB_ICONWARNING) != IDYES) {
+			m_cap_0.SetWindowTextA("[취소] 아무것도 바꾸지 않았습니다.");
+			return;
+		}
+	}
+
 	bool ok = ini_write_int_utf8(ini, "CONSTANTS", "BASELINE_MIN_SAMPLES", base_samples)
 		&& ini_write_int_utf8(ini, "CONSTANTS", "BASELINE_MIN_HOURS", base_hours)
 		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_SAMPLES", ae_samples)
@@ -403,7 +450,7 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 		// 며칠치 누적이 사라지는 일이라 화면에 분명히 알린다.
 		const char* warn = (prev_date != new_date)
 			? "  *기준일이 바뀌어 셀별 기준선을 새로 시작합니다*" : "";
-		msg.Format("[저장 완료] 1단계 %d건/%d시간대, 2단계 %d건, 기준일 %s%s"
+		msg.Format("[적용 완료] 1단계 %d건/%d시간대, 2단계 %d건, 기준일 %s%s"
 			"   -  '정지' 후 '시작'을 눌러야 반영됩니다.",
 			base_samples, base_hours, ae_samples,
 			new_date.empty() ? "전체" : new_date.c_str(), warn);
@@ -469,7 +516,38 @@ void CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask()
 
 void CDlg_Set_MmCam_Env::OnBnClickedClose()
 {
-	OnOK();
+	OnCancel();
+}
+
+//---------------------------------------------------------
+// 모덜리스로 쓰므로 OK/취소가 창을 없애면 안 된다.
+//
+// 기본 구현은 EndDialog 를 부르는데, 모덜리스 창에는 맞지 않아 창이
+// 이상한 상태로 남는다. 숨기기만 하고 부모에게 알려 [설정] 버튼 문구를
+// 되돌리게 한다. Enter·ESC 도 이리로 들어오므로 실수로 닫혀도 안전하다.
+//---------------------------------------------------------
+
+void CDlg_Set_MmCam_Env::OnOK()
+{
+	OnCancel();
+}
+
+void CDlg_Set_MmCam_Env::OnCancel()
+{
+	ShowWindow(SW_HIDE);
+
+	CMmCammonitoringDlg* pMain = (CMmCammonitoringDlg*)GetParent();
+	if (pMain != nullptr && ::IsWindow(pMain->GetSafeHwnd()))
+		pMain->OnSettingPanelClosed();
+}
+
+//---------------------------------------------------------
+
+void CDlg_Set_MmCam_Env::RefreshAll()
+{
+	// 현장(콤보박스)이 바뀌었을 수도 있으므로 제목줄도 다시 만든다.
+	LoadStageSettings();
+	LoadStageStatus();
 }
 
 //---------------------------------------------------------

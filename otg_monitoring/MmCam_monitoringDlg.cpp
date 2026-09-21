@@ -122,6 +122,7 @@ extern void            update_db_main_command(const char* new_code);
 #define IDC_BTN_PROC_LIST       1104
 #define IDC_BTN_CLOSE           2000
 #define IDC_BTN_MINIMIZE        2001
+#define IDC_PROGRESS_START      2002    // '시작' 진행바
 #define IDC_BTN_SIGN            3000
 #define IDC_EDIT_RESTART_MIN    4000
 
@@ -179,7 +180,7 @@ static_assert(PROC_ROW_COUNT <= (IDC_BTN_STOP_LAST - IDC_BTN_STOP_BASE + 1),
 #define PROC_ROW_SEP_H      2                       // 목록 상단 구분선 두께
 #define PROC_ROW_SEP_GAP    8                       // 구분선과 첫 행 사이 간격
 #define PROC_ROW_SEP_MARGIN 10                      // 구분선 좌우 여백 (창 끝에서)
-#define PROC_ROW_FONT       "Noto Sans KR"
+#define PROC_ROW_FONT       UI_FONT_NAME
 #define PROC_ROW_FONT_H     21
 #define PROC_ROW_TEXT_COLOR RGB(0, 0, 0)            // 검정
 
@@ -191,6 +192,20 @@ static_assert(PROC_ROW_COUNT <= (IDC_BTN_STOP_LAST - IDC_BTN_STOP_BASE + 1),
 #define FANCY_ROW_RADIUS    6                   // 목록 행 버튼(높이 23px) 둥글기
 #define FANCY_FACE_BUTTON   RGB(105, 110, 118)  // 모든 버튼 공통 바탕 : 연한 진회색
 #define FANCY_TEXT_LIGHT    RGB(255, 255, 255)  // 버튼 글자 : 흰색
+
+// 토글이 켜졌을 때의 표현.
+//
+// 처음에는 호박색 테두리를 둘렀는데 화면에서는 붉은 테두리로 보였다.
+// 색을 쓰지 않고 명암만으로 나타낸다. 안쪽은 어둡게, 테두리는 더 어둡게,
+// 아래쪽에만 밝은 선을 한 줄 넣으면 눌려 들어간 것처럼 보인다.
+#define FANCY_TOGGLE_EDGE   -0.45   // 켜짐 테두리 : 바탕보다 이만큼 어둡게
+#define FANCY_TOGGLE_DOT     0.45   // 켜짐 표시등 : 바탕보다 이만큼 밝게
+
+// 설정 영역이 차지하는 높이(px). Dlg_Set_MmCam_Env 의 내용이 들어갈 만큼.
+// 그쪽 배치를 바꾸면 이 값도 같이 맞춰야 한다.
+#define SETTING_AREA_H      345
+// 목록과 설정 영역 사이 간격
+#define AREA_GAP            8
 
 // =========================================================
 // CFancyButton 구현
@@ -233,12 +248,20 @@ CFancyButton::CFancyButton()
     , m_bTracking(false)
     , m_radius(FANCY_BTN_RADIUS)
     , m_bNoKeyActivate(false)
+    , m_bChecked(false)
 {
 }
 
 void CFancyButton::SetNoKeyActivate(bool bNoKey)
 {
     m_bNoKeyActivate = bNoKey;
+}
+
+void CFancyButton::SetChecked(bool bChecked)
+{
+    if (m_bChecked == bChecked) return;
+    m_bChecked = bChecked;
+    Invalidate();      // 눌린 모양으로 다시 그린다
 }
 
 // 키보드로는 눌리지 않게 한다 (마우스 클릭은 그대로 동작).
@@ -308,35 +331,79 @@ void CFancyButton::DrawItem(LPDRAWITEMSTRUCT lpDIS)
     CDC*  pDC = CDC::FromHandle(lpDIS->hDC);
     CRect rc  = lpDIS->rcItem;
 
-    const bool bPressed  = (lpDIS->itemState & ODS_SELECTED) != 0;
+    // 토글이 켜져 있으면 손을 뗀 뒤에도 계속 눌린 모양으로 그린다.
+    const bool bDown     = (lpDIS->itemState & ODS_SELECTED) != 0;
+    const bool bPressed  = bDown || m_bChecked;
     const bool bDisabled = (lpDIS->itemState & ODS_DISABLED) != 0;
     const bool bFocused  = (lpDIS->itemState & ODS_FOCUS) != 0;
 
     // 상태에 따른 바탕색: 눌림은 어둡게, 마우스 오버는 밝게, 비활성은 흐리게
+    //
+    // 토글이 켜진 상태는 실제로 누르고 있는 것보다 조금 더 어둡게 해서
+    // "지금 켜져 있다" 가 분명히 보이게 한다. 마우스를 올렸을 때도 켜진
+    // 상태라면 밝아지지 않아야 한다.
     COLORREF face = m_face;
     COLORREF text = m_text;
-    if (bDisabled)     { face = ShadeColor(m_face, 0.55); text = RGB(160, 160, 160); }
-    else if (bPressed) { face = ShadeColor(m_face, -0.18); }
-    else if (m_bHover) { face = ShadeColor(m_face, 0.14); }
+    if (bDisabled)      { face = ShadeColor(m_face, 0.55); text = RGB(160, 160, 160); }
+    else if (m_bChecked){ face = ShadeColor(m_face, bDown ? -0.32 : -0.26); }
+    else if (bDown)     { face = ShadeColor(m_face, -0.18); }
+    else if (m_bHover)  { face = ShadeColor(m_face, 0.14); }
 
     // 모서리 바깥은 부모 배경색으로 지운다
     pDC->FillSolidRect(rc, ::GetSysColor(COLOR_3DFACE));
 
     // 둥근 사각형 본체
+    //
+    // 토글이 켜지면 색을 쓰지 않고 명암만으로 나타낸다. 테두리를 더 어둡게
+    // 두르고, 위쪽 안쪽에 그림자를, 아래쪽 안쪽에 밝은 선을 넣으면 눌려
+    // 들어간 것처럼 보인다.
+    const bool bOn = m_bChecked && !bDisabled;
+
     CBrush brFace(face);
     CPen   penEdge(PS_SOLID, 1, ShadeColor(face, bDisabled ? -0.10 : -0.28));
+    CPen   penOn(PS_SOLID, 2, ShadeColor(m_face, FANCY_TOGGLE_EDGE));
     CBrush* pOldBrush = pDC->SelectObject(&brFace);
-    CPen*   pOldPen   = pDC->SelectObject(&penEdge);
+    CPen*   pOldPen   = pDC->SelectObject(bOn ? &penOn : &penEdge);
     pDC->RoundRect(rc, CPoint(m_radius, m_radius));
 
-    // 눌리지 않은 상태에서는 위쪽에 옅은 하이라이트를 한 줄 넣어 입체감을 준다
-    if (!bPressed && !bDisabled)
+    if (bOn)
     {
+        // 위쪽 안쪽 그림자 두 줄. 아래로 갈수록 옅어지게 해 깊이를 만든다.
+        CPen penSh1(PS_SOLID, 1, ShadeColor(face, -0.30));
+        CPen penSh2(PS_SOLID, 1, ShadeColor(face, -0.16));
+        pDC->SelectObject(&penSh1);
+        pDC->MoveTo(rc.left + m_radius, rc.top + 2);
+        pDC->LineTo(rc.right - m_radius, rc.top + 2);
+        pDC->SelectObject(&penSh2);
+        pDC->MoveTo(rc.left + m_radius, rc.top + 3);
+        pDC->LineTo(rc.right - m_radius, rc.top + 3);
+
+        // 아래쪽 안쪽에 밝은 선 하나. 오목한 바닥에 빛이 반사된 것처럼 보여
+        // 위쪽 그림자와 짝을 이룬다.
+        CPen penLit(PS_SOLID, 1, ShadeColor(face, 0.22));
+        pDC->SelectObject(&penLit);
+        pDC->MoveTo(rc.left + m_radius, rc.bottom - 3);
+        pDC->LineTo(rc.right - m_radius, rc.bottom - 3);
+
+        // 왼쪽 안쪽에 켜짐 표시등. 바탕보다 밝은 회색이라 색이 섞이지 않는다.
+        const int d = 5;
+        const COLORREF dot = ShadeColor(m_face, FANCY_TOGGLE_DOT);
+        CBrush brDot(dot);
+        CPen   penDot(PS_SOLID, 1, dot);
+        pDC->SelectObject(&brDot);
+        pDC->SelectObject(&penDot);
+        const int cx = rc.left + m_radius - 1;
+        const int cy = rc.CenterPoint().y;
+        pDC->Ellipse(cx - d / 2, cy - d / 2, cx + d / 2 + 1, cy + d / 2 + 1);
+        pDC->SelectObject(&brFace);
+    }
+    else if (!bPressed && !bDisabled)
+    {
+        // 눌리지 않은 상태에서는 위쪽에 옅은 하이라이트를 한 줄 넣어 입체감을 준다
         CPen penTop(PS_SOLID, 1, ShadeColor(face, 0.35));
         pDC->SelectObject(&penTop);
         pDC->MoveTo(rc.left + m_radius, rc.top + 1);
         pDC->LineTo(rc.right - m_radius, rc.top + 1);
-        pDC->SelectObject(&penEdge);
     }
 
     pDC->SelectObject(pOldPen);
@@ -351,6 +418,7 @@ void CFancyButton::DrawItem(LPDRAWITEMSTRUCT lpDIS)
 
     CRect rcText = rc;
     if (bPressed) rcText.OffsetRect(0, 1);      // 눌리면 한 픽셀 내려 찍는다
+    if (bOn) rcText.DeflateRect(6, 0, 0, 0);    // 표시등 자리를 비켜 준다
 
     pDC->SetBkMode(TRANSPARENT);
     pDC->SetTextColor(text);
@@ -394,6 +462,10 @@ CMmCammonitoringDlg::CMmCammonitoringDlg(CWnd* pParent)
 {
     m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
     m_bRowsVisible = false;
+    m_pDlgSet = nullptr;
+    m_bSettingVisible = false;
+    m_visibleRowCount = 0;
+    m_startStep = 0;
     m_bStarting = false;
     m_wndChromeH = 0;
     m_baseWndH = 0;
@@ -442,7 +514,7 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
     m_stdFont.CreateFont(
         22, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T("맑은 고딕")
+        DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME)
     );
     SetFont(&m_stdFont);
     SendMessageToDescendants(WM_SETFONT, (WPARAM)m_stdFont.GetSafeHandle(), TRUE);
@@ -514,6 +586,17 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
 
     m_lblTimer.Create("00:00:00", WS_CHILD | WS_VISIBLE | SS_LEFT,
         CRect(nBase_X_Msg + 495, nBase_Y_Msg, nBase_X_Msg + 605, nBase_Y_Msg + 24), this);
+
+    // '시작' 진행바. 평상시에는 숨겨 두고 기동하는 동안만 상태줄 자리에
+    // 나타난다. 기동에 20초 안팎이 걸리는데 그동안 화면이 그대로면 눌린
+    // 것인지 알 수 없어 다시 누르게 된다.
+    m_rcStatusNormal = CRect(nBase_X_Msg, nBase_Y_Msg, nBase_X_Msg + 485, nBase_Y_Msg + 24);
+
+    m_progress.Create(WS_CHILD | PBS_SMOOTH,
+        CRect(nBase_X_Msg, nBase_Y_Msg + 3, nBase_X_Msg + 280, nBase_Y_Msg + 21),
+        this, IDC_PROGRESS_START);
+    m_progress.SetRange(0, 100);
+    m_progress.SetPos(0);
 
     // 프로세스별 상태 행 생성.
     // 평상시에는 접어 두고 "목록" 버튼으로 펼친다. 보이는 행은 콤보박스에서
@@ -826,10 +909,66 @@ void SaveRestartMinutesToFile(int minutes)
 // ---------------------------------------------------------
 // 버튼 핸들러
 // ---------------------------------------------------------
+// ---------------------------------------------------------
+// [설정] — 설정 영역 보이기/숨기기
+//
+// 예전에는 여기서 DoModal() 을 불렀다. 모달 대화상자는 열려 있는 동안
+// 부모 창의 메시지를 막으므로, 설정을 보는 중에는 시작·정지·목록 버튼이
+// 하나도 눌리지 않았다. 감시 프로그램에서 설정을 확인하는 동안 정지조차
+// 못 하는 것은 곤란하다.
+//
+// 모덜리스로 만들어 두고 이 버튼은 보이기/숨기기만 전환한다. 목록 버튼과
+// 같은 방식이다.
+// ---------------------------------------------------------
 void CMmCammonitoringDlg::OnBnClickedCMD()
 {
-    CDlg_Set_MmCam_Env dlg(this);
-    dlg.DoModal();
+    if (m_pDlgSet == nullptr)
+    {
+        m_pDlgSet = new CDlg_Set_MmCam_Env(this);
+        if (!m_pDlgSet->Create(IDD_DLG_CMD, this))
+        {
+            delete m_pDlgSet;
+            m_pDlgSet = nullptr;
+            AfxMessageBox(_T("[ERROR] 설정 영역을 열 수 없습니다."));
+            return;
+        }
+
+        // 템플릿은 팝업(WS_POPUP | WS_CAPTION)으로 되어 있다. 메인 창 안에
+        // 끼워 넣으려면 자식으로 바꾸고 제목줄·테두리를 걷어내야 한다.
+        // 그래야 "목록" 처럼 창 아래가 늘어나며 펼쳐지는 영역이 된다.
+        m_pDlgSet->ModifyStyle(WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_BORDER
+                               | WS_DLGFRAME | WS_THICKFRAME,
+                               WS_CHILD, SWP_FRAMECHANGED);
+        m_pDlgSet->ModifyStyleEx(WS_EX_TOOLWINDOW | WS_EX_DLGMODALFRAME
+                                 | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE,
+                                 0, SWP_FRAMECHANGED);
+        m_pDlgSet->SetParent(this);
+
+        m_bSettingVisible = false;   // 아래에서 켠다
+    }
+
+    m_bSettingVisible = !m_bSettingVisible;
+
+    // 열 때마다 현재 값과 진행 상황을 다시 읽는다. 감시가 도는 동안 표본
+    // 수가 계속 늘기 때문에 처음 만든 시점의 값으로 두면 안 된다.
+    if (m_bSettingVisible)
+        m_pDlgSet->RefreshAll();
+
+    m_btnCmd.SetWindowText(m_bSettingVisible ? "닫기" : "설정");
+    m_btnCmd.SetChecked(m_bSettingVisible);
+
+    ApplyExpandLayout();
+}
+
+// ---------------------------------------------------------
+// 설정 영역이 스스로 닫혔을 때(창의 x 버튼) 버튼 문구를 되돌린다.
+// ---------------------------------------------------------
+void CMmCammonitoringDlg::OnSettingPanelClosed()
+{
+    m_bSettingVisible = false;
+    m_btnCmd.SetWindowText("설정");
+    m_btnCmd.SetChecked(false);
+    ApplyExpandLayout();
 }
 // ---------------------------------------------------------
 
@@ -915,6 +1054,16 @@ void CMmCammonitoringDlg::OnClose()
 void CMmCammonitoringDlg::OnDestroy()
 {
     LogEvent("종료: WM_DESTROY (창 파괴)");
+
+    // 모덜리스 창은 부모가 사라져도 저절로 정리되지 않는다.
+    if (m_pDlgSet != nullptr)
+    {
+        if (::IsWindow(m_pDlgSet->GetSafeHwnd()))
+            m_pDlgSet->DestroyWindow();
+        delete m_pDlgSet;
+        m_pDlgSet = nullptr;
+    }
+
     CDialogEx::OnDestroy();
 }
 
@@ -960,9 +1109,34 @@ void CMmCammonitoringDlg::OnBnClickedStartAll()
     LogEvent("기동 시작 (OnBnClickedStartAll)");
 
     m_startedPids.clear();
+    m_startStep = 0;
+
+    ShowStartProgress(true);
 
     for (const char* userId : START_USER_IDS)
         Run_All_Processes(userId);
+
+    // 스크립트를 다 띄워도 뷰어가 바로 뜨지는 않는다. 파이썬이 torch 와
+    // 모델을 읽는 동안 몇 초가 더 걸린다. 그 시간까지 진행바로 덮어야
+    // "눌렀는데 아무 일도 없다" 는 구간이 사라진다.
+    SetStartProgress(88, "이미지 뷰어 준비 중...");
+
+    const DWORD viewerStart = GetTickCount();
+    const DWORD viewerLimit = 40000;      // 그래도 안 뜨면 포기하고 넘어간다
+
+    while (GetTickCount() - viewerStart < viewerLimit)
+    {
+        if (AnyViewerWindowUp()) break;
+
+        PumpWait(700);
+
+        const DWORD el = GetTickCount() - viewerStart;
+        SetStartProgress(88 + static_cast<int>(11.0 * el / viewerLimit), nullptr);
+    }
+
+    SetStartProgress(100, "기동 완료");
+    PumpWait(400);
+    ShowStartProgress(false);
 
     m_elapsedSeconds = 0;
     m_lblTimer.SetWindowText(_T("00:00:00"));
@@ -992,27 +1166,46 @@ void CMmCammonitoringDlg::Run_All_Processes(std::string sUserID)
     sprintf_s(cmd, sizeof(cmd),
         "call \"%sScripts\\activate.bat\" %s && cd /d \"%s\" && python source/server_to_db.py \"%s\"",
         anacondaRoot, anacondaEnv, MmCamStartPath, sUserID.c_str());
+    // 진행바는 스크립트 6개(2현장 × 3개)를 0~85% 로 나눠 채운다.
+    auto StepBand = [&](const char* name) {
+        CStringA t;
+        t.Format("%s  기동 중  (%d/%d)", name, m_startStep + 1,
+                 USER_COUNT * SCRIPT_COUNT);
+        SetStartProgress(m_startStep * 85 / (USER_COUNT * SCRIPT_COUNT), t);
+    };
+
+    StepBand("server_to_db");
     pid = RunCmdHidden("server_to_db", cmd);
     if (pid) m_startedPids.push_back(pid);
-    PumpWait(3000);
+    PumpWait(3000, m_startStep * 85 / (USER_COUNT * SCRIPT_COUNT),
+                   (m_startStep + 1) * 85 / (USER_COUNT * SCRIPT_COUNT));
+    ++m_startStep;
 
     sprintf_s(cmd, sizeof(cmd),
         "call \"%sScripts\\activate.bat\" %s && cd /d \"%s\" && python predict_machine/predict_machine.py \"%s\"",
         anacondaRoot, anacondaEnv, MmCamStartPath, sUserID.c_str());
+    StepBand("predict_machine");
     pid = RunCmdHidden("predict_machine", cmd);
     if (pid) m_startedPids.push_back(pid);
-    PumpWait(3000);
+    PumpWait(3000, m_startStep * 85 / (USER_COUNT * SCRIPT_COUNT),
+                   (m_startStep + 1) * 85 / (USER_COUNT * SCRIPT_COUNT));
+    ++m_startStep;
 
     sprintf_s(cmd, sizeof(cmd),
         "call \"%sScripts\\activate.bat\" %s && cd /d \"%s\" && python fall_detection/fall_detection.py \"%s\"",
         anacondaRoot, anacondaEnv, MmCamStartPath, sUserID.c_str());
+    StepBand("fall_detection");
     pid = RunCmdHidden("fall_detection", cmd);
     if (pid) m_startedPids.push_back(pid);
-    PumpWait(3000);
+    PumpWait(3000, m_startStep * 85 / (USER_COUNT * SCRIPT_COUNT),
+                   (m_startStep + 1) * 85 / (USER_COUNT * SCRIPT_COUNT));
+    ++m_startStep;
 }
 
-void CMmCammonitoringDlg::PumpWait(DWORD ms)
+void CMmCammonitoringDlg::PumpWait(DWORD ms, int pctFrom, int pctTo)
 {
+    const bool bTrack = (pctFrom >= 0 && pctTo >= 0 && ms > 0);
+
     DWORD start = GetTickCount();
     while (GetTickCount() - start < ms)
     {
@@ -1022,8 +1215,101 @@ void CMmCammonitoringDlg::PumpWait(DWORD ms)
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
+
+        // 기다리는 동안 진행바를 조금씩 채운다. 단계마다 툭툭 뛰면 멈춘
+        // 것처럼 보이지만, 계속 움직이면 진행 중이라는 것이 전해진다.
+        if (bTrack && m_progress.GetSafeHwnd())
+        {
+            const DWORD el = GetTickCount() - start;
+            const int pct = pctFrom + static_cast<int>(
+                (pctTo - pctFrom) * static_cast<double>(el) / ms);
+            m_progress.SetPos(pct);
+        }
+
         Sleep(50);
     }
+}
+
+// ---------------------------------------------------------
+// '시작' 진행 표시
+//
+// 진행바는 상태줄 자리에 겹쳐 놓고, 상태 문구는 그 오른쪽으로 잠시
+// 밀어 두었다가 끝나면 제자리로 돌린다.
+// ---------------------------------------------------------
+void CMmCammonitoringDlg::ShowStartProgress(bool bShow)
+{
+    if (!m_progress.GetSafeHwnd()) return;
+
+    if (bShow)
+    {
+        m_progress.SetPos(0);
+        m_progress.ShowWindow(SW_SHOW);
+
+        // 상태 문구를 진행바 오른쪽으로
+        m_lbStatus_0.SetWindowPos(nullptr,
+            m_rcStatusNormal.left + 292, m_rcStatusNormal.top,
+            m_rcStatusNormal.Width() - 292, m_rcStatusNormal.Height(),
+            SWP_NOZORDER);
+    }
+    else
+    {
+        m_progress.ShowWindow(SW_HIDE);
+
+        m_lbStatus_0.SetWindowPos(nullptr,
+            m_rcStatusNormal.left, m_rcStatusNormal.top,
+            m_rcStatusNormal.Width(), m_rcStatusNormal.Height(),
+            SWP_NOZORDER);
+    }
+    Invalidate();
+}
+
+void CMmCammonitoringDlg::SetStartProgress(int pct, const char* step)
+{
+    if (m_progress.GetSafeHwnd()) m_progress.SetPos(pct);
+    if (step && m_lbStatus_0.GetSafeHwnd()) m_lbStatus_0.SetWindowText(step);
+}
+
+// ---------------------------------------------------------
+// 이미지 뷰어 창이 떴는가
+//
+// 뷰어는 fall_detection 이 OpenCV 로 띄우므로, '시작' 으로 실행한
+// 프로세스 중 하나가 보이는 최상위 창을 가지고 있으면 올라온 것으로 본다.
+// ---------------------------------------------------------
+namespace {
+    struct ViewerProbe { const std::vector<DWORD>* pids; bool found; };
+
+    BOOL CALLBACK ViewerProbeProc(HWND hWnd, LPARAM lp)
+    {
+        ViewerProbe* p = reinterpret_cast<ViewerProbe*>(lp);
+        if (!::IsWindowVisible(hWnd)) return TRUE;
+
+        DWORD pid = 0;
+        ::GetWindowThreadProcessId(hWnd, &pid);
+        if (pid == 0) return TRUE;
+
+        for (DWORD started : *p->pids)
+        {
+            if (started == pid) { p->found = true; return FALSE; }
+        }
+        return TRUE;
+    }
+}
+
+bool CMmCammonitoringDlg::AnyViewerWindowUp()
+{
+    CountPythonProcesses();   // '시작'으로 띄운 자손 PID 목록 갱신
+
+    std::vector<DWORD> pids;
+    for (const auto& info : m_lastPyProcesses)
+    {
+        if (info.cmdLine.Find("fall_detection") >= 0)
+            pids.push_back(info.pid);
+    }
+    if (pids.empty()) return false;
+
+    ViewerProbe probe = { &pids, false };
+    EnumWindows(&ViewerProbeProc, reinterpret_cast<LPARAM>(&probe));
+    return probe.found;
 }
 
 //윈도우즈 메시지 펌프를 유지하면서 ms 밀리초 대기
@@ -1108,7 +1394,8 @@ void CMmCammonitoringDlg::CreateProcessRows(int topY)
 {
     m_rowPids.assign(PROC_ROW_COUNT, 0);
 
-    // 목록 전용 글꼴. 본문(맑은 고딕 22)보다 작아 줄간격을 좁힐 수 있다.
+    // 목록 전용 글꼴. 본문(22)보다 작아 줄간격을 좁힐 수 있다. 글꼴 이름은
+    // UI_FONT_NAME 하나로 통일되어 있다.
     m_rowFont.CreateFont(
         PROC_ROW_FONT_H, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
@@ -1211,10 +1498,13 @@ void CMmCammonitoringDlg::LayoutProcessRows()
         }
     }
 
+    // 보이는 행 수는 설정 영역 위치를 잡을 때도 필요하므로 남겨 둔다.
+    m_visibleRowCount = visible;
+
     const int expandedClientH = PROC_ROW_TOP_Y + visible * PROC_ROW_HEIGHT + 10;
     m_expandedWndH = expandedClientH + m_wndChromeH;
 
-    ApplyRowVisibility();
+    ApplyExpandLayout();
     ApplyImageWindowVisibility();   // user가 바뀌면 이미지 창도 즉시 교체
 }
 
@@ -1222,7 +1512,13 @@ void CMmCammonitoringDlg::LayoutProcessRows()
 // 펼침 여부와 선택 user를 함께 반영해 표시 상태와 창 높이를 맞춘다
 //   행이 보이는 조건 : 목록이 펼쳐져 있고 + 그 행이 선택된 user의 것일 때
 // ---------------------------------------------------------
-void CMmCammonitoringDlg::ApplyRowVisibility()
+// ---------------------------------------------------------
+// 펼쳐지는 두 영역(목록·설정)을 함께 배치하고 창 높이를 맞춘다.
+//
+// 둘 다 같은 자리(기본 내용 아래)에서 시작하므로 한 곳에서 계산해야
+// 서로 겹치지 않는다. 목록이 먼저, 설정이 그 아래다.
+// ---------------------------------------------------------
+void CMmCammonitoringDlg::ApplyExpandLayout()
 {
     for (size_t i = 0; i < m_labels.size(); ++i)
     {
@@ -1235,7 +1531,30 @@ void CMmCammonitoringDlg::ApplyRowVisibility()
 
     m_lblRowsSeparator.ShowWindow(m_bRowsVisible ? SW_SHOW : SW_HIDE);
 
-    const int wndH = m_bRowsVisible ? m_expandedWndH : m_baseWndH;
+    // 기본 내용이 끝나는 자리에서 시작해 켜진 영역을 차례로 쌓는다.
+    int y = PROC_ROW_TOP_Y;
+
+    if (m_bRowsVisible)
+        y += m_visibleRowCount * PROC_ROW_HEIGHT + AREA_GAP;
+
+    if (m_bSettingVisible && m_pDlgSet != nullptr
+        && ::IsWindow(m_pDlgSet->GetSafeHwnd()))
+    {
+        CRect rcClient;
+        GetClientRect(&rcClient);
+        m_pDlgSet->SetWindowPos(nullptr, 0, y, rcClient.Width(), SETTING_AREA_H,
+            SWP_NOZORDER | SWP_SHOWWINDOW);
+        y += SETTING_AREA_H;
+    }
+    else if (m_pDlgSet != nullptr && ::IsWindow(m_pDlgSet->GetSafeHwnd()))
+    {
+        m_pDlgSet->ShowWindow(SW_HIDE);
+    }
+
+    // 아무것도 펼치지 않았으면 원래 높이로 되돌린다.
+    const bool bAnyOpen = m_bRowsVisible || m_bSettingVisible;
+    const int  wndH = bAnyOpen ? (y + 10 + m_wndChromeH) : m_baseWndH;
+
     if (wndH > 0)
     {
         CRect rcWnd;
@@ -1243,6 +1562,12 @@ void CMmCammonitoringDlg::ApplyRowVisibility()
         if (rcWnd.Height() != wndH)
             SetWindowPos(nullptr, 0, 0, rcWnd.Width(), wndH, SWP_NOMOVE | SWP_NOZORDER);
     }
+}
+
+// 예전 이름으로 부르던 곳을 그대로 두기 위한 얇은 껍데기
+void CMmCammonitoringDlg::ApplyRowVisibility()
+{
+    ApplyExpandLayout();
 }
 
 // ---------------------------------------------------------

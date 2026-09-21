@@ -58,3 +58,4 @@ users/*/secrets.ini
 users/*/model_generations/
 users/*/online_baseline.npz
 users/*/current_generation.txt
+users/*/stage_status.ini
