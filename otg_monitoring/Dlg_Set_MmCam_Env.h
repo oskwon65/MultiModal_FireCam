@@ -36,15 +36,19 @@ public:
     CDateTimeCtrl m_dtBaseDate;
     CButton m_btnSaveStage;
 
+    // 0단계 절대 임계값. 적용 버튼은 연속학습 조건과 하나를 같이 쓴다.
+    CStatic m_capAbs, m_lblAbsTemp, m_lblAbsRise;
+    CEdit   m_edAbsTempWarn, m_edAbsTempAlarm, m_edAbsRiseWarn, m_edAbsRiseAlarm;
+
     // 현재 진행 상황 (predict_machine 이 남긴 stage_status.ini 를 읽는다)
-    CStatic m_capNow, m_lblStage1, m_lblStage2, m_lblStage3;
+    CStatic m_capNow, m_lblStage0, m_lblStage1, m_lblStage2, m_lblStage3;
 
     virtual BOOL OnInitDialog();
     afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
     afx_msg void OnBnClickedButtonChangeMask();
     afx_msg void OnBnClickedButtonGetMask();
     afx_msg void OnBnClickedClose();
-    afx_msg void OnBnClickedSaveStage();
+    afx_msg void OnBnClickedSaveStage();   // 연속학습 조건 + 절대 임계값을 함께 저장
 
     // 모덜리스로 쓰므로 OK/취소가 창을 없애면 안 된다. 숨기기만 한다.
     virtual void OnOK();
@@ -58,4 +62,5 @@ private:
     std::string StageIniPath() const;
     void        LoadStageSettings();
     void        LoadStageStatus();
+    void        LoadAbsSettings();
 };
