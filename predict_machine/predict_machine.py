@@ -81,6 +81,7 @@ from db_utils import (
     Get_SensorDB_Config,
     Get_HistoryDB_Config,
     Read_GridMask_Inf_File,
+    Connect_History_DB,
 )
 
 from cv_utils import (
@@ -96,6 +97,7 @@ from constants import ERR_CODE, SVR_CMD, LOCAL_HOTLIST_MASK, SVR_HOTLIST_MASK
 # 필요 없다.
 from abs_threshold import AbsoluteThreshold, LEVEL_ALARM, LEVEL_WARN, level_name
 from online_baseline import OnlineBaseline, SCENE_SHIFT_MIN
+import stage_status
 
 
 # ==============================================
@@ -559,6 +561,10 @@ def main_loop(config, sensor_db_config):
 
     baseline_dirty = 0
     suggested_once = False
+    STATUS_PATH = os.path.join(config["LOCAL_USER_PATH"],
+                               stage_status.STATUS_FILE_NAME)
+    db_rows = db_tables = None
+    db_counted_at = 0.0
     prev_fire_detected = False
 
     input_img = Get_Input_Image_URL(IMG_URL)
@@ -777,6 +783,34 @@ def main_loop(config, sensor_db_config):
                         baseline_dirty = 0
                     except Exception as e:
                         print(f"[WARN] 기준선 저장 실패: {e}")
+
+                    # 기준선을 저장하는 김에 단계 현황도 남긴다. [설정] 창이
+                    # 이 파일을 읽어 "지금 몇 단계이고 다음까지 얼마 남았는지"
+                    # 를 보여준다.
+                    #
+                    # 히스토리 DB 건수는 날짜별 테이블마다 COUNT 를 돌려야
+                    # 하므로 매번 세지 않는다.
+                    if (time.time() - db_counted_at
+                            >= stage_status.DB_COUNT_MIN_INTERVAL):
+                        try:
+                            _c = Connect_History_DB(history_db_config)
+                            try:
+                                db_rows, db_tables = stage_status.count_history_rows(
+                                    _c, history_db_config["database"],
+                                    base_date=baseline.base_date)
+                            finally:
+                                _c.close()
+                            db_counted_at = time.time()
+                        except Exception as e:
+                            print(f"[WARN] 히스토리 건수 집계 실패: {e}")
+
+                    stage_status.write(
+                        STATUS_PATH, baseline,
+                        model_ready=(model is not None and scaler is not None),
+                        user_path=config["LOCAL_USER_PATH"],
+                        db_rows=db_rows, db_tables=db_tables,
+                        min_retrain=config.get("RETRAIN_MIN_SAMPLES"),
+                        stage_used=stage_used)
 
             people, fall, fire_list = read_people_and_area(sensor_db_config)
             hot_list = median_hot.flatten().tolist()

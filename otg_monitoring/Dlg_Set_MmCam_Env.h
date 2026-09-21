@@ -36,6 +36,9 @@ public:
     CDateTimeCtrl m_dtBaseDate;
     CButton m_btnSaveStage;
 
+    // 현재 진행 상황 (predict_machine 이 남긴 stage_status.ini 를 읽는다)
+    CStatic m_capNow, m_lblStage1, m_lblStage2, m_lblStage3;
+
     virtual BOOL OnInitDialog();
     afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
     afx_msg void OnBnClickedButtonChangeMask();
@@ -46,4 +49,5 @@ public:
 private:
     std::string StageIniPath() const;
     void        LoadStageSettings();
+    void        LoadStageStatus();
 };

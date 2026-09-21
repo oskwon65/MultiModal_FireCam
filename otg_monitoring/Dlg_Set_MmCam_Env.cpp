@@ -207,7 +207,28 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		      nBase_X + lbl_w + 10 + ed_w + 60 + 80, stage_top + 30 + 30),
 		this, ID_BTN_SAVE_STAGE);
 
+	// -------------------------------------------------------------
+	// 현재 진행 상황
+	//
+	// 설정값만 보여주면 "그래서 지금 몇 단계인가" 를 알 수 없다. 조건을
+	// 바로 옆에 두고 얼마나 찼는지 함께 보여준다.
+	// -------------------------------------------------------------
+	const long col2_x = nBase_X + 330;
+
+	m_capNow.Create("[ 현재 진행 ]", WS_CHILD | WS_VISIBLE | SS_LEFT,
+		CRect(col2_x, stage_top, col2_x + 250, stage_top + 22), this);
+
+	long ny = stage_top + 26;
+	CStatic* stg[3] = { &m_lblStage1, &m_lblStage2, &m_lblStage3 };
+	for (int i = 0; i < 3; ++i)
+	{
+		stg[i]->Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
+			CRect(col2_x, ny + 3, col2_x + 250, ny + 3 + 20), this);
+		ny += row_h;
+	}
+
 	LoadStageSettings();
+	LoadStageStatus();
 
 	// 다이알로그와 하위개체까지 Font 지정 효과 전달하기 위함
 	SendMessageToDescendants(WM_SETFONT, (WPARAM)m_stdFont.GetSafeHandle(), TRUE);
@@ -259,6 +280,70 @@ void CDlg_Set_MmCam_Env::LoadStageSettings()
 		m_dtBaseDate.SetTime(&today);      // 표시값을 오늘로
 		m_dtBaseDate.SetTime((CTime*)NULL); // 체크는 해제 (= 전체 기간)
 	}
+}
+
+//---------------------------------------------------------
+
+// predict_machine 이 남긴 stage_status.ini 를 읽어 현재 단계를 보여준다.
+//
+// 이 파일이 없을 수 있다. 감시를 아직 한 번도 돌리지 않았거나, 기준선
+// 저장 주기(200건)에 아직 도달하지 않은 경우다. 그때는 "확인 전" 으로
+// 표시한다 — 0 건이라고 적으면 정말 0 건인 것과 구분이 안 된다.
+void CDlg_Set_MmCam_Env::LoadStageStatus()
+{
+	const std::string st =
+		std::string(GetMmCamStartPath()) + "users\\" + gUserID + "\\stage_status.ini";
+
+	const std::string updated = ini_read_utf8(st, "STATUS", "UPDATED_AT", "");
+
+	if (updated.empty()) {
+		m_lblStage1.SetWindowTextA("1단계  확인 전 (감시를 돌리면 표시됩니다)");
+		m_lblStage2.SetWindowTextA("2단계  확인 전");
+		m_lblStage3.SetWindowTextA("3단계  확인 전");
+		return;
+	}
+
+	const int samples = ini_read_int_utf8(st, "STATUS", "SAMPLES", 0);
+	const int min_smp = ini_read_int_utf8(st, "STATUS", "MIN_SAMPLES", 0);
+	const int hours   = ini_read_int_utf8(st, "STATUS", "HOURS", 0);
+	const int min_hr  = ini_read_int_utf8(st, "STATUS", "MIN_HOURS", 0);
+	const int s1      = ini_read_int_utf8(st, "STATUS", "STAGE1", 0);
+	const int s2      = ini_read_int_utf8(st, "STATUS", "STAGE2", 0);
+	const int s3      = ini_read_int_utf8(st, "STATUS", "STAGE3", 0);
+	const int used    = ini_read_int_utf8(st, "STATUS", "STAGE_USED", -1);
+	const int db_rows = ini_read_int_utf8(st, "STATUS", "DB_ROWS", -1);
+	const int min_rtr = ini_read_int_utf8(st, "STATUS", "MIN_RETRAIN", -1);
+	const std::string gen_at = ini_read_utf8(st, "STATUS", "GENERATION_AT", "");
+	const std::string bdate  = ini_read_utf8(st, "STATUS", "BASE_DATE", "");
+
+	CStringA t;
+
+	// 1단계 — 채점에 쓰이는 중인지까지 구분한다. 준비됐어도 2단계가 있으면
+	// 둘이 함께 쓰이므로 "사용 중" 이 맞다.
+	t.Format("1단계  %s   표본 %d/%d · 시간대 %d/%d",
+		s1 ? "사용 중" : "누적 중", samples, min_smp, hours, min_hr);
+	m_lblStage1.SetWindowTextA(t);
+
+	t.Format("2단계  %s", s2 ? "사용 중   오토인코더 적재됨"
+	                        : "없음   모델 파일이 아직 없습니다");
+	m_lblStage2.SetWindowTextA(t);
+
+	if (s3 && !gen_at.empty())
+		t.Format("3단계  적용됨   최근 승격 %s", gen_at.c_str());
+	else if (db_rows >= 0 && min_rtr > 0)
+		t.Format("3단계  대기   재학습 가능 %d/%d건", db_rows, min_rtr);
+	else
+		t.Format("3단계  대기   아직 재학습 이력이 없습니다");
+	m_lblStage3.SetWindowTextA(t);
+
+	// 기준일과 갱신 시각은 상단 안내줄에 함께 보여준다.
+	CStringA head;
+	head.Format("[%s]  기준일 %s  ·  현황 %s  ·  현재 채점 %s",
+		gUserID.c_str(),
+		bdate.empty() ? "전체" : bdate.c_str(),
+		updated.c_str(),
+		used < 0 ? "-" : (used == 2 ? "2단계" : (used == 1 ? "1단계" : "0단계")));
+	m_cap_0.SetWindowTextA(head);
 }
 
 //---------------------------------------------------------
