@@ -53,3 +53,8 @@ falldetection_openpifpaf/
 
 # --- DB 비밀번호 : 절대 추적하지 않는다 (users/secrets.ini.sample 로 형식만 공유) ---
 users/*/secrets.ini
+
+# 연속 학습 산출물 (현장 PC 로컬, 저장소에 넣지 않는다)
+users/*/model_generations/
+users/*/online_baseline.npz
+users/*/current_generation.txt

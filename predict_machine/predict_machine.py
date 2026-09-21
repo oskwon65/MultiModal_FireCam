@@ -91,6 +91,12 @@ from cv_utils import (
 
 from constants import ERR_CODE, SVR_CMD, LOCAL_HOTLIST_MASK, SVR_HOTLIST_MASK
 
+# 연속 학습 0~1단계. 이 둘은 predict_machine 폴더 안에 있으므로 sys.path[0]
+# (= 이 스크립트의 폴더) 으로 그냥 잡힌다. source 폴더와 달리 경로 조작이
+# 필요 없다.
+from abs_threshold import AbsoluteThreshold, LEVEL_ALARM, LEVEL_WARN, level_name
+from online_baseline import OnlineBaseline, SCENE_SHIFT_MIN
+
 
 # ==============================================
 # Download grid mask from server
@@ -174,6 +180,17 @@ NUM_OF_MACHINE_CELLS = 0
 
 # autoencoder-7.py와 반드시 동일해야 함 (다르면 state_dict 로드가 깨짐)
 ENC_HIDDEN = [32, 16]
+
+# 오토인코더 점수와 기준선 점수가 이만큼 갈리면 불일치로 본다.
+SCORE_DIVERGENCE_WARN = 0.3
+
+# 다만 차이가 크다고 다 불일치가 아니다. 한쪽이 0.0006, 다른 쪽이 0.35 면
+# 차이는 크지만 **둘 다 이상을 말하고 있다** — 민감도가 다를 뿐이다.
+# 여기에 "카메라를 확인하라" 는 안내를 띄우면 실제 과열을 오진하게 된다.
+#
+# 진짜 불일치는 한쪽이 이상이라 하는데 다른 쪽은 **멀쩡하다고** 할 때다.
+# 그래서 높은 쪽이 이 값 이상일 때만 불일치로 판정한다.
+SCORE_NORMAL_SIDE = 0.9
 
 
 # ============================================================
@@ -473,36 +490,74 @@ def main_loop(config, sensor_db_config):
     print(f"BASE_IMG_DIR         = {BASE_IMG_DIR}")
     print("============================================================")
 
-    if not os.path.exists(MODEL_PATH):
-        print("[ERROR] autoencoder_final.pth not found")
-        sys.exit(1)
+    # ------------------------------------------------------------------
+    # 단계별 기동 (연속 학습)
+    #
+    # 예전에는 모델 파일이 없으면 여기서 sys.exit(1) 로 죽었다. 그래서 새로
+    # 설치한 현장은 수 주간 데이터를 모아 오토인코더를 만들기 전까지 감시
+    # 자체가 불가능했다. 이제는 준비된 만큼만 쓰고 계속 동작한다.
+    #
+    #   0단계  절대 임계값        학습 0건. 설치 즉시.
+    #   1단계  셀별 온라인 통계    수 시간 후. z-score 채점.
+    #   2단계  오토인코더          모델이 준비되면. 셀 간 결합 분포까지.
+    #
+    # 0단계는 이후 단계에서도 계속 살아 있다. 학습 기반 판정이 모두 실패해도
+    # 고정된 선 하나는 남아 있어야 하기 때문이다.
+    # ------------------------------------------------------------------
 
-    if not os.path.exists(SCALER_PATH):
-        print("[ERROR] scaler.pkl not found")
-        sys.exit(1)
+    abs_guard = AbsoluteThreshold(config)
+    print(f"[STAGE 0] {abs_guard.describe()}")
 
-    model = AutoEncoder(INPUT_DIM, LATENT_DIM, OUTPUT_DIM).to(device)
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
-    scaler = load_scaler(SCALER_PATH)
+    if not abs_guard.enabled:
+        print("[STAGE 0] 경고 — 절대 임계값이 지정되지 않아 0단계 경보가")
+        print("          동작하지 않습니다. 설비의 정상 가동 온도를 확인해")
+        print("          env.ini 의 [CONSTANTS] 에 ABS_TEMP_WARN/ALARM 과")
+        print("          ABS_RISE_WARN/ALARM 을 지정하십시오.")
+        print("          값을 모르면 하루쯤 돌려 기준선이 쌓이기를 기다리십시오.")
+        print("          아래에 이 현장에서 관측된 권장값을 출력합니다.")
 
-    # load_scaler()가 numpy 버전 문제로 scaler.pkl 대신 scaler.npz로 조용히 폴백할 수 있는데,
-    # npz가 예전(다른 차원) 학습에서 남은 것이면 모델과 안 맞는 스케일러를 쓰게 된다.
-    # 매 루프에서 반복적으로 실패하며 트레이스백만 쌓이는 대신, 시작 시점에 한 번 명확히 걸러낸다.
-    if getattr(scaler, "n_features_in_", None) != INPUT_DIM:
-        print(
-            f"[FATAL] scaler({SCALER_PATH})의 n_features_in_="
-            f"{getattr(scaler, 'n_features_in_', None)} 가 INPUT_DIM({INPUT_DIM})과 다릅니다. "
-            f"\n scaler.pkl/scaler.npz가 현재 모델과 다른 차원으로 학습된 상태입니다. "
-            f"\n autoencoder-7.py로 재학습하거나 scaler.npz를 다시 생성하세요."
-        )
-        print("Program Terminated")
-        sys.exit(1)
-
-    print(
-        f"[INFO] Model & scaler loaded. "
-        f"(INPUT_DIM={INPUT_DIM}, LATENT_DIM={LATENT_DIM})"
+    BASELINE_PATH = os.path.join(config["LOCAL_USER_PATH"], "online_baseline.npz")
+    baseline = OnlineBaseline.load(
+        BASELINE_PATH, INPUT_DIM,
+        min_samples=config.get("BASELINE_MIN_SAMPLES"),
+        min_hours=config.get("BASELINE_MIN_HOURS"),
     )
+    print(f"[STAGE 1] 셀별 기준선 — {baseline.summary()}")
 
+    model = None
+    scaler = None
+
+    if not os.path.exists(MODEL_PATH) or not os.path.exists(SCALER_PATH):
+        print("[STAGE 2] 오토인코더 없음 — 0~1단계로 동작합니다.")
+        print("          데이터가 쌓이면 히스토리 DB로 학습해 배치하십시오.")
+    else:
+        try:
+            m = AutoEncoder(INPUT_DIM, LATENT_DIM, OUTPUT_DIM).to(device)
+            m.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+            sc = load_scaler(SCALER_PATH)
+
+            # load_scaler()가 numpy 버전 문제로 scaler.pkl 대신 scaler.npz로 조용히
+            # 폴백할 수 있는데, npz가 예전(다른 차원) 학습에서 남은 것이면 모델과
+            # 안 맞는 스케일러를 쓰게 된다. 시작 시점에 한 번 명확히 걸러낸다.
+            if getattr(sc, "n_features_in_", None) != INPUT_DIM:
+                # 예전에는 여기서 종료했다. 이제는 오토인코더만 포기하고
+                # 0~1단계로 계속 간다. 짝이 안 맞는 모델로 채점하는 것보다
+                # 낫고, 감시를 통째로 멈추는 것보다도 낫다.
+                print(
+                    f"[STAGE 2] scaler 의 n_features_in_="
+                    f"{getattr(sc, 'n_features_in_', None)} 가 INPUT_DIM({INPUT_DIM})과 "
+                    f"다릅니다. 오토인코더를 쓰지 않고 0~1단계로 동작합니다."
+                )
+            else:
+                model, scaler = m, sc
+                print(f"[STAGE 2] 오토인코더 사용 "
+                      f"(INPUT_DIM={INPUT_DIM}, LATENT_DIM={LATENT_DIM})")
+
+        except Exception as e:
+            print(f"[STAGE 2] 오토인코더를 읽지 못해 0~1단계로 동작합니다: {e}")
+
+    baseline_dirty = 0
+    suggested_once = False
     prev_fire_detected = False
 
     input_img = Get_Input_Image_URL(IMG_URL)
@@ -584,13 +639,142 @@ def main_loop(config, sensor_db_config):
             print('cur_error_code ; ',cur_error_code)
 
 
+            stage_used = 0
+            abs_level = 0
+            abs_reason = ""
+
             if cur_error_code == ERR_CODE.NO_ERR:
                 x_full = extract_mach_area(median_hot, hotlist_mask)
+                x_row = np.asarray(x_full, dtype=np.float64).reshape(-1)
 
-                score_list, mse_list, valid = normality_score(x_full, hotlist_mask, scaler, model)
+                # --- 0단계. 학습과 무관하게 항상 먼저 본다 ---------------
+                abs_level, abs_reason, peak_t, rise_t, abs_cell = abs_guard.check(
+                    x_row, hotlist_mask, time.time()
+                )
 
-                machine_score = float(np.mean(score_list))
-                machine_mse   = float(np.mean(mse_list))
+                if abs_level:
+                    print(f"[절대임계] {level_name(abs_level)} — {abs_reason} "
+                          f"(셀 {abs_cell})")
+
+                # --- 두 판정을 함께 낸다 ---------------------------------
+                #
+                # 예전에는 오토인코더가 있으면 기준선 채점을 아예 건너뛰었다.
+                # kict1 에서 그 설계의 약점이 드러났다. 카메라가 틀어진 뒤
+                # 오토인코더가 0.003 을 계속 내놓았는데, 설비가 이상해서가
+                # 아니라 모델이 보는 위치가 달라졌기 때문이었다. 그때 기준선이
+                # 함께 채점하고 있었다면 "마스크 셀 온도 자체는 정상 범위" 라는
+                # 두 번째 의견이 나와, 설비가 아니라 모델 쪽 문제라는 것을
+                # 훨씬 일찍 가리켰을 것이다.
+                #
+                # 두 판정은 보는 것이 다르다.
+                #   기준선     이 셀이 이렇게 뜨거운 적 있었나 (직접적, 해석 가능)
+                #   오토인코더 셀들의 조합이 평소 같은가 (미묘하지만 통째로 틀릴 수 있음)
+                #
+                # 그래서 둘 다 계산하고 낮은 쪽을 점수로 쓴다. 화재 감지에서는
+                # 보수적인 쪽이 안전하다. 기준선은 어차피 매 프레임 갱신되고
+                # 있어 score() 한 번 더 부르는 비용뿐이다.
+                ae_score = None
+                bl_score = None
+                exceed = 0.0
+                worst = -1
+
+                if model is not None and scaler is not None:
+                    score_list, mse_list, valid = normality_score(
+                        x_full, hotlist_mask, scaler, model
+                    )
+                    ae_score = float(np.mean(score_list))
+                    machine_mse = float(np.mean(mse_list))
+
+                if baseline.is_ready():
+                    bl_score, exceed, worst = baseline.score(x_row, hotlist_mask)
+
+                if ae_score is not None and bl_score is not None:
+                    machine_score = min(ae_score, bl_score)
+                    stage_used = 2
+                    print(f"[채점] 오토인코더 {ae_score:.4f} / "
+                          f"기준선 {bl_score:.4f} (초과 {exceed:+.1f}도, 셀 {worst}) "
+                          f"→ {machine_score:.4f}")
+
+                    # 두 값이 갈리되, 한쪽은 멀쩡하다고 할 때만 진단 신호다.
+                    # 둘 다 낮으면 민감도 차이일 뿐 서로 어긋난 것이 아니다.
+                    gap = ae_score - bl_score
+                    if (abs(gap) >= SCORE_DIVERGENCE_WARN
+                            and max(ae_score, bl_score) >= SCORE_NORMAL_SIDE):
+                        if gap < 0:
+                            print(f"[불일치] 오토인코더만 낮습니다({abs(gap):.2f}). "
+                                  f"셀 온도는 정상 범위이므로 설비 이상보다 "
+                                  f"카메라 조준·모델 쪽을 먼저 확인하십시오.")
+                        else:
+                            print(f"[불일치] 기준선만 낮습니다({abs(gap):.2f}). "
+                                  f"셀 {worst} 가 전례 없는 온도인데 오토인코더는 "
+                                  f"정상으로 봅니다. 모델 감도를 확인하십시오.")
+
+                elif ae_score is not None:
+                    machine_score = ae_score
+                    stage_used = 2
+
+                elif bl_score is not None:
+                    machine_score = bl_score
+                    machine_mse = float(exceed)
+                    valid = machine_score >= 0.0
+                    stage_used = 1
+                    print(f"[기준선] 초과 {exceed:+.1f}도 (셀 {worst})")
+
+                else:
+                    # 0단계. 아직 채점할 근거가 없다. 절대 임계값 경보만
+                    # 유효하므로 점수는 -1(미산출)로 둔다. 0.0 으로 두면
+                    # "완전 이상" 으로 오해된다.
+                    print(f"[기준선] 누적 중 — {baseline.summary()}")
+
+                # 절대 온도 경보가 꺼져 있으면, 기준선이 쌓이는 대로 권장값을
+                # 알려 준다. 설치자가 현장 온도를 몰라 못 적는 문제를 푼다.
+                if not abs_guard.enabled and not suggested_once:
+                    sug = baseline.suggest_temp_thresholds(hotlist_mask)
+                    if sug:
+                        print(f"[STAGE 0] 권장 임계값 — 관측된 정상 최고온도 기준으로 "
+                              f"ABS_TEMP_WARN={sug[0]:.0f}, ABS_TEMP_ALARM={sug[1]:.0f} "
+                              f"(env.ini 에 적은 뒤 재시작하십시오)")
+                        suggested_once = True
+
+                # --- 화면 이동 감시 --------------------------------------
+                # 마스크 안의 셀만 보는 채점으로는 카메라가 밀린 것을 잡지
+                # 못한다. 실제로 kict1 은 2026-07-13 에 화면이 위1칸·오른3칸
+                # 밀렸는데, 가장 뜨거워진 셀이 마스크 밖이라 채점에는
+                # 걸리지 않았다. 64셀 전체 패턴으로 따로 본다.
+                corr = baseline.scene_shift()
+                scene_ok = corr is None or corr >= SCENE_SHIFT_MIN
+
+                if not scene_ok:
+                    print(f"[화면이동] 기준 패턴과의 상관계수 {corr:.3f} "
+                          f"(기준 {SCENE_SHIFT_MIN}). 카메라 조준을 확인하십시오.")
+
+                # --- 기준선 누적 -----------------------------------------
+                # [안전 규칙] 다음 두 경우는 기준선에 넣지 않는다.
+                #
+                #  1) 절대 임계값이 걸린 프레임
+                #     서서히 커지는 열점을 "요즘의 정상" 으로 흡수해 버리면,
+                #     정작 위험할 때 아무 경보도 나오지 않는다.
+                #
+                #  2) 화면이 밀린 것으로 보일 때
+                #     그대로 배우면 며칠 만에 틀어진 조준을 정상으로 학습하고
+                #     경보가 저절로 풀린다. 마스크가 엉뚱한 곳을 보는 채로
+                #     고장이 조용히 묻히는 것이 가장 나쁜 결말이다.
+                #     학습은 멈추되 EWMA 는 계속 움직여, 조준을 되돌리면
+                #     경보가 자연히 풀리도록 한다.
+                learn_ok = (abs_level == 0) and scene_ok
+
+                if baseline.update(x_row, hour=datetime.now().hour,
+                                   learn=learn_ok):
+                    baseline_dirty += 1
+
+                # 매 프레임 저장하면 디스크만 혹사한다. 200건마다 남긴다.
+                # 중간에 꺼져도 최대 200건만 잃는다.
+                if baseline_dirty >= 200:
+                    try:
+                        baseline.save(BASELINE_PATH)
+                        baseline_dirty = 0
+                    except Exception as e:
+                        print(f"[WARN] 기준선 저장 실패: {e}")
 
             people, fall, fire_list = read_people_and_area(sensor_db_config)
             hot_list = median_hot.flatten().tolist()
@@ -615,7 +799,8 @@ def main_loop(config, sensor_db_config):
                 s0_hum=s0_hum,
             )
 
-            print(f"[machine_score] {machine_score:.4f} [valid] {valid}")
+            print(f"[machine_score] {machine_score:.4f} [valid] {valid} "
+                  f"[stage] {stage_used}")
 
             update_db_current_status(sensor_db_config, machine_score)
 
@@ -625,7 +810,11 @@ def main_loop(config, sensor_db_config):
             # ---------- ALERT ----------
             FIRE_THRESHOLD = 0.5
 
-            fire_detected = any(v > FIRE_THRESHOLD for v in fire_list)
+            # 절대 임계값 경보는 학습 상태와 무관하게 화재 신호로 취급한다.
+            # 0단계(모델도 기준선도 없는 설치 당일)에서 유일하게 동작하는
+            # 경보 경로이기도 하다.
+            fire_detected = (any(v > FIRE_THRESHOLD for v in fire_list)
+                             or abs_level == LEVEL_ALARM)
 
             if ENABLE_SMS_ALERTS:
                 if fire_detected and not prev_fire_detected:
@@ -637,6 +826,13 @@ def main_loop(config, sensor_db_config):
 
         except KeyboardInterrupt:
             print("[INFO] AutoEncoder stopped.")
+            # 누적분을 잃지 않도록 종료 직전에 한 번 더 저장한다.
+            if baseline_dirty:
+                try:
+                    baseline.save(BASELINE_PATH)
+                    print(f"[INFO] 기준선 저장 — {baseline.summary()}")
+                except Exception as e:
+                    print(f"[WARN] 기준선 저장 실패: {e}")
             break
 
         except Exception as e:

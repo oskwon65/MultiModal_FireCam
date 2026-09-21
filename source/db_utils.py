@@ -755,6 +755,27 @@ def Set_Env_Config(user_ID):
         local_config["FLIR_HEIGHT"]         = config.getint("CONSTANTS", "FLIR_HEIGHT")
         local_config["MAXNUM_THERMAL_FIFO"] = config.getint("CONSTANTS", "MAXNUM_THERMAL_FIFO")
 
+        # 절대 임계값 (연속 학습 0단계). 학습이 전혀 없는 상태에서도 동작해야
+        # 하는 안전망이라, 다른 항목처럼 없으면 죽이지 않고 None 으로 넘긴다.
+        # 온도 임계값이 없으면 판정을 끄고 상승률만 쓴다. 설비마다 정상 온도가
+        # 전혀 달라 추측한 기본값은 오경보만 낳기 때문이다.
+        # 자세한 내용은 predict_machine/abs_threshold.py 참고.
+        for _k in ("ABS_TEMP_WARN", "ABS_TEMP_ALARM",
+                   "ABS_RISE_WARN", "ABS_RISE_ALARM"):
+            local_config[_k] = (config.getfloat("CONSTANTS", _k)
+                                if config.has_option("CONSTANTS", _k)
+                                else None)
+
+        # 연속 학습 단계 전환 조건. 모니터링 프로그램의 [설정] 창에서 바꾼다.
+        # 현장마다 수집 주기가 달라(kict1 5초 / cj_busan_1 30초) 같은 표본 수를
+        # 모으는 시간이 크게 차이나므로 코드에 박지 않는다. 없으면 None 을 넘겨
+        # 파이썬 쪽 기본값(online_baseline.MIN_SAMPLES 등)을 쓰게 한다.
+        for _k in ("BASELINE_MIN_SAMPLES", "BASELINE_MIN_HOURS",
+                   "RETRAIN_MIN_SAMPLES"):
+            local_config[_k] = (config.getint("CONSTANTS", _k)
+                                if config.has_option("CONSTANTS", _k)
+                                else None)
+
         local_config["THR_CONF_FIRE"]   = config.getfloat("CONSTANTS", "THR_CONF_FIRE")
         local_config["THR_TEMPT_FIRE"]  = config.getfloat("CONSTANTS", "THR_TEMPT_FIRE")
         local_config["THR_CONF_SMOKE"]  = config.getfloat("CONSTANTS", "THR_CONF_SMOKE")
