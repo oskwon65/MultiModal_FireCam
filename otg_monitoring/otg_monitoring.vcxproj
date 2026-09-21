@@ -202,6 +202,7 @@
   <ItemGroup>
     <ClCompile Include="Dlg_Set_MmCam_Env.cpp" />
     <ClCompile Include="MmCam_db_utils.cpp" />
+    <ClCompile Include="MmCam_ini_edit.cpp" />
     <ClCompile Include="MmCam_monitoringDlg.cpp" />
     <ClCompile Include="otg_monitoring.cpp" />
     <ClCompile Include="pch.cpp">

@@ -18,6 +18,28 @@ extern const char* GetMmCamStartPath();
 #define ID_BTN_SET_MASK_CAM_POS		2020
 #define ID_BTN_CLOSE							2000
 
+// 연속 학습 단계 전환 조건
+#define ID_ED_BASE_SAMPLES				2100
+#define ID_ED_BASE_HOURS					2101
+#define ID_ED_AE_SAMPLES					2102
+#define ID_BTN_SAVE_STAGE					2110
+
+// 파이썬 쪽 기본값과 반드시 같아야 한다.
+//   BASELINE_MIN_SAMPLES / BASELINE_MIN_HOURS : predict_machine/online_baseline.py
+//   RETRAIN_MIN_SAMPLES                       : retrain/nightly_retrain.py
+// 값이 없을 때 양쪽이 서로 다른 기본값을 쓰면, 화면에 보이는 숫자와 실제
+// 동작이 어긋나면서 원인을 찾기 어려워진다.
+#define DEF_BASE_SAMPLES	3000
+#define DEF_BASE_HOURS		18
+#define DEF_AE_SAMPLES		5000
+
+extern std::string ini_read_utf8(const std::string&, const std::string&,
+                                 const std::string&, const std::string&);
+extern int  ini_read_int_utf8(const std::string&, const std::string&,
+                              const std::string&, int);
+extern bool ini_write_int_utf8(const std::string&, const std::string&,
+                               const std::string&, int);
+
 CDlg_Set_MmCam_Env::CDlg_Set_MmCam_Env(CWnd* pParent /*=nullptr*/)
 	: CDialogEx(IDD_DLG_CMD, pParent)
 {
@@ -39,6 +61,7 @@ BEGIN_MESSAGE_MAP(CDlg_Set_MmCam_Env, CDialogEx)
 	ON_BN_CLICKED(ID_BTN_SET_MASK_CAM_POS, &CDlg_Set_MmCam_Env::OnBnClickedButtonChangeMask)
 	ON_BN_CLICKED(ID_BTN_GET_MASK_SVR, &CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask)
 	ON_BN_CLICKED(ID_BTN_CLOSE, &CDlg_Set_MmCam_Env::OnBnClickedClose)
+	ON_BN_CLICKED(ID_BTN_SAVE_STAGE, &CDlg_Set_MmCam_Env::OnBnClickedSaveStage)
 END_MESSAGE_MAP()
 
 extern void update_db_main_command(const char* new_code);
@@ -66,7 +89,8 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		int newX = rectParent.left;
 		int newY = rectParent.bottom-70;
 		int newWidth = rectParent.Width();
-		int newHeight = 200;
+		// 연속 학습 단계 설정란이 아래에 붙으면서 200 -> 330 으로 늘렸다.
+		int newHeight = 330;
 
 		// 내 다이얼로그 위치 이동 (크기는 유지, 위치만 변경)
 		// SWP_NOZORDER: 윈도우 겹침 순서 유지, SWP_NOSIZE: 원래 리소스 뷰 크기 유지
@@ -109,10 +133,129 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 
 	m_cap_0.SetWindowTextA(tmsg.c_str());
 
+	// -------------------------------------------------------------
+	// 연속 학습 단계 전환 조건
+	//
+	// 현장마다 수집 주기가 다르다. kict1 은 5초, cj_busan_1 은 30초라
+	// 같은 표본 수를 모으는 데 걸리는 시간이 6배 차이난다. 설비 가동 주기도
+	// 다르다. 그래서 전환 조건을 코드에 박지 않고 여기서 조정한다.
+	// -------------------------------------------------------------
+
+	const long lbl_w = 200, ed_w = 90, row_h = 32;
+	long y = ctrl_btn_top + ctrl_btn_hei + 20;
+
+	m_capStage.Create("[ 연속 학습 단계 전환 조건 ]",
+		WS_CHILD | WS_VISIBLE | SS_LEFT,
+		CRect(nBase_X, y, nBase_X + 520, y + 26), this);
+	y += 32;
+
+	struct Row { CStatic* lbl; CEdit* ed; const char* text; UINT id; };
+	Row rows[] = {
+		{ &m_lblBaseSamples, &m_edBaseSamples, "1단계 기준선 최소 표본 (건)",  ID_ED_BASE_SAMPLES },
+		{ &m_lblBaseHours,   &m_edBaseHours,   "1단계 최소 관측 시간대 (0~24)", ID_ED_BASE_HOURS   },
+		{ &m_lblAeSamples,   &m_edAeSamples,   "2단계 재학습 최소 표본 (건)",  ID_ED_AE_SAMPLES   },
+	};
+
+	for (int i = 0; i < 3; ++i)
+	{
+		rows[i].lbl->Create(rows[i].text, WS_CHILD | WS_VISIBLE | SS_LEFT,
+			CRect(nBase_X, y + 4, nBase_X + lbl_w, y + 4 + 24), this);
+
+		rows[i].ed->Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP
+			| ES_NUMBER | ES_RIGHT,
+			CRect(nBase_X + lbl_w + 10, y, nBase_X + lbl_w + 10 + ed_w, y + 26),
+			this, rows[i].id);
+
+		y += row_h;
+	}
+
+	m_btnSaveStage.Create("저장", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+		CRect(nBase_X + lbl_w + 10 + ed_w + 20, ctrl_btn_top + ctrl_btn_hei + 52,
+		      nBase_X + lbl_w + 10 + ed_w + 20 + 90, ctrl_btn_top + ctrl_btn_hei + 52 + 36),
+		this, ID_BTN_SAVE_STAGE);
+
+	LoadStageSettings();
+
 	// 다이알로그와 하위개체까지 Font 지정 효과 전달하기 위함
 	SendMessageToDescendants(WM_SETFONT, (WPARAM)m_stdFont.GetSafeHandle(), TRUE);
 
 	return TRUE;  // return TRUE unless you set the focus to a control
+}
+
+//---------------------------------------------------------
+
+std::string CDlg_Set_MmCam_Env::StageIniPath() const
+{
+	return std::string(GetMmCamStartPath()) + "users\\" + gUserID + "\\env.ini";
+}
+
+//---------------------------------------------------------
+
+void CDlg_Set_MmCam_Env::LoadStageSettings()
+{
+	const std::string ini = StageIniPath();
+
+	CString s;
+	s.Format("%d", ini_read_int_utf8(ini, "CONSTANTS", "BASELINE_MIN_SAMPLES", DEF_BASE_SAMPLES));
+	m_edBaseSamples.SetWindowTextA(s);
+
+	s.Format("%d", ini_read_int_utf8(ini, "CONSTANTS", "BASELINE_MIN_HOURS", DEF_BASE_HOURS));
+	m_edBaseHours.SetWindowTextA(s);
+
+	s.Format("%d", ini_read_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_SAMPLES", DEF_AE_SAMPLES));
+	m_edAeSamples.SetWindowTextA(s);
+}
+
+//---------------------------------------------------------
+
+void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
+{
+	if (gUserID.empty()) {
+		m_cap_0.SetWindowTextA("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		return;
+	}
+
+	CString a, b, c;
+	m_edBaseSamples.GetWindowTextA(a);
+	m_edBaseHours.GetWindowTextA(b);
+	m_edAeSamples.GetWindowTextA(c);
+
+	const int base_samples = atoi(a);
+	const int base_hours   = atoi(b);
+	const int ae_samples   = atoi(c);
+
+	// 터무니없는 값이 들어가면 감시가 영영 시작되지 않거나(너무 큼),
+	// 아무것도 못 배운 상태로 채점을 시작한다(너무 작음). 여기서 막는다.
+	if (base_samples < 100 || base_samples > 1000000) {
+		m_cap_0.SetWindowTextA("[ERROR] 1단계 최소 표본은 100 ~ 1,000,000 사이여야 합니다.");
+		return;
+	}
+	if (base_hours < 1 || base_hours > 24) {
+		m_cap_0.SetWindowTextA("[ERROR] 최소 관측 시간대는 1 ~ 24 사이여야 합니다.");
+		return;
+	}
+	if (ae_samples < 1000 || ae_samples > 1000000) {
+		m_cap_0.SetWindowTextA("[ERROR] 2단계 최소 표본은 1,000 ~ 1,000,000 사이여야 합니다.");
+		return;
+	}
+
+	const std::string ini = StageIniPath();
+
+	bool ok = ini_write_int_utf8(ini, "CONSTANTS", "BASELINE_MIN_SAMPLES", base_samples)
+		&& ini_write_int_utf8(ini, "CONSTANTS", "BASELINE_MIN_HOURS", base_hours)
+		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_SAMPLES", ae_samples);
+
+	CStringA msg;
+	if (ok) {
+		// 파이썬 프로세스는 기동할 때 설정을 읽는다. 저장만으로는 반영되지 않는다.
+		msg.Format("[저장 완료] 1단계 %d건/%d시간대, 2단계 %d건"
+			"   -  '정지' 후 '시작'을 눌러야 반영됩니다.",
+			base_samples, base_hours, ae_samples);
+	}
+	else {
+		msg.Format("[ERROR] env.ini 를 쓰지 못했습니다: %s", ini.c_str());
+	}
+	m_cap_0.SetWindowTextA(msg);
 }
 
 //---------------------------------------------------------

@@ -50,6 +50,9 @@
     <ClCompile Include="MmCam_db_utils.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="MmCam_ini_edit.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
     <ClCompile Include="MmCam_monitoringDlg.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>

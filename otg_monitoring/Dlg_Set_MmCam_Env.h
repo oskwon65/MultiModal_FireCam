@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include <string>
+
 // CDlg_Set_MmCam_Env 대화 상자
 
 class CDlg_Set_MmCam_Env : public CDialogEx
@@ -24,9 +26,20 @@ public:
     CFont   m_stdFont;
     CStatic m_cap_0;
 
+    // 연속 학습 단계 전환 조건 (users\<id>\env.ini 의 [CONSTANTS])
+    CStatic m_capStage;                                  // 안내 문구
+    CStatic m_lblBaseSamples, m_lblBaseHours, m_lblAeSamples;
+    CEdit   m_edBaseSamples, m_edBaseHours, m_edAeSamples;
+    CButton m_btnSaveStage;
+
     virtual BOOL OnInitDialog();
     afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
     afx_msg void OnBnClickedButtonChangeMask();
     afx_msg void OnBnClickedButtonGetMask();
     afx_msg void OnBnClickedClose();
+    afx_msg void OnBnClickedSaveStage();
+
+private:
+    std::string StageIniPath() const;
+    void        LoadStageSettings();
 };
