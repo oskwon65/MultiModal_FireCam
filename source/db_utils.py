@@ -776,6 +776,13 @@ def Set_Env_Config(user_ID):
                                 if config.has_option("CONSTANTS", _k)
                                 else None)
 
+        # 계산 기준일 (YYYY-MM-DD). 이 날짜 이전 데이터는 기준선 누적과
+        # 재학습 표집에서 모두 제외한다. 카메라를 옮기거나 설비를 바꾼 뒤
+        # "그 전에 배운 것은 잊으라" 고 지시하는 수단이다.
+        local_config["CALC_BASE_DATE"] = (
+            config.get("CONSTANTS", "CALC_BASE_DATE").strip()
+            if config.has_option("CONSTANTS", "CALC_BASE_DATE") else "")
+
         local_config["THR_CONF_FIRE"]   = config.getfloat("CONSTANTS", "THR_CONF_FIRE")
         local_config["THR_TEMPT_FIRE"]  = config.getfloat("CONSTANTS", "THR_TEMPT_FIRE")
         local_config["THR_CONF_SMOKE"]  = config.getfloat("CONSTANTS", "THR_CONF_SMOKE")

@@ -122,7 +122,8 @@ class StratifiedReservoir:
 
 
 def collect(conn, db_name, n_cells, target, mask=None,
-            min_score=NORMAL_MIN_SCORE, seed=None, verbose=True):
+            min_score=NORMAL_MIN_SCORE, seed=None, verbose=True,
+            base_date=None):
     """
     히스토리 DB 전체를 한 번 훑어 학습용 표본을 만든다.
 
@@ -132,6 +133,16 @@ def collect(conn, db_name, n_cells, target, mask=None,
     """
     cur = conn.cursor()
     tables = list_history_tables(cur, db_name)
+
+    # 계산 기준일 이전 테이블은 아예 읽지 않는다. 기준선과 달리 히스토리 DB 는
+    # 날짜별 테이블이라 과거 구간을 정확히 잘라낼 수 있다. 카메라를 옮기거나
+    # 설비를 바꾸기 전 데이터로 학습하면 바뀌기 전 모습을 정상으로 배운다.
+    if base_date:
+        cutoff = "results_history_" + str(base_date).replace("-", "")
+        dropped = [t for t in tables if t < cutoff]
+        tables = [t for t in tables if t >= cutoff]
+        if dropped and verbose:
+            print(f"[재생버퍼] 기준일({base_date}) 이전 테이블 {len(dropped)}개 제외")
 
     if not tables:
         cur.close()

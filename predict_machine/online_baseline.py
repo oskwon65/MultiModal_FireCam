@@ -111,12 +111,20 @@ SCENE_SHIFT_MIN = 0.95
 class OnlineBaseline:
     """셀별 정상 범위를 누적하고 초과 정도로 채점한다."""
 
-    def __init__(self, n_cells, min_samples=None, min_hours=None):
+    def __init__(self, n_cells, min_samples=None, min_hours=None, base_date=None):
         # 전환 조건은 현장마다 다르다. kict1 은 5초, cj_busan_1 은 30초 주기라
         # 같은 표본 수를 모으는 데 걸리는 시간이 6배 차이난다. 그래서 코드에
         # 박지 않고 env.ini 에서 받는다 (모니터링 프로그램의 [설정] 창).
         self.min_samples = int(min_samples) if min_samples else MIN_SAMPLES
         self.min_hours = int(min_hours) if min_hours else MIN_HOURS_COVERED
+
+        # 계산 기준일 (YYYY-MM-DD). 이 날짜 이전 프레임은 누적하지 않는다.
+        #
+        # 히스토그램에는 표본별 시각이 남지 않으므로 과거 구간만 골라 빼낼 수
+        # 없다. 그래서 기준일이 바뀌면 누적을 버리고 처음부터 다시 쌓는다.
+        # 카메라를 옮겼거나 설비를 바꾼 뒤 "그 전에 배운 것은 잊으라" 고
+        # 지시하는 수단이다. 빈 값이면 제한 없이 계속 쌓는다.
+        self.base_date = (str(base_date).strip() if base_date else "")
 
         self.n_cells = int(n_cells)
         self.count = 0
@@ -134,7 +142,7 @@ class OnlineBaseline:
 
     # ------------------------------------------------------------------ 누적
 
-    def update(self, x, hour=None, learn=True):
+    def update(self, x, hour=None, learn=True, day=None):
         """
         프레임 하나를 반영한다.
 
@@ -144,6 +152,10 @@ class OnlineBaseline:
         EWMA 를 계속 움직이는 이유: 여기서 멈추면 상관계수가 낮은 채로
         굳어 버려, 나중에 조준을 원위치로 되돌려도 경보가 풀리지 않는다.
         EWMA 만 따라가게 두면 복구 시 상관계수가 자연히 회복된다.
+
+        day 는 이 프레임의 날짜(YYYY-MM-DD). 계산 기준일보다 이르면
+        누적하지 않는다. 기준일을 앞날로 잡아 두면 그날이 올 때까지
+        기다렸다가 쌓기 시작한다.
         """
         x = np.asarray(x, dtype=np.float64).reshape(-1)
 
@@ -158,6 +170,9 @@ class OnlineBaseline:
             self.scene_ewma += SCENE_EWMA_ALPHA * (x - self.scene_ewma)
 
         if not learn:
+            return False
+
+        if self.base_date and day and str(day) < self.base_date:
             return False
 
         # 평균·분산 (Welford)
@@ -315,14 +330,20 @@ class OnlineBaseline:
             hist=self.hist,
             hours_seen=self.hours_seen,
             scene_ewma=self.scene_ewma,
+            base_date=self.base_date,
         )
         # 저장 도중 종료되어 파일이 반만 남는 것을 막는다.
         os.replace(tmp, path)
 
     @classmethod
-    def load(cls, path, n_cells, min_samples=None, min_hours=None):
-        """없거나 깨졌거나 격자 크기가 달라졌으면 새로 시작한다."""
-        obj = cls(n_cells, min_samples, min_hours)
+    def load(cls, path, n_cells, min_samples=None, min_hours=None, base_date=None):
+        """
+        없거나 깨졌거나 격자 크기가 달라졌으면 새로 시작한다.
+
+        계산 기준일이 저장된 것과 다를 때도 새로 시작한다. 기준일을 바꾸는
+        것은 "그 전에 배운 것은 잊으라" 는 지시이기 때문이다.
+        """
+        obj = cls(n_cells, min_samples, min_hours, base_date)
 
         if not os.path.exists(path):
             return obj
@@ -332,6 +353,13 @@ class OnlineBaseline:
 
             if int(d["n_cells"]) != n_cells:
                 print(f"[WARN] {path} 의 셀 수가 달라 기준선을 새로 시작합니다.")
+                return obj
+
+            saved_base = str(d["base_date"]) if "base_date" in d.files else ""
+            if saved_base != obj.base_date:
+                print(f"[INFO] 계산 기준일이 바뀌어("
+                      f"{saved_base or '없음'} -> {obj.base_date or '없음'}) "
+                      f"기준선을 새로 시작합니다.")
                 return obj
 
             obj.count = int(d["count"])
@@ -344,11 +372,12 @@ class OnlineBaseline:
 
         except Exception as e:
             print(f"[WARN] 기준선을 읽지 못해 새로 시작합니다: {e}")
-            return cls(n_cells, min_samples, min_hours)
+            return cls(n_cells, min_samples, min_hours, base_date)
 
         return obj
 
     def summary(self):
+        tail = f" · 기준일 {self.base_date}" if self.base_date else ""
         return (f"표본 {self.count:,}/{self.min_samples:,}건 · "
                 f"시간대 {self.hours_covered}/{self.min_hours} · "
-                f"{'사용 가능' if self.is_ready() else '누적 중'}")
+                f"{'사용 가능' if self.is_ready() else '누적 중'}{tail}")

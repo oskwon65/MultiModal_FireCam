@@ -22,6 +22,7 @@ extern const char* GetMmCamStartPath();
 #define ID_ED_BASE_SAMPLES				2100
 #define ID_ED_BASE_HOURS					2101
 #define ID_ED_AE_SAMPLES					2102
+#define ID_ED_BASE_DATE						2103
 #define ID_BTN_SAVE_STAGE					2110
 
 // 파이썬 쪽 기본값과 반드시 같아야 한다.
@@ -32,6 +33,8 @@ extern const char* GetMmCamStartPath();
 #define DEF_BASE_SAMPLES	3000
 #define DEF_BASE_HOURS		18
 #define DEF_AE_SAMPLES		5000
+// 계산 기준일은 기본값이 없다. 빈 값 = 제한 없이 전체 기간 사용.
+#define DEF_CALC_BASE_DATE	""
 
 extern std::string ini_read_utf8(const std::string&, const std::string&,
                                  const std::string&, const std::string&);
@@ -39,6 +42,8 @@ extern int  ini_read_int_utf8(const std::string&, const std::string&,
                               const std::string&, int);
 extern bool ini_write_int_utf8(const std::string&, const std::string&,
                                const std::string&, int);
+extern bool ini_write_utf8(const std::string&, const std::string&,
+                           const std::string&, const std::string&);
 
 CDlg_Set_MmCam_Env::CDlg_Set_MmCam_Env(CWnd* pParent /*=nullptr*/)
 	: CDialogEx(IDD_DLG_CMD, pParent)
@@ -89,8 +94,8 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		int newX = rectParent.left;
 		int newY = rectParent.bottom-70;
 		int newWidth = rectParent.Width();
-		// 연속 학습 단계 설정란이 아래에 붙으면서 200 -> 330 으로 늘렸다.
-		int newHeight = 330;
+		// 연속 학습 단계 설정란(4행)이 아래에 붙으면서 200 -> 290 으로 늘렸다.
+		int newHeight = 290;
 
 		// 내 다이얼로그 위치 이동 (크기는 유지, 위치만 변경)
 		// SWP_NOZORDER: 윈도우 겹침 순서 유지, SWP_NOSIZE: 원래 리소스 뷰 크기 유지
@@ -102,7 +107,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// -------------------------------------------------------------
 
 	m_stdFont.CreateFont(
-		22,                         // 폰트 높이 (픽셀 단위 크기)
+		17,                         // 폰트 높이. 설정 항목이 늘어 25% 줄였다 (22 -> 17)
 		0, 0, 0,
 		FW_NORMAL, //FW_BOLD,                  
 		FALSE, FALSE, 0,
@@ -141,37 +146,51 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 다르다. 그래서 전환 조건을 코드에 박지 않고 여기서 조정한다.
 	// -------------------------------------------------------------
 
-	const long lbl_w = 200, ed_w = 90, row_h = 32;
-	long y = ctrl_btn_top + ctrl_btn_hei + 20;
+	// 폰트를 25% 줄였으므로 라벨 폭과 행 높이도 같이 줄인다.
+	const long lbl_w = 170, ed_w = 80, row_h = 26;
+	const long stage_top = ctrl_btn_top + ctrl_btn_hei + 16;
+	long y = stage_top;
 
 	m_capStage.Create("[ 연속 학습 단계 전환 조건 ]",
 		WS_CHILD | WS_VISIBLE | SS_LEFT,
-		CRect(nBase_X, y, nBase_X + 520, y + 26), this);
-	y += 32;
+		CRect(nBase_X, y, nBase_X + 520, y + 22), this);
+	y += 26;
 
-	struct Row { CStatic* lbl; CEdit* ed; const char* text; UINT id; };
+	struct Row { CStatic* lbl; CEdit* ed; const char* text; UINT id; bool numeric; };
 	Row rows[] = {
-		{ &m_lblBaseSamples, &m_edBaseSamples, "1단계 기준선 최소 표본 (건)",  ID_ED_BASE_SAMPLES },
-		{ &m_lblBaseHours,   &m_edBaseHours,   "1단계 최소 관측 시간대 (0~24)", ID_ED_BASE_HOURS   },
-		{ &m_lblAeSamples,   &m_edAeSamples,   "2단계 재학습 최소 표본 (건)",  ID_ED_AE_SAMPLES   },
+		{ &m_lblBaseSamples, &m_edBaseSamples, "1단계 기준선 최소 표본 (건)",   ID_ED_BASE_SAMPLES, true  },
+		{ &m_lblBaseHours,   &m_edBaseHours,   "1단계 최소 관측 시간대 (1~24)", ID_ED_BASE_HOURS,   true  },
+		{ &m_lblAeSamples,   &m_edAeSamples,   "2단계 재학습 최소 표본 (건)",   ID_ED_AE_SAMPLES,   true  },
+		// 날짜는 하이픈이 들어가므로 ES_NUMBER 를 쓰면 입력 자체가 막힌다.
+		{ &m_lblBaseDate,    &m_edBaseDate,    "계산 기준일 (YYYY-MM-DD)",      ID_ED_BASE_DATE,    false },
 	};
 
-	for (int i = 0; i < 3; ++i)
+	const int nRows = (int)(sizeof(rows) / sizeof(rows[0]));
+
+	for (int i = 0; i < nRows; ++i)
 	{
 		rows[i].lbl->Create(rows[i].text, WS_CHILD | WS_VISIBLE | SS_LEFT,
-			CRect(nBase_X, y + 4, nBase_X + lbl_w, y + 4 + 24), this);
+			CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
 
-		rows[i].ed->Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP
-			| ES_NUMBER | ES_RIGHT,
-			CRect(nBase_X + lbl_w + 10, y, nBase_X + lbl_w + 10 + ed_w, y + 26),
+		DWORD st = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP;
+		st |= rows[i].numeric ? (ES_NUMBER | ES_RIGHT) : ES_LEFT;
+
+		// 날짜 칸은 YYYY-MM-DD 10글자가 들어가야 해서 조금 넓게 잡는다.
+		const long w = rows[i].numeric ? ed_w : (ed_w + 40);
+
+		rows[i].ed->Create(st,
+			CRect(nBase_X + lbl_w + 10, y, nBase_X + lbl_w + 10 + w, y + 22),
 			this, rows[i].id);
 
 		y += row_h;
 	}
 
+	// 기준일을 비워 두면 전체 기간을 쓴다는 것을 화면에서 바로 알 수 있게 한다.
+	m_lblBaseDate.SetWindowTextA("계산 기준일 (비우면 전체)");
+
 	m_btnSaveStage.Create("저장", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-		CRect(nBase_X + lbl_w + 10 + ed_w + 20, ctrl_btn_top + ctrl_btn_hei + 52,
-		      nBase_X + lbl_w + 10 + ed_w + 20 + 90, ctrl_btn_top + ctrl_btn_hei + 52 + 36),
+		CRect(nBase_X + lbl_w + 10 + ed_w + 60, stage_top + 30,
+		      nBase_X + lbl_w + 10 + ed_w + 60 + 80, stage_top + 30 + 30),
 		this, ID_BTN_SAVE_STAGE);
 
 	LoadStageSettings();
@@ -204,6 +223,28 @@ void CDlg_Set_MmCam_Env::LoadStageSettings()
 
 	s.Format("%d", ini_read_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_SAMPLES", DEF_AE_SAMPLES));
 	m_edAeSamples.SetWindowTextA(s);
+
+	const std::string d = ini_read_utf8(ini, "CONSTANTS", "CALC_BASE_DATE", DEF_CALC_BASE_DATE);
+	m_edBaseDate.SetWindowTextA(d.c_str());
+}
+
+//---------------------------------------------------------
+
+// YYYY-MM-DD 형식인지 본다. 빈 문자열은 "제한 없음" 이므로 허용한다.
+// 형식만 보고 실제 존재하는 날짜인지까지는 따지지 않는다 (2026-02-30 통과).
+// 잘못 적어도 "그 날짜 이후" 라는 비교만 어긋날 뿐 동작이 깨지지는 않는다.
+static bool IsValidDateText(const CString& t)
+{
+	if (t.IsEmpty()) return true;
+	if (t.GetLength() != 10) return false;
+	if (t[4] != '-' || t[7] != '-') return false;
+	for (int i = 0; i < 10; ++i) {
+		if (i == 4 || i == 7) continue;
+		if (!isdigit((unsigned char)t[i])) return false;
+	}
+	const int mm = atoi(CStringA(t.Mid(5, 2)));
+	const int dd = atoi(CStringA(t.Mid(8, 2)));
+	return mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31;
 }
 
 //---------------------------------------------------------
@@ -215,10 +256,12 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 		return;
 	}
 
-	CString a, b, c;
+	CString a, b, c, d;
 	m_edBaseSamples.GetWindowTextA(a);
 	m_edBaseHours.GetWindowTextA(b);
 	m_edAeSamples.GetWindowTextA(c);
+	m_edBaseDate.GetWindowTextA(d);
+	d.Trim();
 
 	const int base_samples = atoi(a);
 	const int base_hours   = atoi(b);
@@ -238,19 +281,32 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 		m_cap_0.SetWindowTextA("[ERROR] 2단계 최소 표본은 1,000 ~ 1,000,000 사이여야 합니다.");
 		return;
 	}
+	if (!IsValidDateText(d)) {
+		m_cap_0.SetWindowTextA("[ERROR] 계산 기준일은 YYYY-MM-DD 형식이어야 합니다. 비우면 전체 기간을 씁니다.");
+		return;
+	}
 
 	const std::string ini = StageIniPath();
 
+	const std::string prev_date = ini_read_utf8(ini, "CONSTANTS", "CALC_BASE_DATE", "");
+	const std::string new_date  = (const char*)CStringA(d);
+
 	bool ok = ini_write_int_utf8(ini, "CONSTANTS", "BASELINE_MIN_SAMPLES", base_samples)
 		&& ini_write_int_utf8(ini, "CONSTANTS", "BASELINE_MIN_HOURS", base_hours)
-		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_SAMPLES", ae_samples);
+		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_SAMPLES", ae_samples)
+		&& ini_write_utf8(ini, "CONSTANTS", "CALC_BASE_DATE", new_date);
 
 	CStringA msg;
 	if (ok) {
 		// 파이썬 프로세스는 기동할 때 설정을 읽는다. 저장만으로는 반영되지 않는다.
-		msg.Format("[저장 완료] 1단계 %d건/%d시간대, 2단계 %d건"
+		// 기준일이 바뀌면 기준선 누적을 버리고 처음부터 다시 쌓는다.
+		// 며칠치 누적이 사라지는 일이라 화면에 분명히 알린다.
+		const char* warn = (prev_date != new_date)
+			? "  *기준일이 바뀌어 셀별 기준선을 새로 시작합니다*" : "";
+		msg.Format("[저장 완료] 1단계 %d건/%d시간대, 2단계 %d건, 기준일 %s%s"
 			"   -  '정지' 후 '시작'을 눌러야 반영됩니다.",
-			base_samples, base_hours, ae_samples);
+			base_samples, base_hours, ae_samples,
+			new_date.empty() ? "전체" : new_date.c_str(), warn);
 	}
 	else {
 		msg.Format("[ERROR] env.ini 를 쓰지 못했습니다: %s", ini.c_str());

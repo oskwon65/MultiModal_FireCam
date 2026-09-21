@@ -521,6 +521,7 @@ def main_loop(config, sensor_db_config):
         BASELINE_PATH, INPUT_DIM,
         min_samples=config.get("BASELINE_MIN_SAMPLES"),
         min_hours=config.get("BASELINE_MIN_HOURS"),
+        base_date=config.get("CALC_BASE_DATE"),
     )
     print(f"[STAGE 1] 셀별 기준선 — {baseline.summary()}")
 
@@ -763,8 +764,9 @@ def main_loop(config, sensor_db_config):
                 #     경보가 자연히 풀리도록 한다.
                 learn_ok = (abs_level == 0) and scene_ok
 
-                if baseline.update(x_row, hour=datetime.now().hour,
-                                   learn=learn_ok):
+                _now = datetime.now()
+                if baseline.update(x_row, hour=_now.hour, learn=learn_ok,
+                                   day=_now.strftime("%Y-%m-%d")):
                     baseline_dirty += 1
 
                 # 매 프레임 저장하면 디스크만 혹사한다. 200건마다 남긴다.

@@ -28,8 +28,8 @@ public:
 
     // 연속 학습 단계 전환 조건 (users\<id>\env.ini 의 [CONSTANTS])
     CStatic m_capStage;                                  // 안내 문구
-    CStatic m_lblBaseSamples, m_lblBaseHours, m_lblAeSamples;
-    CEdit   m_edBaseSamples, m_edBaseHours, m_edAeSamples;
+    CStatic m_lblBaseSamples, m_lblBaseHours, m_lblAeSamples, m_lblBaseDate;
+    CEdit   m_edBaseSamples, m_edBaseHours, m_edAeSamples, m_edBaseDate;
     CButton m_btnSaveStage;
 
     virtual BOOL OnInitDialog();

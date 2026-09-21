@@ -247,7 +247,8 @@ def main():
     conn = Connect_History_DB(history_db)
     try:
         X, info = replay_buffer.collect(
-            conn, history_db["database"], n_cells, TARGET_SAMPLES, mask=mask)
+            conn, history_db["database"], n_cells, TARGET_SAMPLES, mask=mask,
+            base_date=config.get("CALC_BASE_DATE"))
     finally:
         conn.close()
 
