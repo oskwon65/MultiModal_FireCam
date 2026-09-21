@@ -112,6 +112,27 @@ def circle(slide, x, y, d, fill, text=None, tcolor=WHITE, tsize=16, tbold=True):
     return sh
 
 
+def dwidth(s):
+    """고정폭 글꼴에서의 표시 너비. 한글·기호는 두 칸을 차지한다."""
+    return sum(2 if ord(ch) > 0x2000 else 1 for ch in s)
+
+
+def two_col(pairs, left_w=42):
+    """
+    모의 화면을 두 열로 그린다.
+
+    공백 개수로 맞추면 한글이 섞인 줄에서 어긋난다. 한글을 두 칸으로
+    세어 왼쪽 열을 같은 너비로 채운다.
+    """
+    out = []
+    for l, r in pairs:
+        if not r:
+            out.append(l)
+        else:
+            out.append(l + " " * max(2, left_w - dwidth(l)) + r)
+    return out
+
+
 def code_block(slide, x, y, w, lines, size=12.5, pad=0.22):
     h = pad * 2 + len(lines) * (size * 1.55 / 72.0)
     card(slide, x, y, w, h, fill=CODE_BG, radius=0.05)
@@ -617,9 +638,11 @@ s = slide_light(prs)
 title_bar(s, "11  OPERATION", "화면 사용법")
 
 btns = [
-    ("시작", "두 현장의 프로세스 6개를 차례로 기동합니다. 기동 중에는 다시 눌러도 무시됩니다.", EMBER),
+    ("시작", "두 현장의 프로세스 6개를 차례로 기동합니다. 진행바가 뜨고, 이미지 뷰어가 "
+             "올라오면 사라집니다. 기동 중에는 다시 눌러도 무시됩니다.", EMBER),
     ("정지", "기동한 프로세스를 모두 종료합니다.", AMBER),
-    ("설정", "격자 마스크와 연속 학습 단계 전환 조건을 바꿉니다.", TEAL),
+    ("설정", "설정 영역을 펼칩니다. 목록과 같은 토글이라 펼친 채로 다른 버튼을 쓸 수 "
+             "있습니다.", TEAL),
     ("폴더", "debug_logs 폴더를 탐색기로 엽니다.", RGBColor(0x6A, 0x5A, 0xCD)),
     ("목록", "하단 프로세스 목록을 펼칩니다. 펼치면 문구가 접기 로 바뀝니다.", RGBColor(0x2F, 0x6F, 0xED)),
     ("X", "프로그램을 종료합니다. 감시 중이면 확인을 한 번 묻습니다.", RGBColor(0xB4, 0x23, 0x18)),
@@ -1136,60 +1159,48 @@ s = slide_light(prs)
 title_bar(s, "20  STAGE SETTINGS", "단계 전환 조건 바꾸기")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
-write(tf, [("현장마다 수집 주기도 설비 가동 주기도 다릅니다. [설정] 버튼에서 조정하며, "
-            "값은 users\\<현장>\\env.ini 에 저장됩니다.",
+write(tf, [("[설정] 버튼을 누르면 창 아래가 펼쳐집니다. 목록과 같은 토글이라 펼친 채로 "
+            "다른 버튼을 쓸 수 있습니다. 값은 users\\<현장>\\env.ini 에 저장됩니다.",
             dict(size=13.5, color=MUTED), dict(space_after=0))])
 
-lwS = 5.5
-tf = textbox(s, M, 2.22, lwS, 0.3)
-write(tf, [("설정 창", dict(size=13, bold=True, color=INK), dict(space_after=0))])
-code_block(s, M, 2.58, lwS, [
-    "[ 연속 학습 단계 전환 조건 ]",
-    "",
-    "1단계 기준선 최소 표본 (건)     [ 3000 ]",
-    "1단계 최소 관측 시간대 (1~24)   [   18 ]",
-    "2단계 재학습 최소 표본 (건)     [ 5000 ]",
-    "계산 기준일 (체크 해제 시 전체)",
-    "                        [ ] 2026-09-21  v",
-    "",
-    "                                  [ 저장 ]",
-], size=10.5)
+code_block(s, M, 2.2, W - 2 * M, two_col([
+    ("[ 연속학습 조건 ]",                    "[ 현재 진행 ]"),
+    ("1단계 필터링 표본수  [ 3000 ]",        "0단계 절대임계값   사용 중"),
+    ("1단계 관측 시간      [   18 ]",        "   온도 207/222도 · 상승 20/34도/분"),
+    ("2단계 필터링 표본수  [ 5000 ]",        "1단계 셀별기준선   사용 중"),
+    ("계산기준일   [ 2026-09-22 v ]",        "   표본 3,000/3,000 · 시간대 9/18"),
+    ("",                                     "2단계 오토인코더   사용 중"),
+    ("[ 절대 임계값 (0단계) ]  주의/경보",   "   모델 2026-09-20 18:28"),
+    ("마스크 셀 최고 온도  [ 207 ][ 222 ]",  "3단계 연속학습     대기"),
+    ("분당 상승률          [  20 ][  34 ]",  "   재학습 가능 3,200/5,000건"),
+    ("", ""),
+    ("[ 설정 적용 ]", ""),
+]), size=10)
 
-rxS = M + lwS + 0.33
-tf = textbox(s, rxS, 2.22, W - M - rxS, 0.3)
-write(tf, [("각 항목의 뜻", dict(size=13, bold=True, color=INK), dict(space_after=0))])
+cS = (W - 2 * M - 0.3) / 2
 
-items = [
-    ("최소 표본", "1단계 채점을 시작하는 데 필요한 누적 건수", "3,000"),
-    ("최소 시간대", "하루 중 관측한 서로 다른 시각의 개수", "18"),
-    ("재학습 최소 표본", "야간 재학습을 시도할 최소 건수", "5,000"),
-    ("계산 기준일", "달력에서 고릅니다. 체크를 풀면 전체 기간", "해제"),
-]
-yS = 2.60
-for name, desc, dv in items:
-    tf = textbox(s, rxS + 0.04, yS, 2.3, 0.28)
-    write(tf, [(name, dict(size=12, bold=True, color=INK), dict(space_after=0))])
-    tf = textbox(s, W - M - 1.0, yS, 0.96, 0.28, align=PP_ALIGN.RIGHT)
-    write(tf, [(dv, dict(name=MONO, size=11, color=EMBER), dict(space_after=0))])
-    tf = textbox(s, rxS + 0.04, yS + 0.3, W - M - rxS - 0.1, 0.3)
-    write(tf, [(desc, dict(size=10.5, color=MUTED), dict(space_after=0))])
-    yS += 0.55
+card(s, M, 5.16, cS, 1.58, fill=PAPER)
+tf = textbox(s, M + 0.28, 5.32, cS - 0.56, 0.3)
+write(tf, [("왼쪽 — 조건을 정한다", dict(size=12.5, bold=True, color=INK),
+            dict(space_after=0))])
+tf = textbox(s, M + 0.28, 5.66, cS - 0.56, 1.0)
+write(tf, [("위 묶음은 단계가 언제 켜질지, 아래 묶음은 0단계가 언제 경보할지 정합니다. "
+            "버튼 하나로 함께 저장하며, 값이 하나라도 잘못되면 아무것도 쓰지 않습니다.",
+            dict(size=11, color=INK), dict(space_after=5, line=1.25)),
+           ("임계값은 설비마다 전혀 다릅니다. 네 칸을 모두 비우면 0단계가 꺼집니다.",
+            dict(size=11, color=EMBER), dict(space_after=0, line=1.25))])
 
-card(s, M, 4.94, W - 2 * M, 1.8, fill=RGBColor(0xFD, 0xF1, 0xEC))
-circle(s, M + 0.3, 5.18, 0.38, EMBER, "!", WHITE, 14)
-tf = textbox(s, M + 0.82, 5.2, 10.6, 0.3)
-write(tf, [("계산 기준일을 바꾸면 셀별 기준선을 버리고 처음부터 다시 쌓습니다",
-            dict(size=13, bold=True, color=EMBER), dict(space_after=0))])
-tf = textbox(s, M + 0.3, 5.62, W - 2 * M - 0.6, 1.0)
-write(tf, [("히스토리 DB 는 날짜별 테이블이라 기준일 이전 구간을 정확히 잘라낼 수 있습니다. "
-            "반면 셀별 기준선의 히스토그램에는 표본별 시각이 남지 않아 과거만 골라 뺄 수 "
-            "없습니다. 그래서 새로 쌓는 수밖에 없습니다.",
-            dict(size=11.5, color=INK), dict(space_after=6, line=1.25)),
-           ("며칠치 누적이 사라지므로, 카메라 조준을 복구했거나 설비를 바꾼 때처럼 "
-            "정말 그 전 것을 잊어야 할 때만 쓰십시오. 처음 열면 오늘 날짜가 보이지만 "
-            "체크는 풀려 있습니다 — 고를 때 편하라고 채워 둔 것이지 적용된 값이 "
-            "아닙니다.  |  저장 후 [정지] → [시작] 을 눌러야 반영됩니다.",
-            dict(size=11.5, bold=True, color=EMBER), dict(space_after=0, line=1.25))])
+rS = M + cS + 0.3
+card(s, rS, 5.16, cS, 1.58, fill=RGBColor(0xFD, 0xF1, 0xEC))
+tf = textbox(s, rS + 0.28, 5.32, cS - 0.56, 0.3)
+write(tf, [("계산기준일을 바꾸면 기준선을 새로 쌓습니다",
+            dict(size=12.5, bold=True, color=EMBER), dict(space_after=0))])
+tf = textbox(s, rS + 0.28, 5.66, cS - 0.56, 1.0)
+write(tf, [("히스토리 DB 는 날짜별 테이블이라 정확히 잘라내지만, 셀별 기준선에는 표본별 "
+            "시각이 없어 과거만 뺄 수 없습니다. 며칠치가 사라지므로 바뀔 때 확인을 묻습니다.",
+            dict(size=11, color=INK), dict(space_after=5, line=1.25)),
+           ("저장 후 [정지] → [시작] 을 눌러야 반영됩니다.",
+            dict(size=11, bold=True, color=EMBER), dict(space_after=0, line=1.25))])
 page_num(s, 21)
 
 # =================================================================== 22 안전 규칙
