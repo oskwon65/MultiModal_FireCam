@@ -156,13 +156,11 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		CRect(nBase_X, y, nBase_X + 520, y + 22), this);
 	y += 26;
 
-	struct Row { CStatic* lbl; CEdit* ed; const char* text; UINT id; bool numeric; };
+	struct Row { CStatic* lbl; CEdit* ed; const char* text; UINT id; };
 	Row rows[] = {
-		{ &m_lblBaseSamples, &m_edBaseSamples, "1단계 기준선 최소 표본 (건)",   ID_ED_BASE_SAMPLES, true  },
-		{ &m_lblBaseHours,   &m_edBaseHours,   "1단계 최소 관측 시간대 (1~24)", ID_ED_BASE_HOURS,   true  },
-		{ &m_lblAeSamples,   &m_edAeSamples,   "2단계 재학습 최소 표본 (건)",   ID_ED_AE_SAMPLES,   true  },
-		// 날짜는 하이픈이 들어가므로 ES_NUMBER 를 쓰면 입력 자체가 막힌다.
-		{ &m_lblBaseDate,    &m_edBaseDate,    "계산 기준일 (YYYY-MM-DD)",      ID_ED_BASE_DATE,    false },
+		{ &m_lblBaseSamples, &m_edBaseSamples, "1단계 기준선 최소 표본 (건)",   ID_ED_BASE_SAMPLES },
+		{ &m_lblBaseHours,   &m_edBaseHours,   "1단계 최소 관측 시간대 (1~24)", ID_ED_BASE_HOURS   },
+		{ &m_lblAeSamples,   &m_edAeSamples,   "2단계 재학습 최소 표본 (건)",   ID_ED_AE_SAMPLES   },
 	};
 
 	const int nRows = (int)(sizeof(rows) / sizeof(rows[0]));
@@ -172,21 +170,37 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		rows[i].lbl->Create(rows[i].text, WS_CHILD | WS_VISIBLE | SS_LEFT,
 			CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
 
-		DWORD st = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP;
-		st |= rows[i].numeric ? (ES_NUMBER | ES_RIGHT) : ES_LEFT;
-
-		// 날짜 칸은 YYYY-MM-DD 10글자가 들어가야 해서 조금 넓게 잡는다.
-		const long w = rows[i].numeric ? ed_w : (ed_w + 40);
-
-		rows[i].ed->Create(st,
-			CRect(nBase_X + lbl_w + 10, y, nBase_X + lbl_w + 10 + w, y + 22),
+		rows[i].ed->Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP
+			| ES_NUMBER | ES_RIGHT,
+			CRect(nBase_X + lbl_w + 10, y, nBase_X + lbl_w + 10 + ed_w, y + 22),
 			this, rows[i].id);
 
 		y += row_h;
 	}
 
-	// 기준일을 비워 두면 전체 기간을 쓴다는 것을 화면에서 바로 알 수 있게 한다.
-	m_lblBaseDate.SetWindowTextA("계산 기준일 (비우면 전체)");
+	// 계산 기준일은 달력에서 고른다.
+	//
+	// 직접 타이핑하게 두면 2026-13-45 같은 값이나 오타가 들어오고, 형식을
+	// 검사해 막아도 사용자는 무엇이 틀렸는지 알기 어렵다. 달력은 애초에
+	// 잘못된 날짜를 고를 수 없다.
+	//
+	// DTS_SHOWNONE 은 앞에 체크박스를 붙인다. 체크를 풀면 "기준일 없음"
+	// (= 전체 기간 사용) 이 된다. 날짜 칸을 비운다는 개념을 달력으로
+	// 표현할 방법이 이것뿐이다.
+	m_lblBaseDate.Create("계산 기준일 (체크 해제 시 전체)",
+		WS_CHILD | WS_VISIBLE | SS_LEFT,
+		CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
+
+	m_dtBaseDate.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER
+		| DTS_SHORTDATEFORMAT | DTS_SHOWNONE,
+		CRect(nBase_X + lbl_w + 10, y, nBase_X + lbl_w + 10 + ed_w + 60, y + 22),
+		this, ID_ED_BASE_DATE);
+
+	// 지역 설정에 따라 표시 형식이 달라지면 env.ini 에 쓰는 값과 화면이
+	// 어긋나 보인다. 저장 형식과 똑같이 맞춘다.
+	m_dtBaseDate.SetFormat(_T("yyyy-MM-dd"));
+
+	y += row_h;
 
 	m_btnSaveStage.Create("저장", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
 		CRect(nBase_X + lbl_w + 10 + ed_w + 60, stage_top + 30,
@@ -224,28 +238,32 @@ void CDlg_Set_MmCam_Env::LoadStageSettings()
 	s.Format("%d", ini_read_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_SAMPLES", DEF_AE_SAMPLES));
 	m_edAeSamples.SetWindowTextA(s);
 
+	// 저장된 기준일이 있으면 그 날짜로, 없으면 오늘 날짜를 띄우되 체크는
+	// 풀어 둔다.
+	//
+	// 체크까지 켜 두면 "기본값이 오늘" 이 되어, 아무 생각 없이 저장만 해도
+	// 기준일이 오늘로 박히고 그동안 쌓은 기준선이 통째로 날아간다. 오늘
+	// 날짜는 고를 때 편하라고 미리 채워 두는 것이지 적용된 값이 아니다.
 	const std::string d = ini_read_utf8(ini, "CONSTANTS", "CALC_BASE_DATE", DEF_CALC_BASE_DATE);
-	m_edBaseDate.SetWindowTextA(d.c_str());
+
+	int yy = 0, mm = 0, dd = 0;
+	if (d.size() == 10 && sscanf_s(d.c_str(), "%d-%d-%d", &yy, &mm, &dd) == 3
+		&& yy >= 1970 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31)
+	{
+		CTime t(yy, mm, dd, 0, 0, 0);
+		m_dtBaseDate.SetTime(&t);
+	}
+	else
+	{
+		CTime today = CTime::GetCurrentTime();
+		m_dtBaseDate.SetTime(&today);      // 표시값을 오늘로
+		m_dtBaseDate.SetTime((CTime*)NULL); // 체크는 해제 (= 전체 기간)
+	}
 }
 
 //---------------------------------------------------------
 
-// YYYY-MM-DD 형식인지 본다. 빈 문자열은 "제한 없음" 이므로 허용한다.
-// 형식만 보고 실제 존재하는 날짜인지까지는 따지지 않는다 (2026-02-30 통과).
-// 잘못 적어도 "그 날짜 이후" 라는 비교만 어긋날 뿐 동작이 깨지지는 않는다.
-static bool IsValidDateText(const CString& t)
-{
-	if (t.IsEmpty()) return true;
-	if (t.GetLength() != 10) return false;
-	if (t[4] != '-' || t[7] != '-') return false;
-	for (int i = 0; i < 10; ++i) {
-		if (i == 4 || i == 7) continue;
-		if (!isdigit((unsigned char)t[i])) return false;
-	}
-	const int mm = atoi(CStringA(t.Mid(5, 2)));
-	const int dd = atoi(CStringA(t.Mid(8, 2)));
-	return mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31;
-}
+// (형식 검사 함수는 달력 컨트롤 도입으로 불필요해져 제거)
 
 //---------------------------------------------------------
 
@@ -260,8 +278,9 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	m_edBaseSamples.GetWindowTextA(a);
 	m_edBaseHours.GetWindowTextA(b);
 	m_edAeSamples.GetWindowTextA(c);
-	m_edBaseDate.GetWindowTextA(d);
-	d.Trim();
+	CTime dt;
+	const bool has_date = (m_dtBaseDate.GetTime(dt) == GDT_VALID);
+	if (has_date) d = dt.Format("%Y-%m-%d");
 
 	const int base_samples = atoi(a);
 	const int base_hours   = atoi(b);
@@ -279,10 +298,6 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	}
 	if (ae_samples < 1000 || ae_samples > 1000000) {
 		m_cap_0.SetWindowTextA("[ERROR] 2단계 최소 표본은 1,000 ~ 1,000,000 사이여야 합니다.");
-		return;
-	}
-	if (!IsValidDateText(d)) {
-		m_cap_0.SetWindowTextA("[ERROR] 계산 기준일은 YYYY-MM-DD 형식이어야 합니다. 비우면 전체 기간을 씁니다.");
 		return;
 	}
 

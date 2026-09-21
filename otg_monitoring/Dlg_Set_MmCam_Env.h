@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <string>
+#include <afxdtctl.h>   // CDateTimeCtrl
 
 // CDlg_Set_MmCam_Env 대화 상자
 
@@ -29,7 +30,10 @@ public:
     // 연속 학습 단계 전환 조건 (users\<id>\env.ini 의 [CONSTANTS])
     CStatic m_capStage;                                  // 안내 문구
     CStatic m_lblBaseSamples, m_lblBaseHours, m_lblAeSamples, m_lblBaseDate;
-    CEdit   m_edBaseSamples, m_edBaseHours, m_edAeSamples, m_edBaseDate;
+    CEdit   m_edBaseSamples, m_edBaseHours, m_edAeSamples;
+    // 날짜는 직접 입력받지 않고 달력에서 고른다. DTS_SHOWNONE 체크박스가
+    // "기준일 없음(전체 기간)" 상태를 표현한다.
+    CDateTimeCtrl m_dtBaseDate;
     CButton m_btnSaveStage;
 
     virtual BOOL OnInitDialog();
