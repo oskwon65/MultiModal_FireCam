@@ -565,6 +565,7 @@ def main_loop(config, sensor_db_config):
                                stage_status.STATUS_FILE_NAME)
     db_rows = db_tables = None
     db_counted_at = 0.0
+    status_written_at = 0.0   # 0 이면 첫 프레임에서 바로 한 번 남긴다
     prev_fire_detected = False
 
     input_img = Get_Input_Image_URL(IMG_URL)
@@ -784,13 +785,24 @@ def main_loop(config, sensor_db_config):
                     except Exception as e:
                         print(f"[WARN] 기준선 저장 실패: {e}")
 
-                    # 기준선을 저장하는 김에 단계 현황도 남긴다. [설정] 창이
-                    # 이 파일을 읽어 "지금 몇 단계이고 다음까지 얼마 남았는지"
-                    # 를 보여준다.
-                    #
-                    # 히스토리 DB 건수는 날짜별 테이블마다 COUNT 를 돌려야
-                    # 하므로 매번 세지 않는다.
-                    if (time.time() - db_counted_at
+                # --- 단계 현황 기록 --------------------------------------
+                # [설정] 창이 이 파일을 읽어 "지금 몇 단계이고 다음까지 얼마
+                # 남았는지" 를 보여준다.
+                #
+                # 예전에는 기준선을 저장하는 김에 같이 썼는데, 저장 주기가
+                # 200건이라 첫 기록까지 kict1 은 17분, cj_busan_1 은 100분이
+                # 걸렸다. 그동안 설정 창에는 "확인 전" 만 떠서, 감시가 멀쩡히
+                # 돌고 있는데도 안 도는 것처럼 보였다.
+                #
+                # 파일 쓰기는 텍스트 20줄이라 부담이 없다. 기준선 저장과
+                # 떼어 내 짧은 주기로 남긴다. status_written_at 이 0 이라
+                # 첫 프레임에서 바로 한 번 쓴다.
+                _now_t = time.time()
+                if (_now_t - status_written_at) >= stage_status.STATUS_WRITE_INTERVAL:
+
+                    # 히스토리 DB 건수만은 날짜별 테이블마다 COUNT 를 돌려야
+                    # 하므로 훨씬 드물게 센다.
+                    if (_now_t - db_counted_at
                             >= stage_status.DB_COUNT_MIN_INTERVAL):
                         try:
                             _c = Connect_History_DB(history_db_config)
@@ -800,7 +812,7 @@ def main_loop(config, sensor_db_config):
                                     base_date=baseline.base_date)
                             finally:
                                 _c.close()
-                            db_counted_at = time.time()
+                            db_counted_at = _now_t
                         except Exception as e:
                             print(f"[WARN] 히스토리 건수 집계 실패: {e}")
 
@@ -810,7 +822,9 @@ def main_loop(config, sensor_db_config):
                         user_path=config["LOCAL_USER_PATH"],
                         db_rows=db_rows, db_tables=db_tables,
                         min_retrain=config.get("RETRAIN_MIN_SAMPLES"),
-                        stage_used=stage_used)
+                        stage_used=stage_used,
+                        abs_guard=abs_guard)
+                    status_written_at = _now_t
 
             people, fall, fire_list = read_people_and_area(sensor_db_config)
             hot_list = median_hot.flatten().tolist()

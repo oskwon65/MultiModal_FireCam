@@ -19,9 +19,18 @@ from datetime import datetime
 
 STATUS_FILE_NAME = "stage_status.ini"
 
+# 현황 파일을 다시 쓰는 최소 간격(초).
+#
+# 기준선 저장(200건마다)에 묶어 두었더니 첫 기록까지 kict1 은 17분,
+# cj_busan_1 은 100분이 걸렸다. 그동안 [설정] 창에는 아무 값도 없어,
+# 감시가 멀쩡히 돌고 있는데도 안 도는 것처럼 보였다.
+#
+# 텍스트 20줄을 쓰는 일이라 부담이 없다. 짧게 잡아 시작 직후부터 값이
+# 보이게 한다.
+STATUS_WRITE_INTERVAL = 30
+
 # 히스토리 DB 건수를 다시 세는 최소 간격(초). 날짜별 테이블마다 COUNT 를
-# 돌리므로 매번 할 일은 아니다. 기준선 저장 주기(수십 분)보다 짧게 두면
-# 사실상 저장할 때마다 한 번씩 세게 된다.
+# 돌리므로 현황 기록보다 훨씬 드물게 센다.
 DB_COUNT_MIN_INTERVAL = 600
 
 
@@ -86,13 +95,31 @@ def find_generation(user_path):
         return name, ""
 
 
+def model_timestamp(user_path):
+    """
+    지금 적재되어 있는 오토인코더 파일의 시각.
+
+    모델은 프로그램이 기동할 때 한 번만 읽는다. 새 파일로 바꿔 놓아도
+    재시작 전까지는 옛 모델이 계속 도는데, 화면에 "사용 중" 만 떠 있으면
+    바뀐 줄 알기 쉽다. 파일 시각을 함께 보여주면 바로 알아챌 수 있다.
+    """
+    p = os.path.join(user_path, "autoencoder_final.pth")
+    if not os.path.exists(p):
+        return ""
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(p)).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return ""
+
+
 def _esc(v):
     """ini 값으로 안전하게 쓰기 위해 줄바꿈만 없앤다."""
     return str(v).replace("\r", " ").replace("\n", " ")
 
 
 def write(path, baseline, model_ready, user_path,
-          db_rows=None, db_tables=None, min_retrain=None, stage_used=None):
+          db_rows=None, db_tables=None, min_retrain=None, stage_used=None,
+          abs_guard=None):
     """
     현황을 통째로 덮어쓴다.
 
@@ -105,11 +132,24 @@ def write(path, baseline, model_ready, user_path,
     stage2 = bool(model_ready)
     stage3 = gen_name is not None
 
+    # 0단계(절대 임계값)는 학습과 무관하게 늘 동작하지만, 임계값이 지정되지
+    # 않으면 판정 자체를 끄고 있다. 그 구분을 화면에서도 볼 수 있어야 한다.
+    stage0 = bool(abs_guard is not None and abs_guard.enabled)
+
+    def _t(v):
+        return "" if v is None else f"{float(v):.0f}"
+
     lines = [
         "; 이 파일은 predict_machine 이 자동으로 만듭니다. 직접 고치지 마십시오.",
         "[STATUS]",
         f"UPDATED_AT = {datetime.now():%Y-%m-%d %H:%M:%S}",
         f"BASE_DATE = {_esc(baseline.base_date)}",
+        "",
+        f"STAGE0 = {1 if stage0 else 0}",
+        f"ABS_TEMP_WARN = {_t(getattr(abs_guard, 'temp_warn', None))}",
+        f"ABS_TEMP_ALARM = {_t(getattr(abs_guard, 'temp_alarm', None))}",
+        f"ABS_RISE_WARN = {_t(getattr(abs_guard, 'rise_warn', None))}",
+        f"ABS_RISE_ALARM = {_t(getattr(abs_guard, 'rise_alarm', None))}",
         "",
         f"SAMPLES = {baseline.count}",
         f"MIN_SAMPLES = {baseline.min_samples}",
@@ -123,6 +163,7 @@ def write(path, baseline, model_ready, user_path,
         "",
         f"GENERATION = {_esc(gen_name or '')}",
         f"GENERATION_AT = {_esc(gen_time or '')}",
+        f"MODEL_AT = {_esc(model_timestamp(user_path))}",
         "",
         f"DB_ROWS = {-1 if db_rows is None else int(db_rows)}",
         f"DB_TABLES = {-1 if db_tables is None else int(db_tables)}",

@@ -59,3 +59,6 @@ users/*/model_generations/
 users/*/online_baseline.npz
 users/*/current_generation.txt
 users/*/stage_status.ini
+
+# Office 가 문서를 열면 만드는 잠금 파일
+~$*
