@@ -619,7 +619,7 @@ title_bar(s, "11  OPERATION", "화면 사용법")
 btns = [
     ("시작", "두 현장의 프로세스 6개를 차례로 기동합니다. 기동 중에는 다시 눌러도 무시됩니다.", EMBER),
     ("정지", "기동한 프로세스를 모두 종료합니다.", AMBER),
-    ("설정", "격자 마스크 등 현장 설정 창을 엽니다.", TEAL),
+    ("설정", "격자 마스크와 연속 학습 단계 전환 조건을 바꿉니다.", TEAL),
     ("폴더", "debug_logs 폴더를 탐색기로 엽니다.", RGBColor(0x6A, 0x5A, 0xCD)),
     ("목록", "하단 프로세스 목록을 펼칩니다. 펼치면 문구가 접기 로 바뀝니다.", RGBColor(0x2F, 0x6F, 0xED)),
     ("X", "프로그램을 종료합니다. 감시 중이면 확인을 한 번 묻습니다.", RGBColor(0xB4, 0x23, 0x18)),
@@ -1131,9 +1131,68 @@ write(tf, [("검증 구간이 최근이라 후보에 유리한 비교입니다. 
             dict(size=9.5, color=MUTED), dict(space_after=0, line=1.2))])
 page_num(s, 20)
 
-# =================================================================== 21 안전 규칙
+# =================================================================== 21 단계 설정
+s = slide_light(prs)
+title_bar(s, "20  STAGE SETTINGS", "단계 전환 조건 바꾸기")
+
+tf = textbox(s, M, 1.72, 11.5, 0.35)
+write(tf, [("현장마다 수집 주기도 설비 가동 주기도 다릅니다. [설정] 버튼에서 조정하며, "
+            "값은 users\\<현장>\\env.ini 에 저장됩니다.",
+            dict(size=13.5, color=MUTED), dict(space_after=0))])
+
+lwS = 5.5
+tf = textbox(s, M, 2.22, lwS, 0.3)
+write(tf, [("설정 창", dict(size=13, bold=True, color=INK), dict(space_after=0))])
+code_block(s, M, 2.58, lwS, [
+    "[ 연속 학습 단계 전환 조건 ]",
+    "",
+    "1단계 기준선 최소 표본 (건)     [ 3000 ]",
+    "1단계 최소 관측 시간대 (1~24)   [   18 ]",
+    "2단계 재학습 최소 표본 (건)     [ 5000 ]",
+    "계산 기준일 (비우면 전체)       [          ]",
+    "",
+    "                                  [ 저장 ]",
+], size=10.5)
+
+rxS = M + lwS + 0.33
+tf = textbox(s, rxS, 2.22, W - M - rxS, 0.3)
+write(tf, [("각 항목의 뜻", dict(size=13, bold=True, color=INK), dict(space_after=0))])
+
+items = [
+    ("최소 표본", "1단계 채점을 시작하는 데 필요한 누적 건수", "3,000"),
+    ("최소 시간대", "하루 중 관측한 서로 다른 시각의 개수", "18"),
+    ("재학습 최소 표본", "야간 재학습을 시도할 최소 건수", "5,000"),
+    ("계산 기준일", "이 날짜 이전 데이터를 계산에서 제외", "비움"),
+]
+yS = 2.60
+for name, desc, dv in items:
+    tf = textbox(s, rxS + 0.04, yS, 2.3, 0.28)
+    write(tf, [(name, dict(size=12, bold=True, color=INK), dict(space_after=0))])
+    tf = textbox(s, W - M - 1.0, yS, 0.96, 0.28, align=PP_ALIGN.RIGHT)
+    write(tf, [(dv, dict(name=MONO, size=11, color=EMBER), dict(space_after=0))])
+    tf = textbox(s, rxS + 0.04, yS + 0.3, W - M - rxS - 0.1, 0.3)
+    write(tf, [(desc, dict(size=10.5, color=MUTED), dict(space_after=0))])
+    yS += 0.55
+
+card(s, M, 4.94, W - 2 * M, 1.8, fill=RGBColor(0xFD, 0xF1, 0xEC))
+circle(s, M + 0.3, 5.18, 0.38, EMBER, "!", WHITE, 14)
+tf = textbox(s, M + 0.82, 5.2, 10.6, 0.3)
+write(tf, [("계산 기준일을 바꾸면 셀별 기준선을 버리고 처음부터 다시 쌓습니다",
+            dict(size=13, bold=True, color=EMBER), dict(space_after=0))])
+tf = textbox(s, M + 0.3, 5.62, W - 2 * M - 0.6, 1.0)
+write(tf, [("히스토리 DB 는 날짜별 테이블이라 기준일 이전 구간을 정확히 잘라낼 수 있습니다. "
+            "반면 셀별 기준선의 히스토그램에는 표본별 시각이 남지 않아 과거만 골라 뺄 수 "
+            "없습니다. 그래서 새로 쌓는 수밖에 없습니다.",
+            dict(size=11.5, color=INK), dict(space_after=6, line=1.25)),
+           ("며칠치 누적이 사라지므로, 카메라 조준을 복구했거나 설비를 바꾼 때처럼 "
+            "정말 그 전 것을 잊어야 할 때만 쓰십시오.  |  저장 후 [정지] → [시작] 을 "
+            "눌러야 반영됩니다 (파이썬은 기동할 때 설정을 읽습니다).",
+            dict(size=11.5, bold=True, color=EMBER), dict(space_after=0, line=1.25))])
+page_num(s, 21)
+
+# =================================================================== 22 안전 규칙
 s = slide_dark(prs)
-title_bar(s, "20  SAFETY RULES", "연속 학습의 안전 규칙", dark=True)
+title_bar(s, "21  SAFETY RULES", "연속 학습의 안전 규칙", dark=True)
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
 write(tf, [("적응(무엇이 정상인가 배우기)과 탐지(이상을 알리기)는 반드시 분리되어야 합니다.",
@@ -1165,11 +1224,11 @@ tf = textbox(s, M + 0.3, 6.36, W - 2 * M - 0.6, 0.32)
 write(tf, [("kict1 사례 — 카메라가 틀어진 뒤 모든 프레임이 이상으로 판정되어, "
             "재생 버퍼가 비고 재학습이 자동 보류되었습니다. 규칙 1이 동작한 것입니다.",
             dict(size=11, bold=True, color=TEAL), dict(space_after=0))])
-page_num(s, 21, dark=True)
+page_num(s, 22, dark=True)
 
 # =================================================================== 22 시운전 도입
 s = slide_light(prs)
-title_bar(s, "21  COMMISSIONING", "신규 현장 도입 절차")
+title_bar(s, "22  COMMISSIONING", "신규 현장 도입 절차")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
 write(tf, [("오토인코더는 그 현장을 본 적이 있어야 만들 수 있습니다. 첫날부터 2단계로 "
@@ -1256,11 +1315,11 @@ write(tf, [("현장 배선과 시험 운전에 어차피 며칠이 듭니다. �
            ("시운전 중 설비를 세워 두면 '정지 상태' 만 배웁니다. 가동과 정지를 "
             "모두 겪게 하십시오.",
             dict(size=11, color=TEAL), dict(space_after=0, line=1.25))])
-page_num(s, 22)
+page_num(s, 23)
 
 # =================================================================== 23 문제 해결
 s = slide_dark(prs)
-title_bar(s, "22  TROUBLESHOOTING", "자주 겪는 문제", dark=True)
+title_bar(s, "23  TROUBLESHOOTING", "자주 겪는 문제", dark=True)
 
 probs = [
     ("점수가 계속 같은 값", "현장 서버의 파일이 갱신되지 않는 경우입니다.",
@@ -1286,11 +1345,11 @@ for i, (title, cause, fix) in enumerate(probs):
     tf = textbox(s, M + 4.7, y + 0.2, 6.9, 0.58)
     write(tf, [(fix, dict(size=11.5, color=RGBColor(0xC8, 0xD3, 0xE3)), dict(space_after=0, line=1.25))])
     y += 1.0
-page_num(s, 23, dark=True)
+page_num(s, 24, dark=True)
 
 # =================================================================== 19 체크리스트
 s = slide_light(prs)
-title_bar(s, "23  CHECKLIST", "설치 점검표")
+title_bar(s, "24  CHECKLIST", "설치 점검표")
 
 left = [
     "Visual Studio (MFC 포함) 설치",
@@ -1329,7 +1388,7 @@ card(s, M, 6.2, W - 2 * M, 0.6, fill=RGBColor(0xEC, 0xF6, 0xF4))
 tf = textbox(s, M + 0.34, 6.36, W - 2 * M - 0.68, 0.32)
 write(tf, [("모두 완료되면 현장 두 곳 합쳐 6개가 기동하고, 상태줄에는 선택한 현장 기준으로 [3] processes | err=0000 이 표시됩니다.",
             dict(size=12.5, bold=True, color=TEAL), dict(space_after=0))])
-page_num(s, 24)
+page_num(s, 25)
 
 # 출력 경로는 인자로 바꿀 수 있다 (PowerPoint 가 원본을 열고 있을 때 임시본 생성용)
 import sys
