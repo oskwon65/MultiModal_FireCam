@@ -245,7 +245,7 @@ card(s, M, 5.72, W - 2 * M, 0.78, fill=RGBColor(0xEC, 0xF6, 0xF4))
 tf = textbox(s, M + 0.34, 5.94, W - 2 * M - 0.68, 0.36)
 write(tf, [("현장이 2곳이므로 정상 가동 시 파이썬 프로세스는 3 x 2 = 6개가 실행됩니다.",
             dict(size=13, bold=True, color=RGBColor(0x1B, 0x6B, 0x60)), dict(space_after=0))])
-page_num(s, 2)
+page_num(s, 1)
 
 # =================================================================== 3 데이터 흐름
 s = slide_light(prs)
@@ -298,7 +298,7 @@ write(tf, [("분석 결과는 서버로 올라가지 않습니다", dict(size=12
             "시의 SMS 발송뿐입니다. 서버에는 raw 원본이 남으므로 PC 이력이 사라져도 "
             "재분석은 가능합니다.",
             dict(size=11, color=INK), dict(space_after=0, line=1.25))], first=False)
-page_num(s, 3)
+page_num(s, 2)
 
 # =================================================================== 4 폴더 구조
 s = slide_light(prs)
@@ -343,7 +343,7 @@ for head, body, col in notes:
     tf = textbox(s, bx + 0.26, y + 0.72, 3.14, 0.75)
     write(tf, [(body, dict(size=11, color=MUTED), dict(space_after=0, line=1.2))])
     y += 1.72
-page_num(s, 4)
+page_num(s, 3)
 
 # =================================================================== 5 설정 파일
 s = slide_light(prs)
@@ -383,7 +383,7 @@ for name, where, col, kind, keys, note in cfgs:
     tf = textbox(s, M + 0.92, y + 0.94, 4.3, 0.5)
     write(tf, [(note, dict(size=10.5, color=MUTED), dict(space_after=0, line=1.2))])
     y += hh + 0.2
-page_num(s, 5)
+page_num(s, 4)
 
 # =================================================================== 6 설치 1
 s = slide_light(prs)
@@ -411,7 +411,7 @@ code_block(s, M, 5.3, W - 2 * M, [
     "$ conda -V                    # conda 24.x 처럼 버전이 나오면 정상",
     "$ mysql --version             # mysql  Ver 8.0.x",
 ], size=12.5)
-page_num(s, 6)
+page_num(s, 5)
 
 # =================================================================== 7 설치 2
 s = slide_light(prs)
@@ -457,7 +457,7 @@ for k, v in vers:
     tf = textbox(s, bx + 2.0, y, 1.4, 0.26)
     write(tf, [(v, dict(name=MONO, size=10, bold=True, color=TEAL), dict(space_after=0))])
     y += 0.29
-page_num(s, 7)
+page_num(s, 6)
 
 # =================================================================== 8 설치 3
 s = slide_light(prs)
@@ -495,7 +495,7 @@ for txt, fkw in [
     r = p.add_run()
     r.text = txt
     font_of(r, **fkw)
-page_num(s, 8)
+page_num(s, 7)
 
 # =================================================================== 9 설치 4
 s = slide_light(prs)
@@ -546,7 +546,7 @@ for num, name, desc, col in order:
 tf = textbox(s, bx + 0.3, 5.86, 3.31, 0.5)
 write(tf, [("ROOT_PATH 가 잘못되면 env.ini 를 찾지 못했다는 메시지와 함께 프로그램이 즉시 종료됩니다.",
             dict(size=10.5, color=EMBER), dict(space_after=0, line=1.2))])
-page_num(s, 9)
+page_num(s, 8)
 
 # =================================================================== 10 설치 5
 s = slide_light(prs)
@@ -586,7 +586,7 @@ tf = textbox(s, bx + 0.3, 5.06, 3.31, 1.1)
 write(tf, [("secrets.ini 가 없으면 파일 경로와 함께 오류가 표시되고 프로그램이 멈춥니다. "
             "조용히 잘못 동작하지 않으므로 원인 파악이 쉽습니다.",
             dict(size=11, color=INK), dict(space_after=0, line=1.25))])
-page_num(s, 10)
+page_num(s, 9)
 
 # =================================================================== 11 빌드 · 실행
 s = slide_light(prs)
@@ -631,7 +631,7 @@ for i, (head, body) in enumerate(checks):
     tf = textbox(s, bx + 0.52, y + 0.3, 5.1, 0.5)
     write(tf, [(body, dict(size=11, color=MUTED), dict(space_after=0, line=1.2))])
     y += 0.92
-page_num(s, 11)
+page_num(s, 10)
 
 # =================================================================== 12 화면 사용법
 s = slide_light(prs)
@@ -669,7 +669,7 @@ tf = textbox(s, M + 0.34, 5.64, W - 2 * M - 0.68, 0.6)
 write(tf, [("선택한 현장의 목록과 이미지 뷰어만 화면에 표시됩니다. "
             "콤보박스에서 현장을 바꾸면 목록도 이미지 창도 함께 교체됩니다.",
             dict(size=12.5, color=INK), dict(space_after=0, line=1.25))])
-page_num(s, 12)
+page_num(s, 11)
 
 # =================================================================== 13 학습 파이프라인
 s = slide_light(prs)
@@ -720,7 +720,7 @@ write(tf, [("D:\\autoencoder\\<user>\\", dict(name=MONO, size=10, color=INK), di
            ("  ir_raw  raw", dict(name=MONO, size=10, color=MUTED), dict(space_after=3)),
            ("  step_0  step_1  step_2", dict(name=MONO, size=10, color=MUTED), dict(space_after=3)),
            ("  saved_models", dict(name=MONO, size=10, color=TEAL), dict(space_after=0))])
-page_num(s, 13)
+page_num(s, 12)
 
 # =================================================================== 14 학습과 운영
 s = slide_light(prs)
@@ -777,7 +777,7 @@ for i, (head, body) in enumerate(cautions):
     write(tf, [(head, dict(size=12.5, bold=True, color=EMBER), dict(space_after=0))])
     tf = textbox(s, x + 0.26, 5.76, cw3 - 0.52, 0.75)
     write(tf, [(body, dict(size=10.5, color=INK), dict(space_after=0, line=1.2))])
-page_num(s, 14)
+page_num(s, 13)
 
 # =================================================================== 15 학습 실행
 s = slide_light(prs)
@@ -843,7 +843,7 @@ write(tf, [("<user>\\saved_models\\", dict(name=MONO, size=10, color=INK), dict(
 tf = textbox(s, rx2 + 0.28, 6.18, rw2 - 0.56, 0.44)
 write(tf, [("scaler.npz 는 학습이 자동으로 함께 만듭니다. 운영 환경의 numpy 1.x 대비용입니다.",
             dict(size=10, color=EMBER), dict(space_after=0, line=1.2))])
-page_num(s, 15)
+page_num(s, 14)
 
 # =================================================================== 16 모델과 점수
 s = slide_light(prs)
@@ -901,7 +901,7 @@ tf = textbox(s, M + 0.82, 6.08, 10.6, 0.56)
 write(tf, [("학습은 64셀 전부를 그대로 씁니다. 마스크는 채점할 때 어느 셀의 오차를 평균낼지 고르는 데만 쓰입니다. "
             "따라서 16셀 지정을 바꾸더라도 hotlist_mask_local.ini 파일만 교체하면 되고, 재학습은 필요 없습니다.",
             dict(size=11.5, color=INK), dict(space_after=0, line=1.25))])
-page_num(s, 16)
+page_num(s, 15)
 
 # =================================================================== 17 재학습 판단
 s = slide_light(prs)
@@ -949,7 +949,7 @@ write(tf, [("설비와 무관하게 늘 뜨거운 고정 열점이 격자 (4,1) 
            ("점검 방법 — 학습 데이터 평균에서 주변보다 뚜렷이 뜨거운 셀을 기준점으로 정해 두고, "
             "그 셀이 계속 같은 자리인지만 보면 조준 이상을 바로 알 수 있습니다.",
             dict(size=11.5, bold=True, color=EMBER), dict(space_after=0, line=1.25))])
-page_num(s, 17)
+page_num(s, 16)
 
 # =================================================================== 18 연속 학습 개요
 s = slide_light(prs)
@@ -1004,7 +1004,7 @@ write(tf, [("오토인코더나 기준선은 '이 현장의 평소'를 기준으
             "기준도 따라갑니다. 그 특성은 오탐을 줄이지만 서서히 커지는 위험을 놓칠 수 있다는 뜻이기도 "
             "합니다. 0단계의 고정선이 그 마지막 안전망입니다.",
             dict(size=11.5, color=INK), dict(space_after=0, line=1.25))])
-page_num(s, 18)
+page_num(s, 17)
 
 # =================================================================== 19 0~1단계
 s = slide_light(prs)
@@ -1089,7 +1089,7 @@ write(tf, [("오토인코더가 준비되면 두 점수를 함께 내고 낮은 
             "불일치로 기록해 원인을 가리킵니다. 화면 이동 감시(정상 0.9998 / 이동 시 0.23)와 "
             "통계 누적도 계속됩니다.",
             dict(size=11, color=INK), dict(space_after=0, line=1.2))])
-page_num(s, 19)
+page_num(s, 18)
 
 # =================================================================== 20 야간 재학습
 s = slide_light(prs)
@@ -1152,11 +1152,147 @@ tf = textbox(s, bx7 + 0.04, 6.3, 4.1, 0.44)
 write(tf, [("검증 구간이 최근이라 후보에 유리한 비교입니다. "
             "\"지금 데이터에 어느 쪽이 맞는가\" 로 보십시오.",
             dict(size=9.5, color=MUTED), dict(space_after=0, line=1.2))])
+page_num(s, 19)
+
+# =================================================================== 카메라 이동
+s = slide_light(prs)
+title_bar(s, "20  CAMERA SHIFT", "카메라가 밀렸을 때")
+
+tf = textbox(s, M, 1.72, 11.5, 0.35)
+write(tf, [("이동은 재서 알려 주기만 합니다. 이미지도 마스크도 자동으로 되돌리지 않습니다.",
+            dict(size=13.5, color=MUTED), dict(space_after=0))])
+
+tf = textbox(s, M, 2.2, 5.6, 0.3)
+write(tf, [("무엇을 재는가", dict(size=13, bold=True, color=INK), dict(space_after=0))])
+shift_rows = [
+    ("RGB", "base_img/base_ref.png 한 장과 위상 상관. 기동할 때 한 번."),
+    ("열화상", "굳혀 둔 64셀 패턴과 대조. 운전 중 30분마다."),
+    ("믿을 수 있나", "response 가 0.30 미만이면 '판정 불가'. 거짓말보다 낫습니다."),
+]
+ys = 2.6
+for a, b in shift_rows:
+    tf = textbox(s, M + 0.04, ys, 1.5, 0.28)
+    write(tf, [(a, dict(size=11.5, bold=True, color=TEAL), dict(space_after=0))])
+    tf = textbox(s, M + 1.6, ys, 4.1, 0.5)
+    write(tf, [(b, dict(size=10.5, color=MUTED), dict(space_after=0, line=1.2))])
+    ys += 0.62
+
+card(s, M, 4.6, 5.6, 1.5, fill=RGBColor(0xFD, 0xF3, 0xE3))
+tf = textbox(s, M + 0.3, 4.78, 5.0, 0.3)
+write(tf, [("왜 보정하지 않는가", dict(size=12, bold=True, color=INK), dict(space_after=0))])
+tf = textbox(s, M + 0.3, 5.12, 5.0, 0.9)
+write(tf, [("되돌려도 score 가 0.088 에서 0.365 까지밖에 오르지 않습니다(정상 0.952). "
+            "게다가 가장자리에 공백이 생기고, 무엇으로 채우든 지어낸 값이 64차원 "
+            "입력 전체를 흐립니다.",
+            dict(size=10, color=MUTED), dict(space_after=0, line=1.25))])
+
+bx = M + 6.1
+tf = textbox(s, bx, 2.2, 5.4, 0.3)
+write(tf, [("칸 수로는 모델 상태를 알 수 없다",
+            dict(size=13, bold=True, color=INK), dict(space_after=0))])
+rows_sh = [("이동량", "score"),
+           ("0칸", "0.957"),
+           ("1칸", "0.916"),
+           ("2칸", "0.940"),
+           ("3칸", "0.890"),
+           ("kict1 실제 1.3칸", "0.088")]
+ysh = 2.62
+for i, (a, b) in enumerate(rows_sh):
+    hd = (i == 0)
+    last = (i == len(rows_sh) - 1)
+    tf = textbox(s, bx + 0.04, ysh, 3.2, 0.26)
+    write(tf, [(a, dict(size=10.5, bold=last,
+                        color=MUTED if hd else (INK if last else MUTED)),
+                dict(space_after=0))])
+    tf = textbox(s, bx + 3.3, ysh, 1.4, 0.26, align=PP_ALIGN.RIGHT)
+    write(tf, [(b, dict(name=MONO, size=10.5, bold=not hd,
+                        color=MUTED if hd else (RGBColor(0xC0, 0x39, 0x2B) if last else TEAL)),
+                dict(space_after=0))])
+    ysh += 0.32
+
+tf = textbox(s, bx + 0.04, 4.66, 5.3, 0.8)
+write(tf, [("7월 자료를 일부러 밀어 잰 값입니다. 3칸을 밀어도 0.890 인데 kict1 은 "
+            "1.3칸에 0.088 입니다. 칸 수는 모델 손상을 예측하지 못합니다.",
+            dict(size=10, color=MUTED), dict(space_after=0, line=1.25))])
+
+card(s, bx, 5.5, 5.4, 0.9, fill=RGBColor(0xEC, 0xF6, 0xF4))
+tf = textbox(s, bx + 0.3, 5.66, 4.8, 0.6)
+write(tf, [("그래서 2칸 이상이면 [설정] 화면에 '현장 조준 확인' 을 띄웁니다. "
+            "자동 보정이 아니라 사람에게 알리는 용도입니다.",
+            dict(size=10.5, bold=True, color=TEAL), dict(space_after=0, line=1.25))])
 page_num(s, 20)
+
+# =================================================================== 모델 기여도
+s = slide_light(prs)
+title_bar(s, "21  MODEL CONTRIBUTION", "기존 모델을 얼마나 물려받는가")
+
+tf = textbox(s, M, 1.72, 11.5, 0.35)
+write(tf, [("몇 칸 밀렸는지가 아니라 지금 몇 점을 내고 있는지로 정합니다.",
+            dict(size=13.5, color=MUTED), dict(space_after=0))])
+
+tf = textbox(s, M, 2.2, 5.6, 0.3)
+write(tf, [("판단 점수", dict(size=13, bold=True, color=INK), dict(space_after=0))])
+tf = textbox(s, M + 0.04, 2.56, 5.5, 0.6)
+write(tf, [("최근 하루 mscore 의 중앙값입니다. 순간값을 쓰면 서서히 뜨거워지는 "
+            "설비가 점수를 낮출 때 그 데이터로 재학습해 경보가 스스로 사라집니다.",
+            dict(size=10.5, color=MUTED), dict(space_after=0, line=1.25))])
+tf = textbox(s, M + 0.04, 3.24, 5.5, 0.3)
+write(tf, [("다음 프레임은 빼고 셉니다", dict(size=11, bold=True, color=INK),
+            dict(space_after=0))])
+excl = ["절대 임계값이 걸린 프레임 — 이상일 수 있는 구간은 근거가 못 됩니다",
+        "열화상이 멈춘 프레임 — 같은 값이 반복되면 점수도 가짜입니다"]
+ye = 3.58
+for e in excl:
+    circle(s, M + 0.08, ye, 0.18, TEAL)
+    tf = textbox(s, M + 0.4, ye - 0.05, 5.2, 0.44)
+    write(tf, [(e, dict(size=10, color=MUTED), dict(space_after=0, line=1.2))])
+    ye += 0.5
+
+bx = M + 6.1
+tf = textbox(s, bx, 2.2, 5.4, 0.3)
+write(tf, [("점수 → 기여 가중치", dict(size=13, bold=True, color=INK), dict(space_after=0))])
+bands = [("점수", "w", "재학습 방식"),
+         ("0.85 이상", "1.0", "평소대로 (웜스타트 + 옛 자료)"),
+         ("0.50 이상", "0.5", "옛 자료 절반"),
+         ("0.20 이상", "0.2", "옛 자료 소량"),
+         ("그 아래", "0.0", "새로 시작")]
+yb = 2.62
+for i, (a, b, c) in enumerate(bands):
+    hd = (i == 0)
+    tf = textbox(s, bx + 0.04, yb, 1.5, 0.26)
+    write(tf, [(a, dict(size=10.5, color=MUTED), dict(space_after=0))])
+    tf = textbox(s, bx + 1.6, yb, 0.5, 0.26, align=PP_ALIGN.RIGHT)
+    write(tf, [(b, dict(name=MONO, size=10.5, bold=not hd,
+                        color=MUTED if hd else TEAL), dict(space_after=0))])
+    tf = textbox(s, bx + 2.3, yb, 3.1, 0.26)
+    write(tf, [(c, dict(size=10, color=MUTED), dict(space_after=0))])
+    yb += 0.32
+
+tf = textbox(s, bx + 0.04, 4.28, 5.3, 0.46)
+write(tf, [("문턱은 env.ini 의 CONTRIB_BAND_HIGH / MID / LOW 로 바꿉니다.",
+            dict(size=10, color=MUTED), dict(space_after=0, line=1.2))])
+
+card(s, M, 4.7, W - 2 * M, 1.45, fill=RGBColor(0xFD, 0xF3, 0xE3))
+tf = textbox(s, M + 0.3, 4.86, 11.0, 0.3)
+write(tf, [("w = 0 이어도 옛 모델을 잊지는 않습니다",
+            dict(size=12, bold=True, color=INK), dict(space_after=0))])
+tf = textbox(s, M + 0.3, 5.2, 11.0, 0.85)
+write(tf, [("가중치를 물려받지 않을 뿐, 감도 회귀 게이트의 비교 대상으로는 계속 씁니다. "
+            "새 모델이 옛 모델보다 둔해지면 승격을 막는 장치인데, 비교 대상이 없으면 "
+            "그 장치가 무력해집니다.  또한 모델을 못 믿기로 했으면 그 모델의 점수로 "
+            "학습 표본을 고르지도 않습니다 — 0단계 절대 임계값으로 거릅니다.",
+            dict(size=10.5, color=MUTED), dict(space_after=0, line=1.3))])
+
+card(s, M, 6.28, W - 2 * M, 0.55, fill=RGBColor(0xEC, 0xF6, 0xF4))
+tf = textbox(s, M + 0.34, 6.42, W - 2 * M - 0.68, 0.32)
+write(tf, [("기여 가중치를 낮추려면 [설정] 창에서 계산 기준일을 먼저 지정해야 합니다. "
+            "비어 있으면 옛 시기와 새 시기를 가를 수 없어 가중치가 무시됩니다.",
+            dict(size=11, bold=True, color=TEAL), dict(space_after=0))])
+page_num(s, 21)
 
 # =================================================================== 21 단계 설정
 s = slide_light(prs)
-title_bar(s, "20  STAGE SETTINGS", "단계 전환 조건 바꾸기")
+title_bar(s, "22  STAGE SETTINGS", "단계 전환 조건 바꾸기")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
 write(tf, [("[설정] 버튼을 누르면 창 아래가 펼쳐집니다. 목록과 같은 토글이라 펼친 채로 "
@@ -1201,11 +1337,11 @@ write(tf, [("히스토리 DB 는 날짜별 테이블이라 정확히 잘라내�
             dict(size=11, color=INK), dict(space_after=5, line=1.25)),
            ("저장 후 [정지] → [시작] 을 눌러야 반영됩니다.",
             dict(size=11, bold=True, color=EMBER), dict(space_after=0, line=1.25))])
-page_num(s, 21)
+page_num(s, 22)
 
 # =================================================================== 22 안전 규칙
 s = slide_dark(prs)
-title_bar(s, "21  SAFETY RULES", "연속 학습의 안전 규칙", dark=True)
+title_bar(s, "23  SAFETY RULES", "연속 학습의 안전 규칙", dark=True)
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
 write(tf, [("적응(무엇이 정상인가 배우기)과 탐지(이상을 알리기)는 반드시 분리되어야 합니다.",
@@ -1237,11 +1373,11 @@ tf = textbox(s, M + 0.3, 6.36, W - 2 * M - 0.6, 0.32)
 write(tf, [("kict1 사례 — 카메라가 틀어진 뒤 모든 프레임이 이상으로 판정되어, "
             "재생 버퍼가 비고 재학습이 자동 보류되었습니다. 규칙 1이 동작한 것입니다.",
             dict(size=11, bold=True, color=TEAL), dict(space_after=0))])
-page_num(s, 22, dark=True)
+page_num(s, 23, dark=True)
 
 # =================================================================== 22 시운전 도입
 s = slide_light(prs)
-title_bar(s, "22  COMMISSIONING", "신규 현장 도입 절차")
+title_bar(s, "24  COMMISSIONING", "신규 현장 도입 절차")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
 write(tf, [("오토인코더는 그 현장을 본 적이 있어야 만들 수 있습니다. 첫날부터 2단계로 "
@@ -1328,11 +1464,11 @@ write(tf, [("현장 배선과 시험 운전에 어차피 며칠이 듭니다. �
            ("시운전 중 설비를 세워 두면 '정지 상태' 만 배웁니다. 가동과 정지를 "
             "모두 겪게 하십시오.",
             dict(size=11, color=TEAL), dict(space_after=0, line=1.25))])
-page_num(s, 23)
+page_num(s, 24)
 
 # =================================================================== 23 문제 해결
 s = slide_dark(prs)
-title_bar(s, "23  TROUBLESHOOTING", "자주 겪는 문제", dark=True)
+title_bar(s, "25  TROUBLESHOOTING", "자주 겪는 문제", dark=True)
 
 probs = [
     ("점수가 계속 같은 값", "현장 서버의 파일이 갱신되지 않는 경우입니다.",
@@ -1358,11 +1494,11 @@ for i, (title, cause, fix) in enumerate(probs):
     tf = textbox(s, M + 4.7, y + 0.2, 6.9, 0.58)
     write(tf, [(fix, dict(size=11.5, color=RGBColor(0xC8, 0xD3, 0xE3)), dict(space_after=0, line=1.25))])
     y += 1.0
-page_num(s, 24, dark=True)
+page_num(s, 25, dark=True)
 
 # =================================================================== 19 체크리스트
 s = slide_light(prs)
-title_bar(s, "24  CHECKLIST", "설치 점검표")
+title_bar(s, "26  CHECKLIST", "설치 점검표")
 
 left = [
     "Visual Studio (MFC 포함) 설치",
@@ -1401,7 +1537,7 @@ card(s, M, 6.2, W - 2 * M, 0.6, fill=RGBColor(0xEC, 0xF6, 0xF4))
 tf = textbox(s, M + 0.34, 6.36, W - 2 * M - 0.68, 0.32)
 write(tf, [("모두 완료되면 현장 두 곳 합쳐 6개가 기동하고, 상태줄에는 선택한 현장 기준으로 [3] processes | err=0000 이 표시됩니다.",
             dict(size=12.5, bold=True, color=TEAL), dict(space_after=0))])
-page_num(s, 25)
+page_num(s, 26)
 
 # 출력 경로는 인자로 바꿀 수 있다 (PowerPoint 가 원본을 열고 있을 때 임시본 생성용)
 import sys
