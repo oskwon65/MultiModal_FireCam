@@ -516,9 +516,19 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 			line.Format("RGB 틀어짐 : %s   (0칸 · %s 기동 시 측정%s)",
 				px.IsEmpty() ? "없음" : (LPCSTR)px, sat.c_str(), old_way);
 		else
-			line.Format("RGB 틀어짐 : %s   (가로 %+d칸 · 세로 %+d칸 · %s 측정%s)",
+		{
+			// 이동은 자동으로 보정하지 않는다. 되돌려도 score 가 0.088 에서
+			// 0.365 까지밖에 안 올랐고(정상 0.952), 가장자리 공백을 무엇으로
+			// 채우든 지어낸 값이 64차원 입력 전체를 오염시킨다.
+			//
+			// 대신 크게 밀리면 사람에게 알린다. 2칸이면 마스크 16칸 중
+			// 4칸이, 3칸이면 7칸이 감시에서 빠진다.
+			const int nx = abs(atoi(sx.c_str())), ny = abs(atoi(sy.c_str()));
+			const char* warn = (nx >= 2 || ny >= 2) ? "  ※ 현장 조준 확인" : "";
+			line.Format("RGB 틀어짐 : %s   (가로 %+d칸 · 세로 %+d칸 · %s 측정%s)%s",
 				px.IsEmpty() ? "틀어짐" : (LPCSTR)px,
-				atoi(sx.c_str()), atoi(sy.c_str()), sat.c_str(), old_way);
+				atoi(sx.c_str()), atoi(sy.c_str()), sat.c_str(), old_way, warn);
+		}
 
 		sh = line + "\r\n";
 
@@ -608,6 +618,28 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 		t.Format("3단계 연속학습   대기\r\n    재학습 가능 %d/%d건", db_rows, min_rtr);
 	else
 		t.Format("3단계 연속학습   대기\r\n    아직 재학습 이력이 없습니다");
+
+	// 재학습이 기존 모델을 얼마나 물려받을지.
+	//
+	// 카메라가 몇 칸 밀렸는지로는 모델이 쓸 만한지 알 수 없다. 실측에서
+	// 3칸을 밀어도 score 가 0.890 이었고, kict1 은 1.3칸 밀린 상태로
+	// 0.088 이었다. 그래서 지금 내고 있는 점수로 정한다.
+	{
+		const std::string ds = ini_read_utf8(st, "STATUS", "DECISION_SCORE", "");
+		const std::string cw = ini_read_utf8(st, "STATUS", "CONTRIB_W", "");
+		if (!ds.empty() && !cw.empty())
+		{
+			const double w = atof(cw.c_str());
+			const char* how =
+				(w >= 1.0) ? "평소 연속 학습" :
+				(w <= 0.0) ? "새로 시작 (가중치 물려받지 않음)" :
+				             "기여 축소";
+			CStringA c2;
+			c2.Format("\r\n    판단 점수 %s → 기존 모델 기여 %s · %s",
+				ds.c_str(), cw.c_str(), how);
+			t += c2;
+		}
+	}
 	m_lblStage3.SetWindowTextA(t);
 
 	// 기준일과 갱신 시각은 상단 안내줄에 함께 보여준다.

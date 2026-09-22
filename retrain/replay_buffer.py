@@ -123,9 +123,22 @@ class StratifiedReservoir:
 
 def collect(conn, db_name, n_cells, target, mask=None,
             min_score=NORMAL_MIN_SCORE, seed=None, verbose=True,
-            base_date=None):
+            base_date=None, old_weight=None, temp_warn=None):
     """
-    히스토리 DB 전체를 한 번 훑어 학습용 표본을 만든다.
+    히스토리 DB 를 훑어 학습용 표본을 만든다.
+
+    old_weight (0.0 ~ 1.0)
+        기준일 이전(옛 시기) 자료를 얼마나 섞을지. None 이면 예전처럼 기준일
+        이전을 통째로 버린다.
+
+        카메라가 밀리거나 설비가 바뀌어도 옛 자료가 전부 쓸모없어지는 것은
+        아니다. 지금 모델이 몇 점을 내고 있느냐에 따라 옛 시기를 조금 남길지
+        다 버릴지가 달라진다. 그 비율을 model_contribution 이 정하고 여기로
+        넘어온다.
+
+        old_weight = 0.0  -> 새 시기만
+        old_weight = 0.5  -> 절반씩
+        old_weight = 1.0  -> 시기를 가르지 않고 전체에서 뽑는다
 
     반환: (X, info)
       X    : (target, n_cells) 배열
@@ -134,18 +147,93 @@ def collect(conn, db_name, n_cells, target, mask=None,
     cur = conn.cursor()
     tables = list_history_tables(cur, db_name)
 
-    # 계산 기준일 이전 테이블은 아예 읽지 않는다. 기준선과 달리 히스토리 DB 는
-    # 날짜별 테이블이라 과거 구간을 정확히 잘라낼 수 있다. 카메라를 옮기거나
-    # 설비를 바꾸기 전 데이터로 학습하면 바뀌기 전 모습을 정상으로 배운다.
+    # 계산 기준일로 옛 시기와 새 시기를 가른다. 기준선과 달리 히스토리 DB 는
+    # 날짜별 테이블이라 과거 구간을 정확히 잘라낼 수 있다.
+    old_tables = []
+
+    # 기여 가중치를 낮추기로 해 놓고 기준일이 없으면, 옛 시기와 새 시기를
+    # 가를 방법이 없어 그냥 전체에서 뽑게 된다. 가중치가 조용히 무시되는
+    # 것이라 반드시 알려야 한다.
+    if old_weight is not None and old_weight < 1.0 and not base_date:
+        print("[경고] 기여 가중치가 "
+              f"{float(old_weight):.2f} 인데 계산 기준일(CALC_BASE_DATE)이 "
+              "비어 있습니다.")
+        print("       옛 시기와 새 시기를 가를 수 없어 전체 기간에서 뽑습니다.")
+        print("       [설정] 창에서 계산 기준일을 지정해야 가중치가 적용됩니다.")
+
     if base_date:
         cutoff = "results_history_" + str(base_date).replace("-", "")
-        dropped = [t for t in tables if t < cutoff]
-        tables = [t for t in tables if t >= cutoff]
-        if dropped and verbose:
-            print(f"[재생버퍼] 기준일({base_date}) 이전 테이블 {len(dropped)}개 제외")
+        old_tables = [t for t in tables if t < cutoff]
+        new_tables = [t for t in tables if t >= cutoff]
 
-    if not tables:
+        if old_weight is None:
+            # 예전 방식: 기준일 이전은 아예 읽지 않는다.
+            if old_tables and verbose:
+                print(f"[재생버퍼] 기준일({base_date}) 이전 테이블 "
+                      f"{len(old_tables)}개 제외")
+            tables, old_tables = new_tables, []
+        elif old_weight >= 1.0:
+            old_tables = []          # 가르지 않고 전체에서 뽑는다
+        elif not new_tables:
+            # 새 시기에 자료가 없으면 비율을 논할 수 없다. 있는 것으로 뽑는다.
+            if verbose:
+                print(f"[재생버퍼] 기준일({base_date}) 이후 자료가 없어 "
+                      f"전체에서 뽑습니다")
+            old_tables = []
+        else:
+            tables = new_tables
+
+    if not tables and not old_tables:
         cur.close()
+        return np.empty((0, n_cells)), {"tables": 0, "rows": 0, "kept": 0}
+
+    # 옛 시기를 섞는 경우, 목표 수를 비율로 나눠 두 번 뽑고 합친다.
+    if old_tables:
+        n_old = int(round(target * float(old_weight)))
+        n_new = target - n_old
+        if verbose:
+            print(f"[재생버퍼] 옛 시기 {len(old_tables)}개 테이블에서 {n_old:,}건, "
+                  f"새 시기 {len(tables)}개에서 {n_new:,}건 "
+                  f"(기여 가중치 {float(old_weight):.2f})")
+        X_old, info_old = _collect_from(cur, db_name, old_tables, n_cells, n_old,
+                                        mask, min_score, seed, verbose, temp_warn)
+        X_new, info_new = _collect_from(cur, db_name, tables, n_cells, n_new,
+                                        mask, min_score, seed, verbose, temp_warn)
+        cur.close()
+        X = np.concatenate([a for a in (X_old, X_new) if len(a)]) \
+            if (len(X_old) or len(X_new)) else np.empty((0, n_cells))
+        info = {
+            "tables": info_old["tables"] + info_new["tables"],
+            "period": f"{info_old.get('period','')} + {info_new.get('period','')}",
+            "rows": info_old["rows"] + info_new["rows"],
+            "kept": info_old["kept"] + info_new["kept"],
+            "cells": max(info_old.get("cells", 0), info_new.get("cells", 0)),
+            # drawn 은 보고서가 쓰는 키다. 두 시기를 합칠 때 빠뜨리면
+            # 학습이 다 끝난 뒤 보고서에서 KeyError 로 죽는다.
+            "drawn": int(len(X)),
+            "split": info_new.get("split", info_old.get("split")),
+            "old_rows": int(len(X_old)), "new_rows": int(len(X_new)),
+            "old_weight": float(old_weight),
+        }
+        return X, info
+
+    X, info = _collect_from(cur, db_name, tables, n_cells, target,
+                            mask, min_score, seed, verbose, temp_warn)
+    cur.close()
+    info["old_weight"] = 1.0 if old_weight is None else float(old_weight)
+    return X, info
+
+
+def _collect_from(cur, db_name, tables, n_cells, target, mask,
+                  min_score, seed, verbose, temp_warn=None):
+    """
+    테이블 묶음 하나에서 target 건을 고르게 뽑는다.
+
+    temp_warn 이 주어지면 마스크 칸 최고 온도가 그 값 이상인 프레임을 뺀다.
+    모델 점수를 믿을 수 없을 때(min_score 를 낮췄을 때) 정상 여부를 가리는
+    유일한 근거다.
+    """
+    if not tables or target <= 0:
         return np.empty((0, n_cells)), {"tables": 0, "rows": 0, "kept": 0}
 
     n_keys_est = 24 * 2
@@ -176,6 +264,10 @@ def collect(conn, db_name, n_cells, target, mask=None,
                 continue
 
             peak = float(v[mask == 1].max()) if mask is not None else float(v.max())
+
+            # 0단계 절대 임계값. 모델을 못 믿을 때 남는 유일한 판단이다.
+            if temp_warn is not None and peak >= float(temp_warn):
+                continue
 
             if split is None:
                 warmup_peaks.append(peak)

@@ -761,7 +761,10 @@ def Set_Env_Config(user_ID):
         # 전혀 달라 추측한 기본값은 오경보만 낳기 때문이다.
         # 자세한 내용은 predict_machine/abs_threshold.py 참고.
         for _k in ("ABS_TEMP_WARN", "ABS_TEMP_ALARM",
-                   "ABS_RISE_WARN", "ABS_RISE_ALARM"):
+                   "ABS_RISE_WARN", "ABS_RISE_ALARM",
+                   # 기여 가중치를 가르는 점수 문턱. 없으면 None 을 넘겨
+                   # model_contribution 의 기본값을 쓰게 한다.
+                   "CONTRIB_BAND_HIGH", "CONTRIB_BAND_MID", "CONTRIB_BAND_LOW"):
             local_config[_k] = (config.getfloat("CONSTANTS", _k)
                                 if config.has_option("CONSTANTS", _k)
                                 else None)

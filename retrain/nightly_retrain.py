@@ -66,6 +66,7 @@ from db_utils import Set_Env_Config, Get_HistoryDB_Config, Connect_History_DB
 from predict_machine import AutoEncoder, load_scaler
 
 import replay_buffer
+import model_contribution
 import sensitivity_gate
 
 # --- 학습 설정 ----------------------------------------------------------
@@ -89,6 +90,30 @@ ARTIFACTS = ("autoencoder_final.pth", "scaler.pkl", "scaler.npz")
 # ======================================================================
 # 세대 관리
 # ======================================================================
+
+def bands(config):
+    """
+    기여 가중치 문턱. env.ini 의 [CONSTANTS] 로 덮어쓸 수 있다.
+
+        CONTRIB_BAND_HIGH = 0.85
+        CONTRIB_BAND_MID  = 0.50
+        CONTRIB_BAND_LOW  = 0.20
+
+    근거가 확실한 것은 양 끝(정상 0.95, 망가진 0.09)뿐이라 가운데는 추정이다.
+    현장마다 다를 수 있으므로 코드에 박지 않는다.
+    """
+    d = dict(zip(("hi", "mid", "lo"),
+                 (b[0] for b in model_contribution.DEFAULT_BANDS)))
+    for key, name in (("hi", "CONTRIB_BAND_HIGH"), ("mid", "CONTRIB_BAND_MID"),
+                      ("lo", "CONTRIB_BAND_LOW")):
+        v = config.get(name)
+        if v not in (None, ""):
+            try:
+                d[key] = float(v)
+            except (TypeError, ValueError):
+                pass
+    return ((d["hi"], 1.0), (d["mid"], 0.5), (d["lo"], 0.2))
+
 
 def gen_root(user_path):
     return os.path.join(user_path, GEN_DIR_NAME)
@@ -139,12 +164,38 @@ def activate(user_path, stamp):
 # 학습
 # ======================================================================
 
-def train(X, input_dim, latent_dim, device, verbose=True):
+def train(X, input_dim, latent_dim, device, verbose=True,
+          init_state=None, old_weight=1.0):
+    """
+    init_state  기존 모델의 가중치. 주면 거기서 출발한다(웜스타트).
+    old_weight  기존 모델을 얼마나 물려받을지(0.0~1.0).
+
+    웜스타트는 지난 세대가 찾아 놓은 자리에서 시작하므로 적은 자료로도 빨리
+    수렴한다. 다만 옛 모습에 붙들리는 대가가 있다. 그래서 물려받는 정도가
+    낮을수록 학습률을 올려 옛 흔적을 빨리 벗게 한다.
+
+    old_weight = 0 이면 아예 새로 초기화한다. 카메라가 완전히 다른 곳을 보고
+    있는데 그 자리에서 출발할 이유가 없다.
+    """
     scaler = StandardScaler().fit(X)
     Xs = torch.tensor(scaler.transform(X), dtype=torch.float32)
 
     model = AutoEncoder(input_dim, latent_dim, input_dim).to(device)
-    opt = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+
+    lr = LEARNING_RATE
+    if init_state is not None and old_weight > 0.0:
+        try:
+            model.load_state_dict(init_state)
+            # 적게 물려받을수록 크게 흔든다. w=1 이면 그대로, w=0.2 면 약 3배.
+            lr = LEARNING_RATE * (1.0 + 2.0 * (1.0 - old_weight))
+            if verbose:
+                print(f"[학습] 웜스타트 (기여 {old_weight:.2f}, 학습률 {lr:.5f})")
+        except Exception as e:
+            print(f"[경고] 웜스타트 실패, 새로 초기화합니다: {type(e).__name__} {e}")
+    elif verbose:
+        print(f"[학습] 새로 초기화 (기여 {old_weight:.2f})")
+
+    opt = optim.Adam(model.parameters(), lr=lr)
     lossf = nn.MSELoss()
 
     loader = torch.utils.data.DataLoader(
@@ -246,9 +297,47 @@ def main():
     history_db = Get_HistoryDB_Config(config)
     conn = Connect_History_DB(history_db)
     try:
+        # ---------------- 기존 모델을 얼마나 물려받을지 ----------------
+        #
+        # 카메라가 밀렸는지가 아니라 '지금 몇 점을 내고 있는지' 로 정한다.
+        # 실측에서 칸 수는 모델 손상을 예측하지 못했다 - 3칸을 밀어도 0.890
+        # 이었고, kict1 은 1.3칸에 0.088 이었다.
+        dec_score, dec_info = model_contribution.decision_score(
+            conn, history_db["database"], n_cells, mask=mask,
+            temp_warn=config.get("ABS_TEMP_WARN"))
+        old_weight = model_contribution.weight_for(dec_score, bands(config))
+        print(f"[기여도] {model_contribution.describe(dec_score, old_weight)}")
+        print()
+
+        # 표본을 고르는 잣대를 기여 가중치에 맞춘다.
+        #
+        # replay_buffer 는 원래 'mscore >= 0.5 인 정상 프레임' 만 담는다.
+        # 그런데 그 점수를 매긴 것이 바로 지금 버리기로 한 모델이다.
+        # kict1 은 모든 프레임이 0.085 라 정상 프레임이 0건이 되고 재학습이
+        # 아예 멈춘다 - 망가진 모델이 자기 후임을 못 만들게 막는 꼴이다.
+        #
+        # 모델을 못 믿기로 했으면 그 판단으로 표본을 걸러서도 안 된다.
+        # 대신 0단계 절대 임계값으로 거른다. 학습과 무관하게 늘 동작하는
+        # 유일한 판단이고, 이상 프레임을 학습에 넣지 않는다는 목적도 지킨다.
+        if old_weight >= 1.0:
+            min_score = replay_buffer.NORMAL_MIN_SCORE
+            temp_warn = None
+            print(f"[재생버퍼] 정상 판정 기준 : 모델 점수 >= {min_score}")
+        else:
+            min_score = 0.0
+            temp_warn = config.get("ABS_TEMP_WARN")
+            if temp_warn is None:
+                print("[경고] 모델 점수를 믿지 않기로 했는데 ABS_TEMP_WARN 이")
+                print("       비어 있어 이상 프레임을 걸러낼 수단이 없습니다.")
+                print("       [설정] 창에서 절대 임계값을 먼저 지정하십시오.")
+            else:
+                print(f"[재생버퍼] 정상 판정 기준 : 절대 임계값 < {temp_warn:.0f}도 "
+                      f"(모델 점수는 믿지 않음)")
+
         X, info = replay_buffer.collect(
             conn, history_db["database"], n_cells, TARGET_SAMPLES, mask=mask,
-            base_date=config.get("CALC_BASE_DATE"))
+            base_date=config.get("CALC_BASE_DATE"), old_weight=old_weight,
+            min_score=min_score, temp_warn=temp_warn)
     finally:
         conn.close()
 
@@ -264,7 +353,16 @@ def main():
     X_train, X_hold = X[:cut], X[cut:]
     print(f"[학습] {len(X_train):,}건 학습 / {len(X_hold):,}건 검증")
 
-    model, scaler = train(X_train, n_cells, latent_dim, device)
+    init_state = None
+    _mp = os.path.join(user_path, "autoencoder_final.pth")
+    if old_weight > 0.0 and os.path.exists(_mp):
+        try:
+            init_state = torch.load(_mp, map_location=device)
+        except Exception as e:
+            print(f"[경고] 기존 모델을 읽지 못했습니다: {type(e).__name__} {e}")
+
+    model, scaler = train(X_train, n_cells, latent_dim, device,
+                          init_state=init_state, old_weight=old_weight)
 
     # ---------------- 감도 회귀 시험 ----------------
     cand = sensitivity_gate.evaluate(model, scaler, X_hold, mask, device)

@@ -101,6 +101,7 @@ from abs_threshold import AbsoluteThreshold, LEVEL_ALARM, LEVEL_WARN, level_name
 from online_baseline import OnlineBaseline, SCENE_SHIFT_MIN
 import stage_status
 import thermal_shift
+import model_contribution
 
 
 # ==============================================
@@ -584,6 +585,7 @@ def main_loop(config, sensor_db_config):
                                stage_status.STATUS_FILE_NAME)
     db_rows = db_tables = None
     db_counted_at = 0.0
+    contrib = None          # (판단 점수, 기여 가중치) - 히스토리 집계와 같은 주기
     status_written_at = 0.0   # 0 이면 첫 프레임에서 바로 한 번 남긴다
     prev_fire_detected = False
 
@@ -870,6 +872,23 @@ def main_loop(config, sensor_db_config):
                         except Exception as e:
                             print(f"[WARN] 히스토리 건수 집계 실패: {e}")
 
+                        # 재학습이 기존 모델을 얼마나 물려받을지. 실제로 정하는
+                        # 곳은 야간 재학습이고, 여기서는 [설정] 화면에 미리
+                        # 보여 주기 위해 같은 함수로 구한다.
+                        try:
+                            _c = Connect_History_DB(history_db_config)
+                            try:
+                                _sc, _ = model_contribution.decision_score(
+                                    _c, history_db_config["database"],
+                                    LENGTH_HOTLIST, mask=hotlist_mask,
+                                    temp_warn=config.get("ABS_TEMP_WARN"),
+                                    verbose=False)
+                            finally:
+                                _c.close()
+                            contrib = (_sc, model_contribution.weight_for(_sc))
+                        except Exception as e:
+                            print(f"[WARN] 기여 가중치 계산 실패: {e}")
+
                     stage_status.write(
                         STATUS_PATH, baseline,
                         model_ready=(model is not None and scaler is not None),
@@ -879,7 +898,7 @@ def main_loop(config, sensor_db_config):
                         stage_used=stage_used,
                         abs_guard=abs_guard,
                         shift=(shift_x, shift_y, shift_checked_at, shift_inf),
-                        tshift=tshift)
+                        tshift=tshift, contrib=contrib)
                     status_written_at = _now_t
 
             people, fall, fire_list = read_people_and_area(sensor_db_config)

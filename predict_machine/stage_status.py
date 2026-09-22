@@ -179,7 +179,7 @@ def _tcorr0(tshift):
 
 def write(path, baseline, model_ready, user_path,
           db_rows=None, db_tables=None, min_retrain=None, stage_used=None,
-          abs_guard=None, shift=None, tshift=None):
+          abs_guard=None, shift=None, tshift=None, contrib=None):
     """
     현황을 통째로 덮어쓴다.
 
@@ -255,6 +255,12 @@ def write(path, baseline, model_ready, user_path,
         f"DB_ROWS = {-1 if db_rows is None else int(db_rows)}",
         f"DB_TABLES = {-1 if db_tables is None else int(db_tables)}",
         f"MIN_RETRAIN = {-1 if min_retrain is None else int(min_retrain)}",
+        "",
+        # 재학습이 기존 모델을 얼마나 물려받을지. 칸 수가 아니라 지금 내고
+        # 있는 점수로 정한다. 실측에서 3칸을 밀어도 score 0.890 이었고,
+        # kict1 은 1.3칸에 0.088 이었다 - 칸 수는 손상을 예측하지 못한다.
+        f"DECISION_SCORE = {'' if contrib is None else f'{float(contrib[0]):.4f}' if contrib[0] is not None else ''}",
+        f"CONTRIB_W = {'' if contrib is None else f'{float(contrib[1]):.2f}'}",
     ]
 
     tmp = path + ".tmp"
