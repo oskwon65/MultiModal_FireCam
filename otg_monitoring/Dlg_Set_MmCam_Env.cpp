@@ -493,18 +493,32 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 		//   2 틀어졌다
 		const int sstate = ini_read_int_utf8(st, "STATUS", "SHIFT_STATE", -1);
 
+		// 잰 픽셀 값. 칸 수만 적으면 한 칸(640/8 = 80px)보다 작은 흔들림이
+		// 통째로 "0칸" 으로 묻힌다. kict1 의 기준 이미지 더미에 10~20px 씩
+		// 조금씩 돌아간 흔적이 남아 있었는데, 칸으로만 보면 전부 이동 없음
+		// 이었다. 서서히 돌아가는 것은 이 자리에서 먼저 드러난다.
+		const std::string sdx = ini_read_utf8(st, "STATUS", "SHIFT_DX", "");
+		const std::string sdy = ini_read_utf8(st, "STATUS", "SHIFT_DY", "");
+
+		CStringA px;
+		if (!sdx.empty() && !sdy.empty())
+			px.Format("가로 %+.1f · 세로 %+.1f px",
+				atof(sdx.c_str()), atof(sdy.c_str()));
+
+		const char* old_way = (sstate < 0) ? " · 예전 방식" : "";
+
 		if (sx.empty() || sy.empty())
 			line = "RGB 틀어짐 : 확인 전";
 		else if (sstate == 0)
 			line.Format("RGB 틀어짐 : 판정 불가 (기준과 다른 장면)   (%s 기동 시)",
 				sat.c_str());
 		else if (atoi(sx.c_str()) == 0 && atoi(sy.c_str()) == 0)
-			line.Format("RGB 틀어짐 : 없음   (%s 기동 시 측정%s)", sat.c_str(),
-				sstate < 0 ? " · 예전 방식" : "");
+			line.Format("RGB 틀어짐 : %s   (0칸 · %s 기동 시 측정%s)",
+				px.IsEmpty() ? "없음" : (LPCSTR)px, sat.c_str(), old_way);
 		else
-			line.Format("RGB 틀어짐 : 가로 %+d칸 · 세로 %+d칸   (%s 기동 시 측정%s)",
-				atoi(sx.c_str()), atoi(sy.c_str()), sat.c_str(),
-				sstate < 0 ? " · 예전 방식" : "");
+			line.Format("RGB 틀어짐 : %s   (가로 %+d칸 · 세로 %+d칸 · %s 측정%s)",
+				px.IsEmpty() ? "틀어짐" : (LPCSTR)px,
+				atoi(sx.c_str()), atoi(sy.c_str()), sat.c_str(), old_way);
 
 		sh = line + "\r\n";
 

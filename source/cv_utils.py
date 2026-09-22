@@ -235,6 +235,21 @@ SHIFT_STATE_OK     = 1    # 틀어지지 않았다
 SHIFT_STATE_SHIFT  = 2    # 틀어졌다
 
 
+def shift_info(state, dx=None, dy=None, response=None):
+    """
+    틀어짐 측정 결과를 한 덩어리로 묶는다.
+
+    칸 수만 돌려주면 한 칸(640/8 = 80px)보다 작은 흔들림이 통째로 0칸으로
+    묻힌다. 실제로 kict1 의 기준 이미지 더미에는 10~20px 씩 조금씩 돌아간
+    흔적이 남아 있었는데, 칸으로만 보면 전부 "이동 없음" 이다. 잰 픽셀 값을
+    함께 들고 다녀 화면에 그대로 적는다.
+
+    dx, dy 가 None 이면 재지 못했다는 뜻이다. 0.0 으로 채우면 "안 밀렸다" 로
+    읽히므로 채우지 않는다.
+    """
+    return {"state": state, "dx": dx, "dy": dy, "response": response}
+
+
 def base_ref_path(BASE_IMG_DIR):
     return os.path.join(BASE_IMG_DIR, BASE_REF_NAME)
 
@@ -294,7 +309,7 @@ def _adjust_with_frozen_ref(ref_path, input_img, hotlist_mask, X_GRID, Y_GRID):
     ref_img = cv2.imread(ref_path)
     if ref_img is None:
         print(f"[WARN] 기준 이미지를 읽지 못했습니다: {ref_path}")
-        return False, hotlist_mask.copy(), 0, 0, SHIFT_STATE_UNSURE
+        return False, hotlist_mask.copy(), 0, 0, shift_info(SHIFT_STATE_UNSURE)
 
     m = measure_shift_vs_ref(ref_img, input_img)
 
@@ -306,7 +321,7 @@ def _adjust_with_frozen_ref(ref_path, input_img, hotlist_mask, X_GRID, Y_GRID):
         print(f"[기준 1장] 판정 불가 - 기준과 같은 장면으로 보기 어렵습니다 "
               f"(response < {SHIFT_RESP_MIN}). 마스크는 그대로 둡니다.")
         print("-" * 50)
-        return False, hotlist_mask.copy(), 0, 0, SHIFT_STATE_UNSURE
+        return False, hotlist_mask.copy(), 0, 0, shift_info(SHIFT_STATE_UNSURE)
 
     dx, dy, response = m
 
@@ -324,14 +339,14 @@ def _adjust_with_frozen_ref(ref_path, input_img, hotlist_mask, X_GRID, Y_GRID):
     if shift_x == 0 and shift_y == 0:
         print("[기준 1장] 틀어짐 없음")
         print("-" * 50)
-        return False, hotlist_mask.copy(), 0, 0, SHIFT_STATE_OK
+        return False, hotlist_mask.copy(), 0, 0, shift_info(SHIFT_STATE_OK, dx, dy, response)
 
     print(f"[기준 1장] 틀어짐 감지 - 가로 {shift_x:+d}칸, 세로 {shift_y:+d}칸")
     print("-" * 50)
 
     shifted = _shift_mask(hotlist_mask.reshape(Y_GRID, X_GRID),
                           shift_x, shift_y, Y_GRID, X_GRID)
-    return True, shifted.flatten(), shift_x, shift_y, SHIFT_STATE_SHIFT
+    return True, shifted.flatten(), shift_x, shift_y, shift_info(SHIFT_STATE_SHIFT, dx, dy, response)
 
 
 # ----------------------------
@@ -370,7 +385,7 @@ def Get_Adjusted_HotMask_Position(BASE_IMG_DIR, input_img, hotlist_mask, X_GRID,
     if base_img_path is None:
         print("[INFO] No base image found. Saving current image as first base image.")
         save_base_image(BASE_IMG_DIR, input_img)
-        return False, hotlist_mask.copy(), 0, 0, SHIFT_STATE_LEGACY
+        return False, hotlist_mask.copy(), 0, 0, shift_info(SHIFT_STATE_LEGACY)
 
     dx, dy, response = estimate_movement(input_img, base_img_path)
 
@@ -399,7 +414,7 @@ def Get_Adjusted_HotMask_Position(BASE_IMG_DIR, input_img, hotlist_mask, X_GRID,
     if diff < 20: #평균 이미지 그레이값의 차이
             print(f"Num of Files of Base_Img: {base_img_path} [brightness diff.] {diff}")
             save_base_image(BASE_IMG_DIR, input_img)
-            return False, hotlist_mask.copy(), 0, 0, SHIFT_STATE_LEGACY
+            return False, hotlist_mask.copy(), 0, 0, shift_info(SHIFT_STATE_LEGACY, dx, dy, response)
 
     # ---------- 마스크 이동 보정 ----------
 
@@ -407,7 +422,7 @@ def Get_Adjusted_HotMask_Position(BASE_IMG_DIR, input_img, hotlist_mask, X_GRID,
 
     shifted_flat = shifted.flatten()
 
-    return True, shifted_flat, shift_x, shift_y, SHIFT_STATE_LEGACY
+    return True, shifted_flat, shift_x, shift_y, shift_info(SHIFT_STATE_LEGACY, dx, dy, response)
 
 # ----------------------------
 

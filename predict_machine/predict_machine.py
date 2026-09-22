@@ -419,7 +419,7 @@ def Check_Status_of_HotList_Mask(hotlist_mask, x_grid, BASE_IMG_DIR, input_img):
 
     y_grid = len(hotlist_mask) // x_grid
 
-    bShifted, hotlist_mask, shift_x, shift_y, shift_state = \
+    bShifted, hotlist_mask, shift_x, shift_y, shift_inf = \
         Get_Adjusted_HotMask_Position(BASE_IMG_DIR, input_img, hotlist_mask,
                                       x_grid, y_grid)
 
@@ -432,7 +432,7 @@ def Check_Status_of_HotList_Mask(hotlist_mask, x_grid, BASE_IMG_DIR, input_img):
         sys.exit(1)
 
     print(f"[Check_Status_of_HotList_Mask] bShifted {bShifted} "
-          f"shift_x {shift_x} shift_y {shift_y} state {shift_state}")
+          f"shift_x {shift_x} shift_y {shift_y} state {shift_inf['state']}")
     print("-" * 50)
 
     # 이동량도 함께 돌려준다. 예전에는 여기서 버려서, 계산해 놓고도 화면에
@@ -440,7 +440,7 @@ def Check_Status_of_HotList_Mask(hotlist_mask, x_grid, BASE_IMG_DIR, input_img):
     #
     # state 를 따로 두는 까닭. 0칸이라는 값만으로는 "틀어지지 않았다" 와
     # "잴 수 없었다" 를 가를 수 없다. 둘은 전혀 다른 말이다.
-    return bShifted, hotlist_mask, shift_x, shift_y, shift_state
+    return bShifted, hotlist_mask, shift_x, shift_y, shift_inf
 
 # ==================================================
 
@@ -614,7 +614,7 @@ def main_loop(config, sensor_db_config):
             print("Program Terminated")
             sys.exit(1)
 
-    bShifted, new_hotlist_mask, shift_x, shift_y, shift_state = \
+    bShifted, new_hotlist_mask, shift_x, shift_y, shift_inf = \
         Check_Status_of_HotList_Mask(cur_hotlist_mask, X_GRID, BASE_IMG_DIR,
                                      input_img)
 
@@ -638,7 +638,7 @@ def main_loop(config, sensor_db_config):
             # 남긴다. 기준을 늘리는 곳은 이 자리 하나뿐이어야 한다. 밝기차만
             # 보고 자동으로 쌓던 규칙이 kict1 의 base_img 에 서로 다른 위치
             # 네 덩어리를 섞어 놓았다.
-            if shift_state != SHIFT_STATE_LEGACY:
+            if shift_inf["state"] != SHIFT_STATE_LEGACY:
                 write_base_ref(BASE_IMG_DIR, input_img)
             else:
                 save_base_image(BASE_IMG_DIR, input_img)
@@ -878,7 +878,7 @@ def main_loop(config, sensor_db_config):
                         min_retrain=config.get("RETRAIN_MIN_SAMPLES"),
                         stage_used=stage_used,
                         abs_guard=abs_guard,
-                        shift=(shift_x, shift_y, shift_checked_at, shift_state),
+                        shift=(shift_x, shift_y, shift_checked_at, shift_inf),
                         tshift=tshift)
                     status_written_at = _now_t
 

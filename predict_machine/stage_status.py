@@ -117,6 +117,25 @@ def _esc(v):
     return str(v).replace("\r", " ").replace("\n", " ")
 
 
+def _sf(shift, key, default=""):
+    """
+    RGB 틀어짐 측정 결과에서 한 항목을 꺼낸다.
+
+    shift 는 (shift_x, shift_y, 잰시각, info) 이고 info 가 dict 다. 아직 재지
+    못했으면 빈 칸으로 둔다. 0 으로 채우면 "안 밀렸다" 로 읽힌다.
+    """
+    if shift is None or len(shift) < 4 or not isinstance(shift[3], dict):
+        return default
+    v = shift[3].get(key)
+    if v is None:
+        return default
+    if key == "state":
+        return int(v)
+    if key == "response":
+        return f"{float(v):.3f}"
+    return f"{float(v):.1f}"
+
+
 def _tstate(tshift):
     """
     열화상 틀어짐 상태를 한 글자로 줄인다.
@@ -217,7 +236,12 @@ def write(path, baseline, model_ready, user_path,
         #   0 쟀으나 믿을 수 없다 (기준과 다른 장면)
         #   1 틀어지지 않았다
         #   2 틀어졌다
-        f"SHIFT_STATE = {-1 if (shift is None or len(shift) < 4) else int(shift[3])}",
+        f"SHIFT_STATE = {_sf(shift, 'state', -1)}",
+        # 잰 픽셀 값. 칸 수만 적으면 한 칸(80px)보다 작은 흔들림이 통째로
+        # 0칸으로 묻힌다. 서서히 돌아가는 것은 그 구간에서 먼저 보인다.
+        f"SHIFT_DX = {_sf(shift, 'dx')}",
+        f"SHIFT_DY = {_sf(shift, 'dy')}",
+        f"SHIFT_RESP = {_sf(shift, 'response')}",
         "",
         # 열화상 틀어짐. RGB 와 달리 운전 중에도 주기적으로 다시 잰다.
         # TSHIFT_STATE 로 "기준 없음 / 판정 불가 / 없음 / 밀렸음" 을 가른다.
