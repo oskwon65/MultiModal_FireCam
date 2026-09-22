@@ -62,3 +62,4 @@ users/*/stage_status.ini
 
 # Office 가 문서를 열면 만드는 잠금 파일
 ~$*
+users/*/thermal_ref.npy

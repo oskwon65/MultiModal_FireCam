@@ -117,9 +117,50 @@ def _esc(v):
     return str(v).replace("\r", " ").replace("\n", " ")
 
 
+def _tstate(tshift):
+    """
+    열화상 틀어짐 상태를 한 글자로 줄인다.
+
+      -1  아직 기준 패턴이 없다 (표본을 모으는 중)
+       0  잴 수는 있었으나 판정할 수 없었다 (화면이 밋밋함)
+       1  틀어지지 않았다
+       2  틀어졌다 (몇 칸인지까지 안다)
+       3  기준 패턴과 안 맞는다 (방향은 못 밝혔다)
+    """
+    if tshift is None or not getattr(tshift, "has_ref", False):
+        return -1
+    res = getattr(tshift, "result", None)
+    if res is None:
+        return 0
+    if res["shifted"]:
+        return 2
+    if res["mismatch"]:
+        return 3
+    return 1
+
+
+def _tv(tshift, key):
+    res = getattr(tshift, "result", None) if tshift is not None else None
+    return "" if res is None else int(res[key])
+
+
+def _tcorr(tshift):
+    res = getattr(tshift, "result", None) if tshift is not None else None
+    if res is None:
+        return ""
+    # 틀어졌다고 볼 때는 그 자리의 상관, 아니면 제자리의 상관을 적는다.
+    return f"{(res['corr'] if res['shifted'] else res['corr0']):.3f}"
+
+
+def _tcorr0(tshift):
+    """제자리 상관. 틀어졌을 때 "원래 자리와는 얼마나 안 맞았나" 가 된다."""
+    res = getattr(tshift, "result", None) if tshift is not None else None
+    return "" if res is None else f"{res['corr0']:.3f}"
+
+
 def write(path, baseline, model_ready, user_path,
           db_rows=None, db_tables=None, min_retrain=None, stage_used=None,
-          abs_guard=None, shift=None):
+          abs_guard=None, shift=None, tshift=None):
     """
     현황을 통째로 덮어쓴다.
 
@@ -170,6 +211,15 @@ def write(path, baseline, model_ready, user_path,
         f"SHIFT_X = {'' if shift is None else int(shift[0])}",
         f"SHIFT_Y = {'' if shift is None else int(shift[1])}",
         f"SHIFT_AT = {_esc('' if shift is None else shift[2])}",
+        "",
+        # 열화상 틀어짐. RGB 와 달리 운전 중에도 주기적으로 다시 잰다.
+        # TSHIFT_STATE 로 "기준 없음 / 판정 불가 / 없음 / 밀렸음" 을 가른다.
+        f"TSHIFT_STATE = {_tstate(tshift)}",
+        f"TSHIFT_X = {_tv(tshift, 'dx')}",
+        f"TSHIFT_Y = {_tv(tshift, 'dy')}",
+        f"TSHIFT_CORR = {_tcorr(tshift)}",
+        f"TSHIFT_CORR0 = {_tcorr0(tshift)}",
+        f"TSHIFT_AT = {_esc(getattr(tshift, 'checked_at', '') or '')}",
         "",
         f"DB_ROWS = {-1 if db_rows is None else int(db_rows)}",
         f"DB_TABLES = {-1 if db_tables is None else int(db_tables)}",

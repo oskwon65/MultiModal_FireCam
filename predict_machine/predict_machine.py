@@ -98,6 +98,7 @@ from constants import ERR_CODE, SVR_CMD, LOCAL_HOTLIST_MASK, SVR_HOTLIST_MASK
 from abs_threshold import AbsoluteThreshold, LEVEL_ALARM, LEVEL_WARN, level_name
 from online_baseline import OnlineBaseline, SCENE_SHIFT_MIN
 import stage_status
+import thermal_shift
 
 
 # ==============================================
@@ -530,6 +531,12 @@ def main_loop(config, sensor_db_config):
     )
     print(f"[STAGE 1] 셀별 기준선 — {baseline.summary()}")
 
+    # 열화상 기준 틀어짐 감시. RGB 검사와 별개로 둔다. 두 카메라가 같이
+    # 움직인다는 보장이 없고(kict1 은 열화상만 밀렸다), RGB 검사는 기동할
+    # 때 한 번뿐이라 운전 중에 밀린 것은 잡지 못한다.
+    tshift = thermal_shift.ThermalShiftWatch(
+        config["LOCAL_USER_PATH"], X_GRID, Y_GRID)
+
     model = None
     scaler = None
 
@@ -614,6 +621,10 @@ def main_loop(config, sensor_db_config):
             write_file_hotlist_mask(HotListMask_LocalPath, hotlist_mask)
             delete_files_of_Base_Img(config)
             save_base_image(BASE_IMG_DIR, input_img)
+            # 지금 보이는 화면이 앞으로의 정상이라는 뜻이므로, 열화상 기준
+            # 패턴도 함께 버린다. RGB 기준 이미지만 새로 잡고 열화상 쪽을
+            # 두면 보정한 그 순간부터 "밀렸다" 고 계속 짖는다.
+            tshift.reset()
             update_db_error_code(sensor_db_config, ERR_CODE.NO_ERR)
             update_db_main_command(sensor_db_config, SVR_CMD.NO_ACTION)
 
@@ -764,6 +775,17 @@ def main_loop(config, sensor_db_config):
                     print(f"[화면이동] 기준 패턴과의 상관계수 {corr:.3f} "
                           f"(기준 {SCENE_SHIFT_MIN}). 카메라 조준을 확인하십시오.")
 
+                # scene_shift 는 "달라졌다" 까지만 말한다. 몇 칸 밀렸는지는
+                # 말해 주지 못하므로, 사람이 이동보정을 누를지 판단할 근거가
+                # 되지 못한다. 굳혀 둔 기준 패턴과 칸 단위로 맞춰 본다.
+                _now_t0 = time.time()
+                tres = tshift.check(x_row, baseline, _now_t0,
+                                    datetime.now().strftime("%Y-%m-%d %H:%M"))
+                # 밀린 칸 수를 못 밝혀도(mismatch) 학습은 멈춘다. 기준과
+                # 다른 화면을 "요즘의 정상" 으로 흡수하면 안 되는 것은
+                # 방향을 아는지와 무관하다.
+                thermal_ok = tres is None or not (tres["shifted"] or tres["mismatch"])
+
                 # --- 기준선 누적 -----------------------------------------
                 # [안전 규칙] 다음 두 경우는 기준선에 넣지 않는다.
                 #
@@ -777,7 +799,10 @@ def main_loop(config, sensor_db_config):
                 #     고장이 조용히 묻히는 것이 가장 나쁜 결말이다.
                 #     학습은 멈추되 EWMA 는 계속 움직여, 조준을 되돌리면
                 #     경보가 자연히 풀리도록 한다.
-                learn_ok = (abs_level == 0) and scene_ok
+                #  3) 열화상 격자가 칸 단위로 밀린 것으로 보일 때
+                #     2) 와 같은 이유다. 이쪽은 몇 칸인지까지 알 수 있어
+                #     사람이 조치할 수 있는 형태로 남는다.
+                learn_ok = (abs_level == 0) and scene_ok and thermal_ok
 
                 _now = datetime.now()
                 if baseline.update(x_row, hour=_now.hour, learn=learn_ok,
@@ -832,7 +857,8 @@ def main_loop(config, sensor_db_config):
                         min_retrain=config.get("RETRAIN_MIN_SAMPLES"),
                         stage_used=stage_used,
                         abs_guard=abs_guard,
-                        shift=(shift_x, shift_y, shift_checked_at))
+                        shift=(shift_x, shift_y, shift_checked_at),
+                        tshift=tshift)
                     status_written_at = _now_t
 
             people, fall, fire_list = read_people_and_area(sensor_db_config)

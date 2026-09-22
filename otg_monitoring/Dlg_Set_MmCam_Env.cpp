@@ -178,11 +178,15 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		      nBase_X + btn_w + 10 + btn_w, ctrl_btn_top + mask_btn_h),
 		this, ID_BTN_SET_MASK_CAM_POS);
 
-	// 기동할 때 잰 틀어짐 값을 버튼 옆에 적는다. 계산은 이미 하고 있었는데
-	// 화면에 나오지 않아, 지금 밀려 있는지 알 길이 없었다.
+	// 잰 틀어짐 값을 버튼 옆에 적는다. 계산은 이미 하고 있었는데 화면에
+	// 나오지 않아, 지금 밀려 있는지 알 길이 없었다.
+	//
+	// 두 줄인 이유는 재는 대상이 둘이기 때문이다. 위는 RGB, 아래는 열화상.
+	// 한 줄로 합치면 어느 카메라가 밀렸는지가 사라지는데, 바로 그 구분이
+	// kict1 에서 두 달을 놓치게 만든 지점이었다.
 	m_lblShift.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
-		CRect(nBase_X + (btn_w + 10) * 2, ctrl_btn_top + 6,
-		      nBase_X + (btn_w + 10) * 2 + 330, ctrl_btn_top + 6 + 20), this);
+		CRect(nBase_X + (btn_w + 10) * 2, ctrl_btn_top - 1,
+		      nBase_X + (btn_w + 10) * 2 + 330, ctrl_btn_top - 1 + 36), this);
 
 	CurrentStatus current_status = read_db_current_status();
 	std::string tmsg = "[" + gUserID + "]  ";
@@ -452,7 +456,7 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	const std::string updated = ini_read_utf8(st, "STATUS", "UPDATED_AT", "");
 
 	if (updated.empty()) {
-		m_lblShift.SetWindowTextA("카메라 틀어짐 : 확인 전");
+		m_lblShift.SetWindowTextA("RGB 틀어짐 : 확인 전\r\n열화상 틀어짐 : 확인 전");
 		m_lblStage0.SetWindowTextA("0단계 절대임계값   집계 대기\r\n    감시 시작 후 첫 기록까지 잠시 걸립니다");
 		m_lblStage1.SetWindowTextA("1단계 셀별기준선   집계 대기");
 		m_lblStage2.SetWindowTextA("2단계 오토인코더   집계 대기");
@@ -475,29 +479,61 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 
 	CStringA t;
 
-	// 기동할 때 잰 카메라 틀어짐.
+	// 카메라 틀어짐 — RGB 와 열화상을 따로 적는다.
 	//
-	// 루프 안에서는 다시 재지 않으므로 "언제 잰 값인지" 를 함께 적어야
-	// 한다. 몇 시간 전 값을 지금 값으로 오해하면 곤란하다.
+	// RGB 는 기동할 때 한 번만 재고 루프 안에서는 다시 재지 않는다. 열화상
+	// 쪽은 격자를 매 프레임 읽으므로 운전 중에도 주기적으로 다시 잰다. 잰
+	// 시각을 함께 적어야 몇 시간 전 값을 지금 값으로 오해하지 않는다.
 	{
+		CStringA sh, line;
+
 		const std::string sx = ini_read_utf8(st, "STATUS", "SHIFT_X", "");
 		const std::string sy = ini_read_utf8(st, "STATUS", "SHIFT_Y", "");
 		const std::string sat = ini_read_utf8(st, "STATUS", "SHIFT_AT", "");
 
-		CStringA sh;
 		if (sx.empty() || sy.empty())
-		{
-			sh = "카메라 틀어짐 : 확인 전";
-		}
+			line = "RGB 틀어짐 : 확인 전";
 		else if (atoi(sx.c_str()) == 0 && atoi(sy.c_str()) == 0)
-		{
-			sh.Format("카메라 틀어짐 : 없음   (%s 기동 시 측정)", sat.c_str());
-		}
+			line.Format("RGB 틀어짐 : 없음   (%s 기동 시 측정)", sat.c_str());
 		else
-		{
-			sh.Format("카메라 틀어짐 : 가로 %+d칸 · 세로 %+d칸   (%s 측정)",
+			line.Format("RGB 틀어짐 : 가로 %+d칸 · 세로 %+d칸   (%s 기동 시 측정)",
 				atoi(sx.c_str()), atoi(sy.c_str()), sat.c_str());
-		}
+
+		sh = line + "\r\n";
+
+		// 열화상. TSHIFT_STATE 가 상태를 가른다.
+		//  -1 기준 패턴을 아직 못 굳혔다 (표본을 모으는 중)
+		//   0 화면이 밋밋해 판정할 수 없었다
+		//   1 틀어지지 않았다
+		//   2 틀어졌다 — 몇 칸인지까지 안다
+		//   3 기준 패턴과 안 맞는다 — 방향은 못 밝혔다
+		//
+		// 3 을 따로 두는 이유. kict1 의 실제 사고가 3 이었다. 칸 수를 못
+		// 밝혔다고 "이상 없음" 으로 적으면 그 사고가 그대로 묻힌다.
+		const int tstate = ini_read_int_utf8(st, "STATUS", "TSHIFT_STATE", -1);
+		const std::string tx = ini_read_utf8(st, "STATUS", "TSHIFT_X", "");
+		const std::string ty = ini_read_utf8(st, "STATUS", "TSHIFT_Y", "");
+		const std::string tc = ini_read_utf8(st, "STATUS", "TSHIFT_CORR", "");
+		const std::string tc0 = ini_read_utf8(st, "STATUS", "TSHIFT_CORR0", "");
+		const std::string tat = ini_read_utf8(st, "STATUS", "TSHIFT_AT", "");
+
+		if (tstate < 0)
+			line = "열화상 틀어짐 : 기준 패턴 준비 중";
+		else if (tstate == 0)
+			line = "열화상 틀어짐 : 판정 불가 (화면 온도차 부족)";
+		else if (tstate == 1)
+			line.Format("열화상 틀어짐 : 없음   (일치도 %s · %s 측정)",
+				tc.c_str(), tat.c_str());
+		else if (tstate == 2)
+			line.Format("열화상 틀어짐 : 가로 %+d칸 · 세로 %+d칸   (일치도 %s · %s 측정)",
+				atoi(tx.c_str()), atoi(ty.c_str()), tc.c_str(), tat.c_str());
+		else
+			// 문자열 상수는 CP949 로 저장된다. em dash(U+2014) 는 CP949 에
+			// 없어 C4566 이 난다. 가운뎃점은 있다.
+			line.Format("열화상 화면 불일치 : 일치도 %s · 조준 확인 필요   (%s 측정)",
+				tc0.c_str(), tat.c_str());
+
+		sh += line;
 		m_lblShift.SetWindowTextA(sh);
 	}
 
