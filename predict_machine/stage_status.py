@@ -119,7 +119,7 @@ def _esc(v):
 
 def write(path, baseline, model_ready, user_path,
           db_rows=None, db_tables=None, min_retrain=None, stage_used=None,
-          abs_guard=None):
+          abs_guard=None, shift=None):
     """
     현황을 통째로 덮어쓴다.
 
@@ -164,6 +164,12 @@ def write(path, baseline, model_ready, user_path,
         f"GENERATION = {_esc(gen_name or '')}",
         f"GENERATION_AT = {_esc(gen_time or '')}",
         f"MODEL_AT = {_esc(model_timestamp(user_path))}",
+        "",
+        # 카메라 틀어짐은 기동할 때 RGB 이미지를 기준 이미지와 대조해 한 번만
+        # 잰다. 루프 안에서는 다시 재지 않으므로 잰 시각을 함께 남긴다.
+        f"SHIFT_X = {'' if shift is None else int(shift[0])}",
+        f"SHIFT_Y = {'' if shift is None else int(shift[1])}",
+        f"SHIFT_AT = {_esc('' if shift is None else shift[2])}",
         "",
         f"DB_ROWS = {-1 if db_rows is None else int(db_rows)}",
         f"DB_TABLES = {-1 if db_tables is None else int(db_tables)}",

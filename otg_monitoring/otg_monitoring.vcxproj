@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -191,6 +191,7 @@
     </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Dlg_CamPos.h" />
     <ClInclude Include="Dlg_Set_MmCam_Env.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="MmCam_monitoring.h" />
@@ -200,6 +201,7 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Dlg_CamPos.cpp" />
     <ClCompile Include="Dlg_Set_MmCam_Env.cpp" />
     <ClCompile Include="MmCam_db_utils.cpp" />
     <ClCompile Include="MmCam_ini_edit.cpp" />

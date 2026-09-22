@@ -424,10 +424,13 @@ def Check_Status_of_HotList_Mask(hotlist_mask, x_grid, BASE_IMG_DIR, input_img):
         print("Program Terminated")
         sys.exit(1)
 
-    print(f"[Check_Status_of_HotList_Mask] bShifted {bShifted}")
+    print(f"[Check_Status_of_HotList_Mask] bShifted {bShifted} "
+          f"shift_x {shift_x} shift_y {shift_y}")
     print("-" * 50)
 
-    return bShifted, hotlist_mask
+    # 이동량도 함께 돌려준다. 예전에는 여기서 버려서, 계산해 놓고도 화면에
+    # 보여줄 방법이 없었다. [설정] 영역이 이 값을 읽어 버튼 옆에 적는다.
+    return bShifted, hotlist_mask, shift_x, shift_y
 
 # ==================================================
 
@@ -595,7 +598,12 @@ def main_loop(config, sensor_db_config):
             print("Program Terminated")
             sys.exit(1)
 
-    bShifted, new_hotlist_mask = Check_Status_of_HotList_Mask(cur_hotlist_mask, X_GRID, BASE_IMG_DIR, input_img)
+    bShifted, new_hotlist_mask, shift_x, shift_y = Check_Status_of_HotList_Mask(
+        cur_hotlist_mask, X_GRID, BASE_IMG_DIR, input_img)
+
+    # 이 검사는 기동할 때 한 번만 한다. 루프 안에서는 다시 재지 않으므로
+    # 아래 값들은 "언제 잰 것인지" 와 함께 현황 파일에 그대로 실려 나간다.
+    shift_checked_at = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     if bShifted:
         main_command = read_db_main_command(sensor_db_config)
@@ -823,7 +831,8 @@ def main_loop(config, sensor_db_config):
                         db_rows=db_rows, db_tables=db_tables,
                         min_retrain=config.get("RETRAIN_MIN_SAMPLES"),
                         stage_used=stage_used,
-                        abs_guard=abs_guard)
+                        abs_guard=abs_guard,
+                        shift=(shift_x, shift_y, shift_checked_at))
                     status_written_at = _now_t
 
             people, fall, fire_list = read_people_and_area(sensor_db_config)

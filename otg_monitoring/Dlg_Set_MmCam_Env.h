@@ -26,8 +26,13 @@ public:
     CButton m_btnClose, m_btnGetMask_Server, m_btnSetMask_CamPos;
     CFont   m_stdFont;
     CStatic m_cap_0;
+    // 기동 시 잰 카메라 틀어짐. 버튼 옆에 적는다.
+    CStatic m_lblShift;
 
     // 연속 학습 단계 전환 조건 (users\<id>\env.ini 의 [CONSTANTS])
+    CStatic m_sepTop;                                    // 안내줄과 마스크 버튼을 가르는 구분선
+    CStatic m_sepStage;                                  // 마스크 버튼과 가르는 구분선
+    CStatic m_sepBottom;                                 // 설정 영역의 끝을 긋는 구분선
     CStatic m_capStage;                                  // 안내 문구
     CStatic m_lblBaseSamples, m_lblBaseHours, m_lblAeSamples, m_lblBaseDate;
     CEdit   m_edBaseSamples, m_edBaseHours, m_edAeSamples;

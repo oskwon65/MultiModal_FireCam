@@ -203,7 +203,7 @@ static_assert(PROC_ROW_COUNT <= (IDC_BTN_STOP_LAST - IDC_BTN_STOP_BASE + 1),
 
 // 설정 영역이 차지하는 높이(px). Dlg_Set_MmCam_Env 의 내용이 들어갈 만큼.
 // 그쪽 배치를 바꾸면 이 값도 같이 맞춰야 한다.
-#define SETTING_AREA_H      420
+#define SETTING_AREA_H      410
 // 목록과 설정 영역 사이 간격
 #define AREA_GAP            8
 

@@ -7,6 +7,7 @@
 #include "Dlg_Set_MmCam_Env.h"
 #include "afxdialogex.h"
 #include "MmCam_monitoringDlg.h"
+#include "Dlg_CamPos.h"
 
 #include <wininet.h>
 #pragma comment(lib, "wininet.lib")
@@ -134,8 +135,54 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// x 버튼은 두지 않는다. 메인 창의 [설정] 버튼이 토글이라 닫는 길이
 	// 이미 있고, 영역 안에 또 닫기 버튼이 있으면 어느 쪽이 무엇을 닫는지
 	// 헷갈린다.
-	m_btnGetMask_Server.Create("격자 마스크 초기화 : SVR지정", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, CRect(nBase_X, ctrl_btn_top, nBase_X + 250, ctrl_btn_top + ctrl_btn_hei), this, ID_BTN_GET_MASK_SVR);
-	m_btnSetMask_CamPos.Create("격자 마스크 초기화 : 위치이동", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, CRect(nBase_X + 250 + 10, ctrl_btn_top, nBase_X + 250 +10 +250, ctrl_btn_top + ctrl_btn_hei), this, ID_BTN_SET_MASK_CAM_POS);
+	// 두 버튼의 이름을 하는 일로 바꿨다.
+	//
+	// 예전에는 둘 다 "격자 마스크 초기화 : ..." 로 시작해 같은 기능의 변형
+	// 처럼 보였다. 실제로는 하나는 감시 대상(어느 셀을 볼지)을 서버 것으로
+	// 갈아치우고, 다른 하나는 같은 선택을 카메라가 밀린 만큼 옮긴다.
+	// 전혀 다른 일이다.
+	//
+	// 너비는 250 -> 141 로 줄였다. 글꼴은 다른 컨트롤과 같은 크기를 쓴다.
+	//
+	// 그 폭에 들어가도록 이름을 줄였다. 긴 이름을 두 줄로 접어 보았더니
+	// 좁아진 대신 높아져 오히려 커 보였다. 한 줄에 들어가는 길이로 맞추고
+	// 자세한 내용은 누른 뒤 안내 문구로 설명한다.
+	//
+	//   서버에서 Mask 받기            -> 서버 Mask 받기
+	//   카메라 이동 검사 및 Mask 조정 -> 카메라 이동보정
+	// 설정 영역의 버튼은 모두 같은 너비를 쓴다. 폭이 제각각이면 줄이
+	// 맞지 않아 어수선해 보인다.
+	const long btn_w = 141;
+	const long mask_btn_h = 30;
+
+	const DWORD mask_btn_style = WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON;
+
+	// 위쪽 안내줄(상태 문구)과 버튼 구역을 가른다. 아래 [연속학습 조건]
+	// 위에도 같은 선이 있어, 설정 영역이 세 덩어리로 나뉘어 보인다.
+	{
+		CRect rcC;
+		GetClientRect(&rcC);
+		long sepRight = rcC.right - nBase_X;
+		if (sepRight < nBase_X + 520) sepRight = nBase_X + 520;
+
+		m_sepTop.Create("", WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ,
+			CRect(nBase_X, ctrl_btn_top - 10, sepRight, ctrl_btn_top - 8), this);
+	}
+
+	m_btnGetMask_Server.Create("서버 Mask 받기", mask_btn_style,
+		CRect(nBase_X, ctrl_btn_top, nBase_X + btn_w, ctrl_btn_top + mask_btn_h),
+		this, ID_BTN_GET_MASK_SVR);
+
+	m_btnSetMask_CamPos.Create("카메라 이동보정", mask_btn_style,
+		CRect(nBase_X + btn_w + 10, ctrl_btn_top,
+		      nBase_X + btn_w + 10 + btn_w, ctrl_btn_top + mask_btn_h),
+		this, ID_BTN_SET_MASK_CAM_POS);
+
+	// 기동할 때 잰 틀어짐 값을 버튼 옆에 적는다. 계산은 이미 하고 있었는데
+	// 화면에 나오지 않아, 지금 밀려 있는지 알 길이 없었다.
+	m_lblShift.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
+		CRect(nBase_X + (btn_w + 10) * 2, ctrl_btn_top + 6,
+		      nBase_X + (btn_w + 10) * 2 + 330, ctrl_btn_top + 6 + 20), this);
 
 	CurrentStatus current_status = read_db_current_status();
 	std::string tmsg = "[" + gUserID + "]  ";
@@ -161,8 +208,20 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 절대 임계값 줄도 같은 간격을 쓴다. 두 묶음이 바로 위아래에 있어
 	// 간격이 다르면 눈에 거슬린다.
 	const long lbl_w = 155, ed_w = 80, row_h = 27;
-	const long stage_top = ctrl_btn_top + ctrl_btn_hei + 16;
+	const long stage_top = ctrl_btn_top + mask_btn_h + 16;
 	long y = stage_top;
+
+	// 위쪽 마스크 버튼과 성격이 다른 구역이라 선으로 가른다.
+	// 메인 창의 프로세스 목록 구분선과 같은 방식(SS_ETCHEDHORZ)이다.
+	{
+		CRect rcC;
+		GetClientRect(&rcC);
+		long sepRight = rcC.right - nBase_X;
+		if (sepRight < nBase_X + 520) sepRight = nBase_X + 520;
+
+		m_sepStage.Create("", WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ,
+			CRect(nBase_X, y - 8, sepRight, y - 6), this);
+	}
 
 	m_capStage.Create("[ 연속학습 조건 ]",
 		WS_CHILD | WS_VISIBLE | SS_LEFT,
@@ -274,8 +333,23 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 다시 기동해야 실제로 반영된다. "저장" 이라고 하면 눌렀으니 됐다고
 	// 여기기 쉽다.
 	m_btnSaveStage.Create("설정 적용", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-		CRect(nBase_X, y + 6, nBase_X + 135, y + 6 + 26),
+		CRect(nBase_X, y + 6, nBase_X + btn_w, y + 6 + 26),
 		this, ID_BTN_SAVE_STAGE);
+
+	// 설정 영역의 끝을 긋는다. 위쪽 두 구분선과 짝을 이뤄 영역이 어디서
+	// 끝나는지 분명해진다.
+	//
+	// 오른쪽 현재 진행 열(네 항목, 353 근처에서 끝)보다 아래에 와야 열을
+	// 가로지르지 않는다. 적용 버튼이 367 에서 끝나므로 그 아래에 둔다.
+	{
+		CRect rcC;
+		GetClientRect(&rcC);
+		long sepRight = rcC.right - nBase_X;
+		if (sepRight < nBase_X + 520) sepRight = nBase_X + 520;
+
+		m_sepBottom.Create("", WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ,
+			CRect(nBase_X, y + 42, sepRight, y + 44), this);
+	}
 
 	// -------------------------------------------------------------
 	// 현재 진행 상황 — 설정란 오른편
@@ -378,6 +452,7 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	const std::string updated = ini_read_utf8(st, "STATUS", "UPDATED_AT", "");
 
 	if (updated.empty()) {
+		m_lblShift.SetWindowTextA("카메라 틀어짐 : 확인 전");
 		m_lblStage0.SetWindowTextA("0단계 절대임계값   집계 대기\r\n    감시 시작 후 첫 기록까지 잠시 걸립니다");
 		m_lblStage1.SetWindowTextA("1단계 셀별기준선   집계 대기");
 		m_lblStage2.SetWindowTextA("2단계 오토인코더   집계 대기");
@@ -399,6 +474,32 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	const std::string bdate  = ini_read_utf8(st, "STATUS", "BASE_DATE", "");
 
 	CStringA t;
+
+	// 기동할 때 잰 카메라 틀어짐.
+	//
+	// 루프 안에서는 다시 재지 않으므로 "언제 잰 값인지" 를 함께 적어야
+	// 한다. 몇 시간 전 값을 지금 값으로 오해하면 곤란하다.
+	{
+		const std::string sx = ini_read_utf8(st, "STATUS", "SHIFT_X", "");
+		const std::string sy = ini_read_utf8(st, "STATUS", "SHIFT_Y", "");
+		const std::string sat = ini_read_utf8(st, "STATUS", "SHIFT_AT", "");
+
+		CStringA sh;
+		if (sx.empty() || sy.empty())
+		{
+			sh = "카메라 틀어짐 : 확인 전";
+		}
+		else if (atoi(sx.c_str()) == 0 && atoi(sy.c_str()) == 0)
+		{
+			sh.Format("카메라 틀어짐 : 없음   (%s 기동 시 측정)", sat.c_str());
+		}
+		else
+		{
+			sh.Format("카메라 틀어짐 : 가로 %+d칸 · 세로 %+d칸   (%s 측정)",
+				atoi(sx.c_str()), atoi(sy.c_str()), sat.c_str());
+		}
+		m_lblShift.SetWindowTextA(sh);
+	}
 
 	// 0단계 — 학습과 무관하게 늘 동작한다. 다만 임계값을 지정하지 않으면
 	// 판정 자체가 꺼져 있으므로 그 구분을 보여준다.
@@ -638,8 +739,30 @@ void CDlg_Set_MmCam_Env::OnLButtonDown(UINT nFlags, CPoint point)
 
 void CDlg_Set_MmCam_Env::OnBnClickedButtonChangeMask()
 {
-	m_cap_0.SetWindowTextA("조정된 격자마스크 [격자초기화] 명령 전달함 : ADJST-MG");
-	update_db_main_command("ADJST-MG");
+	// 예전에는 누르는 즉시 명령을 넣었다. 되돌릴 방법이 없고 무엇이
+	// 일어나는지도 알 수 없었다. 확인 창에서 켤지 끌지 고르게 한다.
+	CDlg_CamPos dlg(this);
+	dlg.m_bAdjust = TRUE;   // 버튼을 누른 뜻이 보통 "켜겠다" 이므로 미리 켜 둔다
+
+	if (dlg.DoModal() != IDOK) {
+		m_cap_0.SetWindowTextA("[취소] 아무것도 바꾸지 않았습니다.");
+		return;
+	}
+
+	if (dlg.m_bAdjust)
+	{
+		update_db_main_command("ADJST-MG");
+		m_cap_0.SetWindowTextA("[전달] 카메라 위치 보정을 켰습니다 (ADJST-MG). "
+			"'정지' 후 '시작' 시 검사하며, 밀렸으면 Mask 를 함께 옮깁니다. "
+			"이동량이 2칸 이상이면 조정할 수 없습니다.");
+	}
+	else
+	{
+		// 넣어 둔 명령을 거둔다. 켠 뒤 마음이 바뀌었을 때 되돌릴 길이 있어야 한다.
+		update_db_main_command("NOACTION");
+		m_cap_0.SetWindowTextA("[전달] 카메라 위치 보정을 껐습니다 (NOACTION). "
+			"이동이 감지되어도 Mask 를 옮기지 않고 오류로만 기록합니다.");
+	}
 }
 
 //---------------------------------------------------------
