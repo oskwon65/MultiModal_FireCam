@@ -130,6 +130,11 @@ extern void            update_db_main_command(const char* new_code);
 // 타이머 ID
 // ---------------------------------------------------------
 #define SCAN_INTERVAL           2000
+// 기동하는 동안 뷰어 창의 주인을 가리는 간격(ms).
+//
+// 프로세스 목록 조회가 무거워 자주 할 수 없고, 너무 뜸하면 고른 현장의
+// 창이 늦게 뜬다. 그 사이를 잡는다.
+#define VIEWER_SCAN_INTERVAL     800
 #define TIMER_ID_BLINK          1
 #define TIMER_ID_UPTIME         2
 #define TIMER_ID_SCAN_STATUS    3
@@ -466,6 +471,7 @@ CMmCammonitoringDlg::CMmCammonitoringDlg(CWnd* pParent)
     m_bSettingVisible = false;
     m_visibleRowCount = 0;
     m_startStep = 0;
+    m_lastViewerScan = 0;
     m_bStarting = false;
     m_wndChromeH = 0;
     m_baseWndH = 0;
@@ -1110,6 +1116,7 @@ void CMmCammonitoringDlg::OnBnClickedStartAll()
 
     m_startedPids.clear();
     m_startStep = 0;
+    m_lastViewerScan = 0;
 
     ShowStartProgress(true);
 
@@ -1192,7 +1199,13 @@ void CMmCammonitoringDlg::Run_All_Processes(std::string sUserID)
     ++m_startStep;
 
     sprintf_s(cmd, sizeof(cmd),
-        "call \"%sScripts\\activate.bat\" %s && cd /d \"%s\" && python fall_detection/fall_detection.py \"%s\"",
+        // --managed 는 "감시 프로그램이 띄웠다" 는 표시다. 이 표시가 있으면
+        // fall_detection 이 뷰어 창을 만들자마자 스스로 숨긴다. 어느 창을
+        // 보일지는 아래 ApplyImageWindowVisibility 가 정한다.
+        //
+        // 이렇게 하지 않으면 현장 수만큼 창이 한꺼번에 떴다가 고르지 않은
+        // 것이 사라지는 중간 과정이 보인다.
+        "call \"%sScripts\\activate.bat\" %s && cd /d \"%s\" && python fall_detection/fall_detection.py \"%s\" --managed",
         anacondaRoot, anacondaEnv, MmCamStartPath, sUserID.c_str());
     StepBand("fall_detection");
     pid = RunCmdHidden("fall_detection", cmd);
@@ -1216,8 +1229,24 @@ void CMmCammonitoringDlg::PumpWait(DWORD ms, int pctFrom, int pctTo)
             DispatchMessage(&msg);
         }
 
-        // 기다리는 동안 진행바를 조금씩 채운다. 단계마다 툭툭 뛰면 멈춘
-        // 것처럼 보이지만, 계속 움직이면 진행 중이라는 것이 전해진다.
+        // 기다리는 동안 뷰어 창의 주인을 가린다.
+        //
+        // 예전에는 이 일을 하는 타이머(TIMER_ID_SCAN_STATUS)를 기동이 다
+        // 끝난 뒤에야 걸었다. 그래서 기동 중 18초 동안은 아무도 창을
+        // 정리하지 않았고, 두 현장의 뷰어가 다 보였다. 기다리는 동안에도
+        // 정리하게 한다.
+        //
+        // 프로세스 목록 조회가 무거우므로 자주 하지 않는다.
+        if (GetTickCount() - m_lastViewerScan >= VIEWER_SCAN_INTERVAL)
+        {
+            m_lastViewerScan = GetTickCount();
+            CountPythonProcesses();
+            RefreshProcessRows();
+            ApplyImageWindowVisibility();
+        }
+
+        // 진행바를 조금씩 채운다. 단계마다 툭툭 뛰면 멈춘 것처럼 보이지만,
+        // 계속 움직이면 진행 중이라는 것이 전해진다.
         if (bTrack && m_progress.GetSafeHwnd())
         {
             const DWORD el = GetTickCount() - start;

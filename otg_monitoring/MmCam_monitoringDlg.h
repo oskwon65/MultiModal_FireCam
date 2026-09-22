@@ -133,6 +133,7 @@ private:
 
 	CProgressCtrl m_progress;              // '시작' 진행바
 	int  m_startStep;                      // 지금까지 띄운 스크립트 수
+	DWORD m_lastViewerScan;                // 기동 중 뷰어 창을 마지막으로 정리한 시각
 	CRect m_rcStatusNormal;                // 진행바가 없을 때의 상태줄 자리
 
 	CStatic m_lblTitle, m_lblSign, m_lbStatus_0;

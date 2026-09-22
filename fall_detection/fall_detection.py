@@ -175,10 +175,43 @@ LOG.propagate = False
 # Main loop
 # ==================================================
 
+def hide_window_by_title(title):
+    """
+    제목으로 창을 찾아 숨긴다. 윈도우에서만 동작한다.
+
+    OpenCV 는 창을 숨기는 길을 내주지 않으므로 Win32 를 직접 부른다.
+    실패해도 그냥 넘어간다 - 창이 잠깐 보이는 것뿐이고, 여기서 죽으면
+    감시가 통째로 멎는다.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        hwnd = user32.FindWindowW(None, ctypes.c_wchar_p(title))
+        if not hwnd:
+            return False
+        SW_HIDE = 0
+        user32.ShowWindow(hwnd, SW_HIDE)
+        return True
+    except Exception as e:
+        print(f"[WARN] 뷰어 창을 숨기지 못했습니다: {e}")
+        return False
+
+
+# ==================================================
+
 def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("user_ID", help="user_ID under ./users, e.g. cj_busan_1")
+    # 감시 프로그램(otg_monitoring)이 띄웠다는 표시.
+    #
+    # 이 표시가 있으면 뷰어 창을 만들자마자 숨긴다. 보일지 말지는 감시
+    # 프로그램이 정한다. 사람이 터미널에서 직접 돌릴 때는 표시가 없으므로
+    # 창이 평소대로 보인다.
+    parser.add_argument("--managed", action="store_true",
+                        help=argparse.SUPPRESS)
 
     decoder.cli(parser)
     network.Factory.cli(parser)
@@ -250,6 +283,15 @@ def main():
 
     WINDOW_NAME = "HotList+Fire+Worker"
     cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+
+    # 감시 프로그램이 띄운 경우에는 만들어지자마자 숨긴다.
+    #
+    # 현장이 둘이라 '시작' 을 누르면 뷰어도 둘 생긴다. 감시 프로그램은
+    # 고르지 않은 현장의 창을 숨기지만, 그러려면 창이 먼저 있어야 해서
+    # 몇 초간 두 창이 다 보였다가 하나가 사라졌다. 만들 때부터 숨겨 두면
+    # 그 중간 과정이 없어진다. 보일 창은 감시 프로그램이 곧 띄운다.
+    if getattr(args, "managed", False):
+        hide_window_by_title(WINDOW_NAME)
 
     while True:
         try:
