@@ -1611,6 +1611,25 @@ void CMmCammonitoringDlg::OnSelchangeComboId()
 {
     LayoutProcessRows();
     gUserID = m_shownUserId.GetString();
+    RefreshSettingPanel();
+}
+
+// ---------------------------------------------------------
+// 설정 영역을 지금 고른 현장의 값으로 다시 읽는다.
+//
+// 설정 영역은 한 번 만들어 두고 보이기/숨기기만 한다. 그래서 콤보박스로
+// 현장을 바꿔도 안의 값은 처음 열었을 때의 현장 것 그대로였다. 두 현장은
+// 표본 기준도 절대 임계값도 다르므로(kict1 207도 / cj_busan_1 172도),
+// 옛 값을 보고 [설정 적용] 을 누르면 엉뚱한 현장의 값이 덮어써진다.
+//
+// 펼쳐져 있을 때만 읽는다. 접혀 있으면 다시 펼칠 때 OnBnClickedCMD 가
+// 어차피 RefreshAll 을 부른다. 이 함수는 타이머에서도 불리므로 쓸데없이
+// 파일과 DB 를 긁지 않는 편이 낫다.
+// ---------------------------------------------------------
+void CMmCammonitoringDlg::RefreshSettingPanel()
+{
+    if (m_pDlgSet != nullptr && m_bSettingVisible)
+        m_pDlgSet->RefreshAll();
 }
 
 // ---------------------------------------------------------
@@ -2031,7 +2050,13 @@ void CMmCammonitoringDlg::OnTimer(UINT_PTR nIDEvent)
     gUserID = selectedID.GetString();
 
     if (selectedID != m_shownUserId)
+    {
         LayoutProcessRows();
+
+        // 콤보박스에 직접 입력한 경우에도 설정 영역이 따라오게 한다.
+        // CBN_SELCHANGE 가 오지 않아 OnSelchangeComboId 를 거치지 않는다.
+        RefreshSettingPanel();
+    }
 
     if (nIDEvent == TIMER_ID_SCAN_STATUS)
     {

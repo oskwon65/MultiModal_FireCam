@@ -65,6 +65,7 @@ public:
 
 private:
     std::string StageIniPath() const;
+    void        LoadHeader();
     void        LoadStageSettings();
     void        LoadStageStatus();
     void        LoadAbsSettings();

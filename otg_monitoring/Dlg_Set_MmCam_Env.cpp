@@ -188,13 +188,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		CRect(nBase_X + (btn_w + 10) * 2, ctrl_btn_top - 1,
 		      nBase_X + (btn_w + 10) * 2 + 330, ctrl_btn_top - 1 + 36), this);
 
-	CurrentStatus current_status = read_db_current_status();
-	std::string tmsg = "[" + gUserID + "]  ";
-	if (current_status.valid) {
-		tmsg = tmsg + current_status.debug_msg;
-	}
-
-	m_cap_0.SetWindowTextA(tmsg.c_str());
+	LoadHeader();
 
 	// -------------------------------------------------------------
 	// 연속 학습 단계 전환 조건
@@ -957,9 +951,28 @@ void CDlg_Set_MmCam_Env::OnCancel()
 
 //---------------------------------------------------------
 
+// 제목줄. 어느 현장을 보고 있는지를 여기서만 알 수 있으므로, 현장이 바뀌면
+// 반드시 같이 바뀌어야 한다.
+//
+// 예전에는 이 내용을 OnInitDialog 안에 적어 두어, 설정 영역을 한 번 만든
+// 뒤에는 콤보박스로 현장을 바꿔도 제목이 그대로였다. 아래 값들은 새 현장
+// 것으로 바뀌는데 제목만 옛 현장 이름이라, 어느 쪽 값을 보고 있는지
+// 화면만으로는 알 수 없었다.
+void CDlg_Set_MmCam_Env::LoadHeader()
+{
+	CurrentStatus current_status = read_db_current_status();
+	std::string tmsg = "[" + gUserID + "]  ";
+	if (current_status.valid) {
+		tmsg = tmsg + current_status.debug_msg;
+	}
+
+	m_cap_0.SetWindowTextA(tmsg.c_str());
+}
+
 void CDlg_Set_MmCam_Env::RefreshAll()
 {
-	// 현장(콤보박스)이 바뀌었을 수도 있으므로 제목줄도 다시 만든다.
+	// 현장(콤보박스)이 바뀌었을 수도 있으므로 제목줄부터 다시 만든다.
+	LoadHeader();
 	LoadStageSettings();
 	LoadAbsSettings();
 	LoadStageStatus();

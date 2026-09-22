@@ -154,6 +154,7 @@ private:
 	void ApplyExpandLayout();              // 목록·설정 두 영역을 함께 배치하고 창 높이 반영
 	void ApplyImageWindowVisibility();     // 선택된 user의 이미지 뷰어 창만 표시
 	afx_msg void OnSelchangeComboId();     // 콤보박스에서 user를 바꿨을 때
+	void RefreshSettingPanel();            // 설정 영역을 지금 고른 현장 값으로
 	void ApplyRowFont();                   // 목록 컨트롤에 전용 글꼴 적용
 	void OnBnClickedStartAll();
 	void Run_All_Processes(std::string sUserID);

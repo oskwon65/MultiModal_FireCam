@@ -63,3 +63,6 @@ users/*/stage_status.ini
 # Office 가 문서를 열면 만드는 잠금 파일
 ~$*
 users/*/thermal_ref.npy
+
+# DB·학습 상태 백업 (지우기 전에 뜬 것). 용량이 크고 현장마다 다르다.
+users/*/db_backup/
