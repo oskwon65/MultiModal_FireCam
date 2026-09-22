@@ -199,6 +199,142 @@ import os
 import numpy as np
 
 # ----------------------------
+# 기준 1장 방식
+#
+# 예전에는 밝기별로 기준 이미지를 최대 256장까지 쌓아 두고, 지금 화면과
+# 평균 밝기가 가장 가까운 것을 골라 견주었다. 실측해 보니 이 방식은 두 곳
+# 모두에서 제 일을 못 하고 있었다.
+#
+#   cj_busan_1  18장이 서로 0.41px 안에서 일치했다. 첫 장 외에는 정보가
+#               없는 중복이었다.
+#   kict1       79장이 서로 15.6px 씩 어긋났다. 서로 다른 카메라 위치가
+#               네 덩어리로 섞여, 어느 것을 골라도 기준이 되지 못했다.
+#
+# 섞인 원인은 저장 규칙이다. 밝기차 20 미만이면 이동량이 얼마든 저장했고,
+# 밀린 화면이 새 기준으로 계속 추가되었다. 그래서 기준은 굳힌다. 자동으로
+# 늘리지 않고, 사람이 이동보정을 승인할 때만 바꾼다.
+#
+# 밝기를 맞출 필요도 없다. 위상 상관(phaseCorrelate)은 진폭을 정규화하므로
+# 조명 변화에 이미 둔감하다. 조명 성분을 빼는 고역통과를 함께 시험했더니
+# 소수점 셋째 자리까지 결과가 같았다.
+#
+# 밝기차 대신 phaseCorrelate 가 돌려주는 response 를 신뢰도로 쓴다. 이미
+# 계산해서 화면에 찍고 있었는데 판정에는 쓰지 않던 값이다.
+# ----------------------------
+
+BASE_REF_NAME = "base_ref.png"
+
+# response 가 이보다 낮으면 같은 장면이 아니라고 보고 판정하지 않는다.
+# 같은 장면끼리는 0.90 언저리, 다른 장면과는 0.15 언저리로 뚜렷이 갈린다.
+SHIFT_RESP_MIN = 0.30
+
+# 틀어짐 판정 상태. stage_status 를 거쳐 [설정] 화면까지 그대로 간다.
+SHIFT_STATE_LEGACY = -1   # 기준 1장이 없다 (예전 방식으로 돌고 있다)
+SHIFT_STATE_UNSURE = 0    # 쟀으나 믿을 수 없다 (장면이 다름)
+SHIFT_STATE_OK     = 1    # 틀어지지 않았다
+SHIFT_STATE_SHIFT  = 2    # 틀어졌다
+
+
+def base_ref_path(BASE_IMG_DIR):
+    return os.path.join(BASE_IMG_DIR, BASE_REF_NAME)
+
+
+def write_base_ref(BASE_IMG_DIR, input_img):
+    """
+    지금 화면을 기준 1장으로 굳힌다.
+
+    부르는 곳은 사람이 이동보정을 승인한 자리 하나뿐이어야 한다.
+    """
+    os.makedirs(BASE_IMG_DIR, exist_ok=True)
+    p = base_ref_path(BASE_IMG_DIR)
+    ok = cv2.imwrite(p, input_img)
+    print(f"[기준 1장] {'굳혔습니다' if ok else '쓰지 못했습니다'}: {p}")
+    return ok
+
+
+def measure_shift_vs_ref(ref_img, input_img):
+    """
+    굳혀 둔 기준 1장에 대한 평행이동.
+
+    돌려주는 값은 (dx, dy, response). 같은 장면으로 보기 어려우면 None.
+    """
+    a = np.float32(cv2.cvtColor(ref_img, cv2.COLOR_BGR2GRAY))
+    b = np.float32(cv2.cvtColor(input_img, cv2.COLOR_BGR2GRAY))
+    a, b = crop_to_same_size(a, b)
+
+    h, w = a.shape[:2]
+    hann = cv2.createHanningWindow((w, h), cv2.CV_32F)
+
+    # 반드시 복사본을 준다. cv2.phaseCorrelate 는 window 를 주면 입력 배열을
+    # 제자리에서 창과 곱해 덮어쓴다. crop 결과는 원본의 view 일 수도 있어
+    # 기준 이미지가 통째로 망가진다. (이 함정에 실제로 한 번 빠져, 기준
+    # 배열을 312번 재사용한 시험 결과를 통째로 버렸다.)
+    (dx, dy), response = cv2.phaseCorrelate(a.copy(), b.copy(), hann)
+
+    if response < SHIFT_RESP_MIN:
+        return None
+
+    return dx, dy, response
+
+
+def _shift_mask(mask_grid, shift_x, shift_y, Y_GRID, X_GRID):
+    """마스크를 칸 단위로 민다. 밖에서 들어오는 자리는 0."""
+    shifted = np.zeros_like(mask_grid)
+    for r in range(Y_GRID):
+        for c in range(X_GRID):
+            src_r = r - shift_y
+            src_c = c - shift_x
+            if 0 <= src_r < Y_GRID and 0 <= src_c < X_GRID:
+                shifted[r, c] = mask_grid[src_r, src_c]
+    return shifted
+
+
+def _adjust_with_frozen_ref(ref_path, input_img, hotlist_mask, X_GRID, Y_GRID):
+    """기준 1장 방식. 반환 규약은 Get_Adjusted_HotMask_Position 과 같다."""
+    ref_img = cv2.imread(ref_path)
+    if ref_img is None:
+        print(f"[WARN] 기준 이미지를 읽지 못했습니다: {ref_path}")
+        return False, hotlist_mask.copy(), 0, 0, SHIFT_STATE_UNSURE
+
+    m = measure_shift_vs_ref(ref_img, input_img)
+
+    print("-" * 50)
+    print(f"[기준 1장] {ref_path}")
+
+    if m is None:
+        # 여기서 "이상 없음" 이라고 말하면 안 된다. 잴 수 없었을 뿐이다.
+        print(f"[기준 1장] 판정 불가 - 기준과 같은 장면으로 보기 어렵습니다 "
+              f"(response < {SHIFT_RESP_MIN}). 마스크는 그대로 둡니다.")
+        print("-" * 50)
+        return False, hotlist_mask.copy(), 0, 0, SHIFT_STATE_UNSURE
+
+    dx, dy, response = m
+
+    h, w = input_img.shape[:2]
+    cell_w = w / X_GRID
+    cell_h = h / Y_GRID
+
+    # 반올림한다. 예전 코드는 int() 로 잘라 내, 0.9칸 밀린 것을 0칸으로 봤다.
+    shift_x = int(round(dx / cell_w))
+    shift_y = int(round(dy / cell_h))
+
+    print(f"[기준 1장] DX {dx:+.1f}px -> {shift_x}칸,  DY {dy:+.1f}px -> {shift_y}칸,  "
+          f"response {response:.3f}")
+
+    if shift_x == 0 and shift_y == 0:
+        print("[기준 1장] 틀어짐 없음")
+        print("-" * 50)
+        return False, hotlist_mask.copy(), 0, 0, SHIFT_STATE_OK
+
+    print(f"[기준 1장] 틀어짐 감지 - 가로 {shift_x:+d}칸, 세로 {shift_y:+d}칸")
+    print("-" * 50)
+
+    shifted = _shift_mask(hotlist_mask.reshape(Y_GRID, X_GRID),
+                          shift_x, shift_y, Y_GRID, X_GRID)
+    return True, shifted.flatten(), shift_x, shift_y, SHIFT_STATE_SHIFT
+
+
+# ----------------------------
 
 def Get_Adjusted_HotMask_Position(BASE_IMG_DIR, input_img, hotlist_mask, X_GRID, Y_GRID):
 
@@ -218,6 +354,15 @@ def Get_Adjusted_HotMask_Position(BASE_IMG_DIR, input_img, hotlist_mask, X_GRID,
     if np.sum(hotlist_mask) > NUM_OF_MACHINE_CELLS:
         sys.exit("[ERROR] MACH_AREA_MASK must contain equal or less than NUM_OF_MACHINE_CELLS ones")
 
+    # 굳혀 둔 기준이 있으면 그것 하나만 본다. 없으면 예전 방식 그대로 돈다.
+    # 현장마다 따로 넘어갈 수 있게 하려는 것이다. cj_busan_1 은 18장이 모두
+    # 한 위치라 바로 굳혔지만, kict1 은 네 위치가 섞여 있어 어느 것을 골라도
+    # 기준이 되지 못한다. 현장에서 조준을 맞춘 뒤에야 굳힐 수 있다.
+    ref_path = base_ref_path(BASE_IMG_DIR)
+    if os.path.exists(ref_path):
+        return _adjust_with_frozen_ref(ref_path, input_img, hotlist_mask,
+                                       X_GRID, Y_GRID)
+
     mean_val = Get_Image_MeanValue(input_img)
     base_img_path, diff = find_closest_base_image(BASE_IMG_DIR, mean_val)
 
@@ -225,7 +370,7 @@ def Get_Adjusted_HotMask_Position(BASE_IMG_DIR, input_img, hotlist_mask, X_GRID,
     if base_img_path is None:
         print("[INFO] No base image found. Saving current image as first base image.")
         save_base_image(BASE_IMG_DIR, input_img)
-        return False, hotlist_mask.copy(), 0, 0
+        return False, hotlist_mask.copy(), 0, 0, SHIFT_STATE_LEGACY
 
     dx, dy, response = estimate_movement(input_img, base_img_path)
 
@@ -250,26 +395,19 @@ def Get_Adjusted_HotMask_Position(BASE_IMG_DIR, input_img, hotlist_mask, X_GRID,
     print(f"The correlation between the two images : {response:.4f}")
     print("-" * 50)
 
-    #조금 흔들린 경우 조금 틀어진 이미지를 추가 저장하고 현 mask 상태 유지함 
+    #조금 흔들린 경우 조금 틀어진 이미지를 추가 저장하고 현 mask 상태 유지함
     if diff < 20: #평균 이미지 그레이값의 차이
             print(f"Num of Files of Base_Img: {base_img_path} [brightness diff.] {diff}")
             save_base_image(BASE_IMG_DIR, input_img)
-            return False, hotlist_mask.copy(), 0, 0
+            return False, hotlist_mask.copy(), 0, 0, SHIFT_STATE_LEGACY
 
-    # ---------- 마스크 이동 보정 ----------           
+    # ---------- 마스크 이동 보정 ----------
 
-    shifted = np.zeros_like(mask_grid)  
-    for r in range(Y_GRID):
-        for c in range(X_GRID):
-            src_r = r - shift_y
-            src_c = c - shift_x
-
-            if 0 <= src_r < Y_GRID and 0 <= src_c < X_GRID:
-                shifted[r, c] = mask_grid[src_r, src_c]
+    shifted = _shift_mask(mask_grid, shift_x, shift_y, Y_GRID, X_GRID)
 
     shifted_flat = shifted.flatten()
 
-    return True, shifted_flat, shift_x, shift_y
+    return True, shifted_flat, shift_x, shift_y, SHIFT_STATE_LEGACY
 
 # ----------------------------
 
@@ -279,7 +417,9 @@ def save_base_image(BASE_IMG_DIR,input_img):
     filename = f"{mean_val:03d}.png"
     save_path = os.path.join(BASE_IMG_DIR, filename)
     cv2.imwrite(save_path, input_img)
-    print(f"[INFO] BASE_IMG_DIR가 비어 있어 현재 이미지를 base로 저장했습니다: {save_path}")  
+    # 예전에는 "폴더가 비어 있어" 라고 적었는데, 이 함수는 폴더가 찬 상태에서
+    # 밝기차 20 미만일 때도 불린다. 사실과 다른 안내였다.
+    print(f"[예전 방식] 기준 이미지를 저장했습니다: {save_path}")
 
 # ----------------------------
 

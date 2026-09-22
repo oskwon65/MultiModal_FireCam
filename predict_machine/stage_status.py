@@ -211,6 +211,13 @@ def write(path, baseline, model_ready, user_path,
         f"SHIFT_X = {'' if shift is None else int(shift[0])}",
         f"SHIFT_Y = {'' if shift is None else int(shift[1])}",
         f"SHIFT_AT = {_esc('' if shift is None else shift[2])}",
+        # 0칸이라는 값만으로는 "틀어지지 않았다" 와 "잴 수 없었다" 를 가를
+        # 수 없다. 상태를 따로 적는다.
+        #  -1 예전 방식(밝기별 기준 더미)으로 돌고 있다
+        #   0 쟀으나 믿을 수 없다 (기준과 다른 장면)
+        #   1 틀어지지 않았다
+        #   2 틀어졌다
+        f"SHIFT_STATE = {-1 if (shift is None or len(shift) < 4) else int(shift[3])}",
         "",
         # 열화상 틀어짐. RGB 와 달리 운전 중에도 주기적으로 다시 잰다.
         # TSHIFT_STATE 로 "기준 없음 / 판정 불가 / 없음 / 밀렸음" 을 가른다.

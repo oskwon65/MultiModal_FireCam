@@ -87,7 +87,9 @@ from db_utils import (
 from cv_utils import (
     Get_Adjusted_HotMask_Position,
     Get_Input_Image_URL,
-    save_base_image
+    save_base_image,
+    write_base_ref,
+    SHIFT_STATE_LEGACY,
 )
 
 from constants import ERR_CODE, SVR_CMD, LOCAL_HOTLIST_MASK, SVR_HOTLIST_MASK
@@ -417,21 +419,28 @@ def Check_Status_of_HotList_Mask(hotlist_mask, x_grid, BASE_IMG_DIR, input_img):
 
     y_grid = len(hotlist_mask) // x_grid
 
-    bShifted, hotlist_mask, shift_x, shift_y = Get_Adjusted_HotMask_Position(BASE_IMG_DIR, input_img, hotlist_mask, x_grid, y_grid)
+    bShifted, hotlist_mask, shift_x, shift_y, shift_state = \
+        Get_Adjusted_HotMask_Position(BASE_IMG_DIR, input_img, hotlist_mask,
+                                      x_grid, y_grid)
 
     MAX_SHIFT = 2
     if abs(shift_x) >= MAX_SHIFT or abs(shift_y) >= MAX_SHIFT:
-        print("[ERROR] Check_Status_of_HotList_Mask - Camera Movement Error")
+        print(f"[ERROR] 카메라가 가로 {shift_x:+d}칸 · 세로 {shift_y:+d}칸 밀렸습니다 "
+              f"({MAX_SHIFT}칸 이상). 마스크를 믿을 수 없어 중단합니다.")
+        print("        조준을 되돌리거나, [설정] 에서 카메라 이동보정을 승인하십시오.")
         print("Program Terminated")
         sys.exit(1)
 
     print(f"[Check_Status_of_HotList_Mask] bShifted {bShifted} "
-          f"shift_x {shift_x} shift_y {shift_y}")
+          f"shift_x {shift_x} shift_y {shift_y} state {shift_state}")
     print("-" * 50)
 
     # 이동량도 함께 돌려준다. 예전에는 여기서 버려서, 계산해 놓고도 화면에
     # 보여줄 방법이 없었다. [설정] 영역이 이 값을 읽어 버튼 옆에 적는다.
-    return bShifted, hotlist_mask, shift_x, shift_y
+    #
+    # state 를 따로 두는 까닭. 0칸이라는 값만으로는 "틀어지지 않았다" 와
+    # "잴 수 없었다" 를 가를 수 없다. 둘은 전혀 다른 말이다.
+    return bShifted, hotlist_mask, shift_x, shift_y, shift_state
 
 # ==================================================
 
@@ -605,8 +614,9 @@ def main_loop(config, sensor_db_config):
             print("Program Terminated")
             sys.exit(1)
 
-    bShifted, new_hotlist_mask, shift_x, shift_y = Check_Status_of_HotList_Mask(
-        cur_hotlist_mask, X_GRID, BASE_IMG_DIR, input_img)
+    bShifted, new_hotlist_mask, shift_x, shift_y, shift_state = \
+        Check_Status_of_HotList_Mask(cur_hotlist_mask, X_GRID, BASE_IMG_DIR,
+                                     input_img)
 
     # 이 검사는 기동할 때 한 번만 한다. 루프 안에서는 다시 재지 않으므로
     # 아래 값들은 "언제 잰 것인지" 와 함께 현황 파일에 그대로 실려 나간다.
@@ -620,10 +630,21 @@ def main_loop(config, sensor_db_config):
             hotlist_mask = new_hotlist_mask
             write_file_hotlist_mask(HotListMask_LocalPath, hotlist_mask)
             delete_files_of_Base_Img(config)
-            save_base_image(BASE_IMG_DIR, input_img)
-            # 지금 보이는 화면이 앞으로의 정상이라는 뜻이므로, 열화상 기준
-            # 패턴도 함께 버린다. RGB 기준 이미지만 새로 잡고 열화상 쪽을
-            # 두면 보정한 그 순간부터 "밀렸다" 고 계속 짖는다.
+
+            # 사람이 승인했다 = 지금 보이는 화면이 앞으로의 정상이다.
+            #
+            # 기준 1장 방식으로 넘어온 현장은 여기서 기준을 새로 굳힌다.
+            # 예전 방식으로 도는 현장은 종전대로 밝기 이름으로 한 장을
+            # 남긴다. 기준을 늘리는 곳은 이 자리 하나뿐이어야 한다. 밝기차만
+            # 보고 자동으로 쌓던 규칙이 kict1 의 base_img 에 서로 다른 위치
+            # 네 덩어리를 섞어 놓았다.
+            if shift_state != SHIFT_STATE_LEGACY:
+                write_base_ref(BASE_IMG_DIR, input_img)
+            else:
+                save_base_image(BASE_IMG_DIR, input_img)
+
+            # 열화상 기준 패턴도 함께 버린다. RGB 기준만 새로 잡고 열화상
+            # 쪽을 두면 보정한 그 순간부터 "밀렸다" 고 계속 짖는다.
             tshift.reset()
             update_db_error_code(sensor_db_config, ERR_CODE.NO_ERR)
             update_db_main_command(sensor_db_config, SVR_CMD.NO_ACTION)
@@ -857,7 +878,7 @@ def main_loop(config, sensor_db_config):
                         min_retrain=config.get("RETRAIN_MIN_SAMPLES"),
                         stage_used=stage_used,
                         abs_guard=abs_guard,
-                        shift=(shift_x, shift_y, shift_checked_at),
+                        shift=(shift_x, shift_y, shift_checked_at, shift_state),
                         tshift=tshift)
                     status_written_at = _now_t
 

@@ -491,13 +491,26 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 		const std::string sy = ini_read_utf8(st, "STATUS", "SHIFT_Y", "");
 		const std::string sat = ini_read_utf8(st, "STATUS", "SHIFT_AT", "");
 
+		// SHIFT_STATE 를 따로 두는 까닭. 0칸이라는 값만으로는 "틀어지지
+		// 않았다" 와 "잴 수 없었다" 를 가를 수 없다.
+		//  -1 예전 방식(밝기별 기준 더미)으로 돌고 있다
+		//   0 쟀으나 믿을 수 없다 (기준과 다른 장면)
+		//   1 틀어지지 않았다
+		//   2 틀어졌다
+		const int sstate = ini_read_int_utf8(st, "STATUS", "SHIFT_STATE", -1);
+
 		if (sx.empty() || sy.empty())
 			line = "RGB 틀어짐 : 확인 전";
+		else if (sstate == 0)
+			line.Format("RGB 틀어짐 : 판정 불가 (기준과 다른 장면)   (%s 기동 시)",
+				sat.c_str());
 		else if (atoi(sx.c_str()) == 0 && atoi(sy.c_str()) == 0)
-			line.Format("RGB 틀어짐 : 없음   (%s 기동 시 측정)", sat.c_str());
+			line.Format("RGB 틀어짐 : 없음   (%s 기동 시 측정%s)", sat.c_str(),
+				sstate < 0 ? " · 예전 방식" : "");
 		else
-			line.Format("RGB 틀어짐 : 가로 %+d칸 · 세로 %+d칸   (%s 기동 시 측정)",
-				atoi(sx.c_str()), atoi(sy.c_str()), sat.c_str());
+			line.Format("RGB 틀어짐 : 가로 %+d칸 · 세로 %+d칸   (%s 기동 시 측정%s)",
+				atoi(sx.c_str()), atoi(sy.c_str()), sat.c_str(),
+				sstate < 0 ? " · 예전 방식" : "");
 
 		sh = line + "\r\n";
 
