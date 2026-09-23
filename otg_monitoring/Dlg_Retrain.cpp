@@ -82,27 +82,26 @@ BOOL CDlg_Retrain::OnInitDialog()
 
     // 창 안의 글자를 모두 같은 크기로 둔다. 안내와 로그 크기가 다르면
     // 안내가 곁다리처럼 보이는데, 여기서는 그 안내가 핵심이다.
-    m_font.CreateFont(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
+    //
+    // 크기를 24 로 잡은 것은 이 창이 다른 창보다 훨씬 크기 때문이다.
+    // 대화상자가 500x360 DLU 라 실제로는 800px 을 넘는데, 설정 창과 같은
+    // 17~18 로 두면 그 안에서 글자만 작아 보인다.
+    m_font.CreateFont(24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
 
-    // 로그는 표가 많아 고정폭이라야 열이 맞는다.
-    // 로그도 프로그램 전체와 같은 글꼴을 쓴다. 창마다 글꼴이 다르면 같은
-    // 프로그램인데 화면마다 인상이 달라진다.
-    //
-    // 가변폭이라 감도 시험 표의 열은 정확히 맞지 않는다. 파이썬 쪽에서
-    // 자리수를 맞춰 찍고 있어 크게 어긋나지는 않는다.
-    // 로그 글자는 다른 칸보다 25% 크게 한다(14 -> 18). 결과를 읽고 판단하는
-    // 자리라 잠깐 보고 넘기는 라벨과 같은 크기일 이유가 없다.
-    m_fontMono.CreateFont(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
+    // 로그도 안내와 같은 글꼴·같은 크기다. 가변폭이라 감도 시험 표의 열이
+    // 정확히 맞지는 않지만, 파이썬 쪽에서 자리수를 맞춰 찍고 있어 크게
+    // 어긋나지는 않는다.
+    m_fontMono.CreateFont(24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
 
     CRect rc;
     GetClientRect(&rc);
     const int M = 12;
-    const int btnW = 110, btnH = 28;
-    const int headH = 74, stateH = 26;
+    const int btnW = 140, btnH = 36;
+    const int headH = 96, stateH = 32;
 
     m_lblHead.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
         CRect(M, M, rc.right - M, M + headH), this);
