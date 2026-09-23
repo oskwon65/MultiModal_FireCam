@@ -80,7 +80,9 @@ BOOL CDlg_Retrain::OnInitDialog()
 {
     CDialogEx::OnInitDialog();
 
-    m_font.CreateFont(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
+    // 창 안의 글자를 모두 같은 크기로 둔다. 안내와 로그 크기가 다르면
+    // 안내가 곁다리처럼 보이는데, 여기서는 그 안내가 핵심이다.
+    m_font.CreateFont(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
 
@@ -100,7 +102,7 @@ BOOL CDlg_Retrain::OnInitDialog()
     GetClientRect(&rc);
     const int M = 12;
     const int btnW = 110, btnH = 28;
-    const int headH = 40, stateH = 22;
+    const int headH = 74, stateH = 26;
 
     m_lblHead.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
         CRect(M, M, rc.right - M, M + headH), this);
@@ -128,13 +130,19 @@ BOOL CDlg_Retrain::OnInitDialog()
     SendMessageToDescendants(WM_SETFONT, (WPARAM)m_font.GetSafeHandle(), TRUE);
     m_edLog.SetFont(&m_fontMono);
 
+    // [진행] 이 왜 꺼져 있는지 화면에 적어 둔다. 눌리지 않는 버튼을 두고
+    // 설명이 없으면 고장으로 오해한다.
     CStringA head;
-    head.Format("[%s]  재학습은 운용 모델을 바꿉니다. 먼저 예행연습으로 결과를 "
-                "확인한 뒤 진행하십시오.", gUserID.c_str());
+    head.Format("[%s]  재학습은 운용 모델을 바꿉니다. 먼저 [예행연습] 으로 결과를 확인하십시오.\r\n"
+                "[진행] 은 예행연습이 \"판정: 승격\" 을 낸 경우에만 켜집니다. "
+                "보류로 끝나면 사유가 아래에 남으며 진행할 수 없습니다.\r\n"
+                "보류 사유는 대개 표본이나 시간대가 모자라거나, 새 모델이 지금 "
+                "모델보다 둔해진 경우입니다.",
+                gUserID.c_str());
     m_lblHead.SetWindowTextA(head);
 
     SetButtons();
-    m_lblState.SetWindowTextA("예행연습을 눌러 시작하십시오.");
+    m_lblState.SetWindowTextA("[예행연습] 을 눌러 시작하십시오. 아직 [진행] 은 꺼져 있습니다.");
 
     CenterWindow(GetParent());
     return TRUE;
@@ -333,7 +341,7 @@ LRESULT CDlg_Retrain::OnRunDone(WPARAM wp, LPARAM lp)
         else if (code == 2)
             st = "예행연습 보류 · 조건이 아직 모자랍니다. 위 사유를 확인하십시오.";
         else
-            st = "예행연습 완료 · 승격 판정이 아니어서 진행할 수 없습니다.";
+            st = "예행연습 완료 · \"판정: 승격\" 이 아니어서 [진행] 을 켤 수 없습니다.";
     }
     else
     {
