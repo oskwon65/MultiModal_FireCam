@@ -286,11 +286,43 @@ def main():
     # ---------------- 되돌리기 ----------------
     if args.rollback:
         gens = list_generations(user_path)
-        if len(gens) < 1:
+        if not gens:
             print("[ERROR] 되돌릴 세대가 없습니다.")
             return 1
-        target = gens[-2] if args.rollback == "__prev__" and len(gens) >= 2 \
-            else (gens[-1] if args.rollback == "__prev__" else args.rollback)
+
+        if args.rollback != "__prev__":
+            target = args.rollback
+        else:
+            # "직전" 은 목록의 뒤에서 두 번째가 아니라 지금 운용 중인 것의
+            # 바로 앞이다.
+            #
+            # --dry-run 은 후보를 보관만 하고 올리지 않으므로, 운용 중인
+            # 세대보다 새로운 세대가 목록에 남아 있을 수 있다. 목록 끝에서
+            # 세면 승격된 적 없는 후보로 "되돌아가" 버린다. cj_busan_1 이
+            # 실제로 그 상태였다 - 운용 145111, 목록 끝은 153607.
+            cur = ""
+            cp = os.path.join(user_path, "current_generation.txt")
+            if os.path.exists(cp):
+                cur = open(cp, encoding="utf-8").read().strip()
+
+            if cur and cur in gens:
+                i = gens.index(cur)
+                if i == 0:
+                    print(f"[ERROR] {cur} 이 가장 오래된 세대라 되돌릴 곳이 "
+                          f"없습니다.")
+                    return 1
+                target = gens[i - 1]
+                print(f"[되돌리기] 운용 중 {cur} -> 직전 {target}")
+            elif len(gens) >= 2:
+                # 운용 중인 세대를 알 수 없으면 목록 기준으로 센다.
+                print("[경고] 운용 중인 세대를 알 수 없어 목록 끝에서 셉니다. "
+                      "원하는 세대가 아니면 --rollback <세대> 로 직접 "
+                      "지정하십시오.")
+                target = gens[-2]
+            else:
+                print("[ERROR] 되돌릴 세대가 없습니다.")
+                return 1
+
         if target not in gens:
             print(f"[ERROR] 그런 세대가 없습니다: {target}")
             return 1
