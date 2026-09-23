@@ -21,6 +21,35 @@ extern const char* GetAnacondaEnvPub();
 #define ID_BTN_DRY     3001
 #define ID_BTN_APPLY   3002
 
+// 파이썬은 UTF-8 로 내보내는데(PYTHONIOENCODING=utf-8) 이 빌드는 MBCS 라
+// CEdit 가 CP949 를 기대한다. 그대로 넣으면 한글이 깨진다.
+//
+// UTF-8 을 쓰는 이유는 파이썬 쪽이다. 로그에 '·' 같은 CP949 에 없는 글자가
+// 섞여 있어, 출력 인코딩을 CP949 로 두면 파이썬이 UnicodeEncodeError 로
+// 죽는다. 받는 쪽에서 바꾸는 편이 안전하다.
+//
+// 줄 단위로만 부르므로 멀티바이트 문자가 중간에서 잘릴 일은 없다.
+// 개행(0x0A)은 UTF-8 에서 언제나 단독 바이트이기 때문이다.
+static CStringA Utf8ToAnsi(const char* utf8)
+{
+    if (!utf8 || !*utf8) return CStringA();
+
+    int wn = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, nullptr, 0);
+    if (wn <= 0) return CStringA(utf8);      // UTF-8 이 아니면 그대로 둔다
+
+    CStringW w;
+    MultiByteToWideChar(CP_UTF8, 0, utf8, -1, w.GetBuffer(wn), wn);
+    w.ReleaseBuffer();
+
+    int an = WideCharToMultiByte(CP_ACP, 0, w, -1, nullptr, 0, nullptr, nullptr);
+    if (an <= 0) return CStringA(utf8);
+
+    CStringA a;
+    WideCharToMultiByte(CP_ACP, 0, w, -1, a.GetBuffer(an), an, nullptr, nullptr);
+    a.ReleaseBuffer();
+    return a;
+}
+
 IMPLEMENT_DYNAMIC(CDlg_Retrain, CDialogEx)
 
 CDlg_Retrain::CDlg_Retrain(CWnd* pParent /*=nullptr*/)
@@ -56,9 +85,11 @@ BOOL CDlg_Retrain::OnInitDialog()
         DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
 
     // 로그는 표가 많아 고정폭이라야 열이 맞는다.
+    // 굴림체는 한글 윈도우에 늘 있는 고정폭 글꼴이라 표의 열이 맞는다.
+    // D2Coding 등은 설치돼 있지 않을 수 있어 쓰지 않는다.
     m_fontMono.CreateFont(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        DEFAULT_QUALITY, FIXED_PITCH | FF_MODERN, _T("D2Coding"));
+        DEFAULT_QUALITY, FIXED_PITCH | FF_MODERN, _T("굴림체"));
 
     CRect rc;
     GetClientRect(&rc);
@@ -190,11 +221,13 @@ UINT __cdecl CDlg_Retrain::ThreadProc(LPVOID param)
             if (!line.empty() && line[line.size() - 1] == '\n' &&
                 (line.size() < 2 || line[line.size() - 2] != '\r'))
                 line.insert(line.size() - 1, "\r");
-            dlg->PostMessage(WM_LOG_LINE, 0, (LPARAM)new CStringA(line.c_str()));
+            dlg->PostMessage(WM_LOG_LINE, 0,
+                             (LPARAM)new CStringA(Utf8ToAnsi(line.c_str())));
         }
     }
     if (!pending.empty())
-        dlg->PostMessage(WM_LOG_LINE, 0, (LPARAM)new CStringA(pending.c_str()));
+        dlg->PostMessage(WM_LOG_LINE, 0,
+                         (LPARAM)new CStringA(Utf8ToAnsi(pending.c_str())));
 
     WaitForSingleObject(pi.hProcess, INFINITE);
     GetExitCodeProcess(pi.hProcess, &exitCode);
