@@ -488,6 +488,9 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	const int min_rtr = ini_read_int_utf8(st, "STATUS", "MIN_RETRAIN", -1);
 	const std::string gen_at = ini_read_utf8(st, "STATUS", "GENERATION_AT", "");
 	const std::string bdate  = ini_read_utf8(st, "STATUS", "BASE_DATE", "");
+	// 기준일은 사람이 정하는 정책이고, 누적 시작일은 실제로 쌓기 시작한 날이다.
+	// 둘이 다를 수 있어 따로 보여줘야 표본 수를 해석할 수 있다.
+	const std::string sdate  = ini_read_utf8(st, "STATUS", "STARTED_AT", "");
 
 	CStringA t;
 
@@ -662,9 +665,14 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 
 	// 기준일과 갱신 시각은 상단 안내줄에 함께 보여준다.
 	CStringA head;
-	head.Format("[%s]  기준일 %s  ·  현황 %s  ·  현재 채점 %s",
+	CStringA sfrom;
+	if (!sdate.empty() && sdate != bdate)
+		sfrom.Format(" (누적 %s~)", sdate.c_str());
+
+	head.Format("[%s]  기준일 %s%s  ·  현황 %s  ·  현재 채점 %s",
 		gUserID.c_str(),
 		bdate.empty() ? "전체" : bdate.c_str(),
+		(LPCSTR)sfrom,
 		updated.c_str(),
 		used < 0 ? "-" : (used == 2 ? "2단계" : (used == 1 ? "1단계" : "0단계")));
 	m_cap_0.SetWindowTextA(head);

@@ -137,6 +137,13 @@ class OnlineBaseline:
         self._hi_at = -1
         # 관측한 시각(0~23) 비트마스크. 커버리지 판정용.
         self.hours_seen = 0
+
+        # 처음 누적한 날짜(YYYY-MM-DD).
+        #
+        # 계산 기준일이 바뀌었을 때 정말 버려야 하는지 가리는 데 쓴다.
+        # 쌓기 시작한 날이 이미 새 기준일 이후라면 뺄 과거가 없으므로
+        # 그대로 이어간다. 화면에도 "언제부터 쌓은 값인지" 를 보여준다.
+        self.started_at = ""
         # 최근 프레임의 느린 평균. 화면 이동 감시용.
         self.scene_ewma = np.zeros(self.n_cells, dtype=np.float64)
 
@@ -187,6 +194,9 @@ class OnlineBaseline:
 
         if hour is not None:
             self.hours_seen |= (1 << int(hour))
+
+        if not self.started_at and day:
+            self.started_at = str(day)
 
         return True
 
@@ -331,6 +341,7 @@ class OnlineBaseline:
             hours_seen=self.hours_seen,
             scene_ewma=self.scene_ewma,
             base_date=self.base_date,
+            started_at=self.started_at,
         )
         # 저장 도중 종료되어 파일이 반만 남는 것을 막는다.
         os.replace(tmp, path)
@@ -356,11 +367,23 @@ class OnlineBaseline:
                 return obj
 
             saved_base = str(d["base_date"]) if "base_date" in d.files else ""
+            saved_started = str(d["started_at"]) if "started_at" in d.files else ""
+
             if saved_base != obj.base_date:
-                print(f"[INFO] 계산 기준일이 바뀌어("
-                      f"{saved_base or '없음'} -> {obj.base_date or '없음'}) "
-                      f"기준선을 새로 시작합니다.")
-                return obj
+                # 쌓기 시작한 날이 이미 새 기준일 이후면 뺄 과거가 없다.
+                # 그대로 이어가고 기준일만 갈아 끼운다.
+                keep = bool(obj.base_date and saved_started
+                            and saved_started >= obj.base_date)
+                if keep:
+                    print(f"[INFO] 계산 기준일이 바뀌었으나("
+                          f"{saved_base or '없음'} -> {obj.base_date}) "
+                          f"누적 시작일 {saved_started} 이 그 이후라 "
+                          f"기준선을 그대로 이어갑니다.")
+                else:
+                    print(f"[INFO] 계산 기준일이 바뀌어("
+                          f"{saved_base or '없음'} -> {obj.base_date or '없음'}) "
+                          f"기준선을 새로 시작합니다.")
+                    return obj
 
             obj.count = int(d["count"])
             obj.mean = d["mean"].astype(np.float64)
@@ -368,6 +391,7 @@ class OnlineBaseline:
             obj.hist = d["hist"].astype(np.uint32)
             obj.hours_seen = int(d["hours_seen"])
             obj.scene_ewma = d["scene_ewma"].astype(np.float64)
+            obj.started_at = saved_started
             obj._recompute_hi()
 
         except Exception as e:

@@ -204,6 +204,9 @@ def write(path, baseline, model_ready, user_path,
         "[STATUS]",
         f"UPDATED_AT = {datetime.now():%Y-%m-%d %H:%M:%S}",
         f"BASE_DATE = {_esc(baseline.base_date)}",
+        # 기준일은 사람이 정하는 정책이고, 이쪽은 실제로 언제부터 쌓았는지다.
+        # 둘이 다를 수 있어 따로 보여줘야 표본 수를 해석할 수 있다.
+        f"STARTED_AT = {_esc(getattr(baseline, 'started_at', ''))}",
         "",
         f"STAGE0 = {1 if stage0 else 0}",
         f"ABS_TEMP_WARN = {_t(getattr(abs_guard, 'temp_warn', None))}",
