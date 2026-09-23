@@ -386,7 +386,17 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 대신 라벨 하나를 두 줄 높이로 만들고 \r\n 으로 줄을 나눈다.
 	// -------------------------------------------------------------
 	const long col2_x = nBase_X + 360;
-	const long col2_w = 380;
+
+	// 열 폭을 창에서 구한다. 380 으로 박아 두었더니 창(약 660px)보다 넓어
+	// 오른쪽이 잘렸다. 글꼴 크기를 바꿀 때마다 다시 틀어지는 종류의 값이라
+	// 숫자로 두지 않는다.
+	long col2_w;
+	{
+		CRect rcC;
+		GetClientRect(&rcC);
+		col2_w = rcC.right - col2_x - nBase_X;
+		if (col2_w < 260) col2_w = 260;       // 너무 좁으면 최소치로
+	}
 
 	// 0~2 는 "지금 무엇으로 채점할 수 있는가"(상태)이고, 연속학습은
 	// "모델을 어떻게 갱신하는가"(활동)다. 성격이 달라 번호를 붙이지 않는다.
@@ -402,7 +412,8 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		// 연속학습 칸만 세 줄이다 — 제목 · 재학습 가능 건수 · 판단 점수와 기여도.
 		// 나머지와 같은 46 으로 두면 마지막 줄이 잘려 보이지 않는다.
 		// 맨 아래 항목이라 아래로 늘려도 다른 것을 가리지 않는다.
-		const long h = (i == 3) ? 80 : 52;
+		// 연속학습 칸만 네 줄이다 - 제목 · 재학습 가능 · 판단 점수 · 기여도.
+		const long h = (i == 3) ? 108 : 52;
 		stg[i]->Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
 			CRect(col2_x, ny, col2_x + col2_w, ny + h), this);
 		ny += 60;
@@ -668,11 +679,13 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 		{
 			const double w = atof(cw.c_str());
 			const char* how =
-				(w >= 1.0) ? "평소 연속 학습" :
-				(w <= 0.0) ? "새로 시작 (가중치 물려받지 않음)" :
+				(w >= 1.0) ? "평소대로 이어감" :
+				(w <= 0.0) ? "새로 시작" :
 				             "기여 축소";
+			// 한 줄에 다 넣으면 열 폭을 넘어 잘린다. 두 줄로 나눈다.
 			CStringA c2;
-			c2.Format("\r\n    판단 점수 %s → 기존 모델 기여 %s · %s",
+			c2.Format("\r\n    판단 점수 %s"
+			          "\r\n    기존 모델 기여 %s · %s",
 				ds.c_str(), cw.c_str(), how);
 			t += c2;
 		}
