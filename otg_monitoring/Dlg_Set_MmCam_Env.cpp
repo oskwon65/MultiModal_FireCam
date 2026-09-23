@@ -677,16 +677,19 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 		const std::string cw = ini_read_utf8(st, "STATUS", "CONTRIB_W", "");
 		if (!ds.empty() && !cw.empty())
 		{
+			// 기여는 이제 네 단계가 아니라 점수에 비례하는 연속값이다.
+			// 말로만 "기여 축소" 라고 하면 0.62 와 0.13 이 구별되지 않는다.
+			// 옛 자료 비중을 그대로 적는다.
 			const double w = atof(cw.c_str());
-			const char* how =
-				(w >= 1.0) ? "평소대로 이어감" :
-				(w <= 0.0) ? "새로 시작" :
-				             "기여 축소";
+			CStringA how;
+			if (w >= 1.0)      how = "평소대로 이어감";
+			else if (w <= 0.0) how = "새로 시작";
+			else               how.Format("옛 자료 %.0f%%", w * 100.0);
 			// 한 줄에 다 넣으면 열 폭을 넘어 잘린다. 두 줄로 나눈다.
 			CStringA c2;
 			c2.Format("\r\n    판단 점수 %s"
 			          "\r\n    기존 모델 기여 %s · %s",
-				ds.c_str(), cw.c_str(), how);
+				ds.c_str(), cw.c_str(), (LPCSTR)how);
 			t += c2;
 		}
 	}

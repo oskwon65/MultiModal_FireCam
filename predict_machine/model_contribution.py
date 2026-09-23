@@ -34,46 +34,64 @@ import json
 
 import numpy as np
 
-# 기여 가중치를 가르는 점수 문턱. env.ini 로 덮어쓸 수 있다.
+# 기여 가중치를 정하는 두 끝점. env.ini 로 덮어쓸 수 있다.
 #
-# 근거가 확실한 것은 양 끝뿐이다 - 정상 0.95, 망가진 kict1 0.09. 가운데 두
-# 문턱은 추정이므로 운영하며 조정한다.
-DEFAULT_BANDS = (
-    (0.85, 1.0),   # 이 위면 평소대로 - 옛 자료도 쓰고 가중치도 물려받는다
-    (0.50, 0.5),
-    (0.20, 0.2),
-)
-FLOOR_WEIGHT = 0.0     # 어느 문턱에도 못 미치면
+# 처음에는 네 단계(1.0 / 0.5 / 0.2 / 0.0)로 끊었는데, 문턱 하나를 사이에 두고
+# 기여가 0.5 씩 튀었다. 0.849 와 0.851 이 전혀 다른 학습이 되는데 그 차이를
+# 정당화할 근거가 없다. 두 끝점 사이를 직선으로 잇는다.
+#
+#     점수 >= HIGH        기여 1.0   (모델이 멀쩡하다)
+#     LOW < 점수 < HIGH   그 사이 비율
+#     점수 <= LOW         기여 0.0   (새로 시작)
+#
+# 근거가 확실한 것은 양 끝뿐이다 - 정상 0.95, 망가진 kict1 0.09. 현장마다
+# 점수 수준 자체가 달라(cj_busan_1 은 평소 0.73~0.82) 코드에 박지 않는다.
+DEFAULT_HIGH = 0.85
+DEFAULT_LOW = 0.20
 
 # 판단에 쓸 기간(일)과 최소 표본 수.
 WINDOW_DAYS = 1
 MIN_FRAMES = 500
 
 
-def weight_for(score, bands=None):
+def weight_for(score, bounds=None):
     """
-    점수 -> 기여 가중치.
+    점수 -> 기여 가중치. 두 끝점 사이를 직선으로 잇는다.
+
+        w = (점수 - LOW) / (HIGH - LOW)        LOW <= 점수 <= HIGH
+        w = 1.0                                점수 >= HIGH
+        w = 0.0                                점수 <= LOW
+
+    소수 둘째 자리에서 끊는다. 점수가 0.0001 흔들릴 때마다 학습 조건이
+    달라지면 세대끼리 견주기 어렵다.
 
     score 가 None(잴 수 없음)이면 1.0 을 돌려준다. 모르는 것을 이유로 모델을
     버리지 않는다. 버리는 쪽이 되돌리기 어렵다.
     """
     if score is None:
         return 1.0
-    for thr, w in (bands or DEFAULT_BANDS):
-        if score >= thr:
-            return w
-    return FLOOR_WEIGHT
+
+    hi, lo = bounds or (DEFAULT_HIGH, DEFAULT_LOW)
+    if hi <= lo:                      # 설정이 뒤집혔으면 기본값으로
+        hi, lo = DEFAULT_HIGH, DEFAULT_LOW
+
+    if score >= hi:
+        return 1.0
+    if score <= lo:
+        return 0.0
+    return round((float(score) - lo) / (hi - lo), 2)
 
 
 def describe(score, w):
     if score is None:
-        return "판단 점수 없음 - 기존 모델을 그대로 물려받습니다 (w=1.0)"
+        return "판단 점수 없음 - 기존 모델을 그대로 물려받습니다 (기여 1.00)"
     if w >= 1.0:
-        return f"판단 점수 {score:.3f} - 평소 연속 학습 (w={w:.1f})"
+        return f"판단 점수 {score:.3f} - 평소대로 이어갑니다 (기여 1.00)"
     if w <= 0.0:
         return (f"판단 점수 {score:.3f} - 기존 가중치를 물려받지 않고 새로 "
-                f"시작합니다 (w={w:.1f}). 감도 비교 대상으로는 계속 씁니다.")
-    return f"판단 점수 {score:.3f} - 기존 모델 기여를 줄입니다 (w={w:.1f})"
+                f"시작합니다 (기여 0.00). 감도 비교 대상으로는 계속 씁니다.")
+    return (f"판단 점수 {score:.3f} - 기존 모델 기여를 {w:.2f} 로 줄입니다 "
+            f"(옛 자료 {w*100:.0f}%)")
 
 
 def _abs_fires(v, mask, temp_warn):

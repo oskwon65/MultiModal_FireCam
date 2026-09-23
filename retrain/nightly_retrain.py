@@ -104,26 +104,26 @@ ARTIFACTS = ("autoencoder_final.pth", "scaler.pkl", "scaler.npz")
 
 def bands(config):
     """
-    기여 가중치 문턱. env.ini 의 [CONSTANTS] 로 덮어쓸 수 있다.
+    기여 가중치의 두 끝점. env.ini 의 [CONSTANTS] 로 덮어쓸 수 있다.
 
-        CONTRIB_BAND_HIGH = 0.85
-        CONTRIB_BAND_MID  = 0.50
-        CONTRIB_BAND_LOW  = 0.20
+        CONTRIB_BAND_HIGH = 0.85    이 위면 기여 1.00
+        CONTRIB_BAND_LOW  = 0.20    이 아래면 기여 0.00
 
-    근거가 확실한 것은 양 끝(정상 0.95, 망가진 0.09)뿐이라 가운데는 추정이다.
-    현장마다 다를 수 있으므로 코드에 박지 않는다.
+    사이는 직선으로 잇는다. CONTRIB_BAND_MID 는 더 이상 쓰지 않는다.
+
+    현장마다 점수 수준 자체가 다르다. kict1 은 재학습 뒤 0.92 인데
+    cj_busan_1 은 같은 조건에서 0.73~0.82 다. 코드에 박지 않는 이유다.
     """
-    d = dict(zip(("hi", "mid", "lo"),
-                 (b[0] for b in model_contribution.DEFAULT_BANDS)))
-    for key, name in (("hi", "CONTRIB_BAND_HIGH"), ("mid", "CONTRIB_BAND_MID"),
-                      ("lo", "CONTRIB_BAND_LOW")):
-        v = config.get(name)
-        if v not in (None, ""):
-            try:
-                d[key] = float(v)
-            except (TypeError, ValueError):
-                pass
-    return ((d["hi"], 1.0), (d["mid"], 0.5), (d["lo"], 0.2))
+    hi, lo = model_contribution.DEFAULT_HIGH, model_contribution.DEFAULT_LOW
+    v = config.get("CONTRIB_BAND_HIGH")
+    if v not in (None, ""):
+        try: hi = float(v)
+        except (TypeError, ValueError): pass
+    v = config.get("CONTRIB_BAND_LOW")
+    if v not in (None, ""):
+        try: lo = float(v)
+        except (TypeError, ValueError): pass
+    return (hi, lo)
 
 
 def gen_root(user_path):

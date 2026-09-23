@@ -764,7 +764,7 @@ def Set_Env_Config(user_ID):
                    "ABS_RISE_WARN", "ABS_RISE_ALARM",
                    # 기여 가중치를 가르는 점수 문턱. 없으면 None 을 넘겨
                    # model_contribution 의 기본값을 쓰게 한다.
-                   "CONTRIB_BAND_HIGH", "CONTRIB_BAND_MID", "CONTRIB_BAND_LOW"):
+                   "CONTRIB_BAND_HIGH", "CONTRIB_BAND_LOW"):
             local_config[_k] = (config.getfloat("CONSTANTS", _k)
                                 if config.has_option("CONSTANTS", _k)
                                 else None)
