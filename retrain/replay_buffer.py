@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-경험 재생 버퍼 (연속 학습 3단계)
+경험 재생 버퍼 (연속 학습)
 
 히스토리 DB(results_history_YYYYMMDD)에 쌓인 정상 프레임에서 학습용 표본을
 뽑는다. 별도의 수집 장치가 필요 없다 — predict_machine 이 매 주기마다

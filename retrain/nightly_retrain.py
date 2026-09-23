@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-야간 재학습 (연속 학습 3단계)
+야간 재학습 (연속 학습)
 
   python retrain/nightly_retrain.py kict1
   python retrain/nightly_retrain.py kict1 --dry-run     시험만, 교체 안 함

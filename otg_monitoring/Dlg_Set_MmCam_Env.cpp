@@ -234,10 +234,10 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 
 	struct Row { CStatic* lbl; CEdit* ed; const char* text; UINT id; };
 	Row rows[] = {
-		{ &m_lblBaseSamples, &m_edBaseSamples, "1단계 최소 표본수",   ID_ED_BASE_SAMPLES },
-		{ &m_lblBaseHours,   &m_edBaseHours,   "1단계 최소 시간대",   ID_ED_BASE_HOURS   },
-		{ &m_lblAeSamples,   &m_edAeSamples,   "2단계 최소 표본수",   ID_ED_AE_SAMPLES   },
-		{ &m_lblAeHours,     &m_edAeHours,     "2단계 최소 시간대",   ID_ED_AE_HOURS     },
+		{ &m_lblBaseSamples, &m_edBaseSamples, "기준선 최소 표본수",  ID_ED_BASE_SAMPLES },
+		{ &m_lblBaseHours,   &m_edBaseHours,   "기준선 최소 시간대",  ID_ED_BASE_HOURS     },
+		{ &m_lblAeSamples,   &m_edAeSamples,   "재학습 최소 표본수",  ID_ED_AE_SAMPLES    },
+		{ &m_lblAeHours,     &m_edAeHours,     "재학습 최소 시간대",  ID_ED_AE_HOURS       },
 	};
 
 	const int nRows = (int)(sizeof(rows) / sizeof(rows[0]));
@@ -372,6 +372,8 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	const long col2_x = nBase_X + 320;
 	const long col2_w = 320;
 
+	// 0~2 는 "지금 무엇으로 채점할 수 있는가"(상태)이고, 연속학습은
+	// "모델을 어떻게 갱신하는가"(활동)다. 성격이 달라 번호를 붙이지 않는다.
 	m_capNow.Create("[ 현재 진행 ]", WS_CHILD | WS_VISIBLE | SS_LEFT,
 		CRect(col2_x, stage_top, col2_x + col2_w, stage_top + 22), this);
 
@@ -381,7 +383,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	CStatic* stg[4] = { &m_lblStage0, &m_lblStage1, &m_lblStage2, &m_lblStage3 };
 	for (int i = 0; i < 4; ++i)
 	{
-		// 3단계만 세 줄이다 — 제목 · 재학습 가능 건수 · 판단 점수와 기여도.
+		// 연속학습 칸만 세 줄이다 — 제목 · 재학습 가능 건수 · 판단 점수와 기여도.
 		// 나머지와 같은 46 으로 두면 마지막 줄이 잘려 보이지 않는다.
 		// 맨 아래 항목이라 아래로 늘려도 다른 것을 가리지 않는다.
 		const long h = (i == 3) ? 70 : 46;
@@ -470,7 +472,7 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 		m_lblStage0.SetWindowTextA("0단계 절대임계값   집계 대기\r\n    감시 시작 후 첫 기록까지 잠시 걸립니다");
 		m_lblStage1.SetWindowTextA("1단계 셀별기준선   집계 대기");
 		m_lblStage2.SetWindowTextA("2단계 오토인코더   집계 대기");
-		m_lblStage3.SetWindowTextA("3단계 연속학습   집계 대기");
+		m_lblStage3.SetWindowTextA("연속학습   집계 대기");
 		return;
 	}
 
@@ -629,11 +631,11 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	m_lblStage2.SetWindowTextA(t);
 
 	if (s3 && !gen_at.empty())
-		t.Format("3단계 연속학습   적용됨\r\n    최근 승격 %s", gen_at.c_str());
+		t.Format("연속학습   적용됨\r\n    최근 승격 %s", gen_at.c_str());
 	else if (db_rows >= 0 && min_rtr > 0)
-		t.Format("3단계 연속학습   대기\r\n    재학습 가능 %d/%d건", db_rows, min_rtr);
+		t.Format("연속학습   대기\r\n    재학습 가능 %d/%d건", db_rows, min_rtr);
 	else
-		t.Format("3단계 연속학습   대기\r\n    아직 재학습 이력이 없습니다");
+		t.Format("연속학습   대기\r\n    아직 재학습 이력이 없습니다");
 
 	// 재학습이 기존 모델을 얼마나 물려받을지.
 	//
@@ -705,19 +707,19 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	// 터무니없는 값이 들어가면 감시가 영영 시작되지 않거나(너무 큼),
 	// 아무것도 못 배운 상태로 채점을 시작한다(너무 작음). 여기서 막는다.
 	if (base_samples < 100 || base_samples > 1000000) {
-		m_cap_0.SetWindowTextA("[ERROR] 1단계 최소 표본은 100 ~ 1,000,000 사이여야 합니다.");
+		m_cap_0.SetWindowTextA("[ERROR] 기준선 최소 표본은 100 ~ 1,000,000 사이여야 합니다.");
 		return;
 	}
 	if (base_hours < 1 || base_hours > 24) {
-		m_cap_0.SetWindowTextA("[ERROR] 최소 관측 시간대는 1 ~ 24 사이여야 합니다.");
+		m_cap_0.SetWindowTextA("[ERROR] 기준선 최소 시간대는 1 ~ 24 사이여야 합니다.");
 		return;
 	}
 	if (ae_samples < 1000 || ae_samples > 1000000) {
-		m_cap_0.SetWindowTextA("[ERROR] 2단계 최소 표본은 1,000 ~ 1,000,000 사이여야 합니다.");
+		m_cap_0.SetWindowTextA("[ERROR] 재학습 최소 표본은 1,000 ~ 1,000,000 사이여야 합니다.");
 		return;
 	}
 	if (ae_hours < 1 || ae_hours > 24) {
-		m_cap_0.SetWindowTextA("[ERROR] 2단계 최소 시간대는 1 ~ 24 사이여야 합니다.");
+		m_cap_0.SetWindowTextA("[ERROR] 재학습 최소 시간대는 1 ~ 24 사이여야 합니다.");
 		return;
 	}
 
