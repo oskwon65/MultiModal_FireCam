@@ -72,6 +72,7 @@ BEGIN_MESSAGE_MAP(CDlg_Retrain, CDialogEx)
     ON_MESSAGE(WM_LOG_LINE, &CDlg_Retrain::OnLogLine)
     ON_MESSAGE(WM_RUN_DONE, &CDlg_Retrain::OnRunDone)
     ON_WM_DESTROY()
+    ON_WM_TIMER()
 END_MESSAGE_MAP()
 
 //---------------------------------------------------------
@@ -100,14 +101,22 @@ BOOL CDlg_Retrain::OnInitDialog()
     const int M = 12;
     const int btnW = 128, btnH = 32;
     const int headH = 84, stateH = 28;
+    const int progH = 14;
 
     m_lblHead.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
         CRect(M, M, rc.right - M, M + headH), this);
 
     m_edLog.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_HSCROLL
         | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
-        CRect(M, M + headH + 4, rc.right - M, rc.bottom - M - btnH - stateH - 12),
+        CRect(M, M + headH + 4, rc.right - M,
+              rc.bottom - M - btnH - stateH - progH - 16),
         this, 0);
+
+    m_progress.Create(WS_CHILD | PBS_SMOOTH,
+        CRect(M, rc.bottom - M - btnH - stateH - progH - 8,
+              rc.right - M, rc.bottom - M - btnH - stateH + progH - 8),
+        this, 0);
+    m_progress.SetRange32(0, 1000);
 
     m_lblState.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
         CRect(M, rc.bottom - M - btnH - stateH - 6, rc.right - M, rc.bottom - M - btnH - 6),
@@ -154,6 +163,45 @@ void CDlg_Retrain::SetButtons()
     // 누르는 것을 막는 것이 이 창의 존재 이유다.
     m_btnApply.EnableWindow(!m_bRunning && m_bDryDone && m_bDryPassed);
     m_btnClose.EnableWindow(!m_bRunning);
+}
+
+void CDlg_Retrain::ShowProgress(bool bShow)
+{
+    m_progress.ShowWindow(bShow ? SW_SHOW : SW_HIDE);
+    if (bShow)
+    {
+        m_pos = m_target = 0;
+        m_progress.SetPos(0);
+        if (!m_timer) m_timer = SetTimer(1, 400, nullptr);
+    }
+    else if (m_timer)
+    {
+        KillTimer(m_timer);
+        m_timer = 0;
+    }
+}
+
+// 단계가 바뀌면 상한을 올린다. 뒤로 가지는 않는다 - 되돌아가는 진행바는
+// 고장으로 보인다.
+void CDlg_Retrain::SetPhase(int permille)
+{
+    if (permille > m_target) m_target = permille;
+}
+
+void CDlg_Retrain::OnTimer(UINT_PTR nIDEvent)
+{
+    if (nIDEvent == 1 && m_bRunning)
+    {
+        // 상한까지 남은 거리의 1/12 씩 좁힌다. 단계 안에서도 계속 움직여
+        // 멈춘 것처럼 보이지 않으면서, 상한을 넘지는 않는다.
+        if (m_pos < m_target)
+        {
+            m_pos += (m_target - m_pos) / 12 + 1;
+            if (m_pos > m_target) m_pos = m_target;
+            m_progress.SetPos(m_pos);
+        }
+    }
+    CDialogEx::OnTimer(nIDEvent);
 }
 
 void CDlg_Retrain::AppendLog(const char* text)
@@ -282,6 +330,7 @@ void CDlg_Retrain::Run(bool dryRun)
 
     m_bRunning = true;
     if (dryRun) { m_bDryDone = false; m_bDryPassed = false; }
+    ShowProgress(true);
     SetButtons();
     m_lblState.SetWindowTextA(dryRun ? "예행연습 중..." : "재학습 중... 끝날 때까지 닫지 마십시오.");
 
@@ -316,6 +365,24 @@ LRESULT CDlg_Retrain::OnLogLine(WPARAM, LPARAM lp)
         if (s->Find("판정: 승격") >= 0) m_bDryPassed = true;
         if (s->Find("판정: 보류") >= 0 || s->Find("[보류]") >= 0) m_bDryPassed = false;
 
+        // 같은 줄에서 진행 단계도 읽는다. 학습 구간(epoch)이 가장 길어
+        // 거기만 실제 숫자로 채우고 나머지는 지점마다 올린다.
+        if (s->Find("[기여도]") >= 0)        SetPhase(60);
+        if (s->Find("[재생버퍼]") >= 0)      SetPhase(140);
+        if (s->Find("[학습]") >= 0)          SetPhase(200);
+
+        int e = s->Find("epoch ");
+        if (e >= 0)
+        {
+            int cur = 0, tot = 0;
+            if (sscanf_s((LPCSTR)*s + e, "epoch %d/%d", &cur, &tot) == 2 && tot > 0)
+                SetPhase(200 + 600 * cur / tot);
+        }
+
+        if (s->Find("감도 회귀 시험") >= 0)  SetPhase(850);
+        if (s->Find("판정:") >= 0)           SetPhase(950);
+        if (s->Find("[보관]") >= 0)          SetPhase(980);
+
         delete s;
     }
     return 0;
@@ -329,6 +396,12 @@ LRESULT CDlg_Retrain::OnRunDone(WPARAM wp, LPARAM lp)
     m_bRunning = false;
     m_hThread = nullptr;
     if (wasDry) m_bDryDone = true;
+
+    // 끝났으면 끝까지 채운 채로 둔다. 감추면 무엇이 끝났는지 흔적이 없다.
+    // 타이머만 멈춘다.
+    if (m_timer) { KillTimer(m_timer); m_timer = 0; }
+    m_target = m_pos = 1000;
+    m_progress.SetPos(1000);
 
     CStringA st;
     if (wasDry)
@@ -375,6 +448,7 @@ void CDlg_Retrain::OnDestroy()
     // 창이 먼저 사라지면 작업 스레드가 죽은 창에 PostMessage 한다.
     if (m_bRunning && m_hProc)
         TerminateProcess(m_hProc, 1);
+    if (m_timer) { KillTimer(m_timer); m_timer = 0; }
     if (m_hThread)
         WaitForSingleObject(m_hThread, 3000);
     CDialogEx::OnDestroy();

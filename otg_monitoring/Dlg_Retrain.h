@@ -32,6 +32,7 @@ public:
     afx_msg void OnBnClickedDryRun();
     afx_msg void OnBnClickedApply();
     afx_msg void OnDestroy();
+    afx_msg void OnTimer(UINT_PTR nIDEvent);
     virtual void OnCancel();
 
     // 작업 스레드 -> 창. WPARAM 없음, LPARAM 은 new CStringA (창이 지운다)
@@ -45,6 +46,17 @@ private:
     CStatic  m_lblHead, m_lblState;
     CFont    m_font, m_fontMono;
 
+    // 진행바.
+    //
+    // 학습이 몇 분 걸리는데 화면이 가만히 있으면 멈춘 것으로 오해한다.
+    // 정확한 총량을 알 수는 없지만 출력에 단계가 드러나므로(재생버퍼 ->
+    // 학습 -> epoch N/400 -> 감도 시험 -> 판정) 그 지점마다 목표치를 올린다.
+    // 사이사이는 타이머가 조금씩 채워 멈춰 보이지 않게 한다.
+    CProgressCtrl m_progress;
+    int       m_pos = 0;         // 지금 위치 (0~1000)
+    int       m_target = 0;      // 이번 단계의 상한
+    UINT_PTR  m_timer = 0;
+
     HANDLE   m_hThread = nullptr;
     HANDLE   m_hProc = nullptr;
     volatile bool m_bRunning = false;
@@ -52,6 +64,8 @@ private:
     bool     m_bDryPassed = false;    // 그 결과가 '승격' 이었는가
 
     void Run(bool dryRun);
+    void SetPhase(int permille);     // 단계가 바뀔 때 목표치를 올린다
+    void ShowProgress(bool bShow);
     void AppendLog(const char* text);
     void SetButtons();
 
