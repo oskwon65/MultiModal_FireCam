@@ -85,11 +85,14 @@ BOOL CDlg_Retrain::OnInitDialog()
         DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
 
     // 로그는 표가 많아 고정폭이라야 열이 맞는다.
-    // 굴림체는 한글 윈도우에 늘 있는 고정폭 글꼴이라 표의 열이 맞는다.
-    // D2Coding 등은 설치돼 있지 않을 수 있어 쓰지 않는다.
+    // 로그도 프로그램 전체와 같은 글꼴을 쓴다. 창마다 글꼴이 다르면 같은
+    // 프로그램인데 화면마다 인상이 달라진다.
+    //
+    // 가변폭이라 감도 시험 표의 열은 정확히 맞지 않는다. 파이썬 쪽에서
+    // 자리수를 맞춰 찍고 있어 크게 어긋나지는 않는다.
     m_fontMono.CreateFont(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        DEFAULT_QUALITY, FIXED_PITCH | FF_MODERN, _T("굴림체"));
+        DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
 
     CRect rc;
     GetClientRect(&rc);
