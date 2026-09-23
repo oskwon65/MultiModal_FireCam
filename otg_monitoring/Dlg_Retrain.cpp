@@ -90,7 +90,9 @@ BOOL CDlg_Retrain::OnInitDialog()
     //
     // 가변폭이라 감도 시험 표의 열은 정확히 맞지 않는다. 파이썬 쪽에서
     // 자리수를 맞춰 찍고 있어 크게 어긋나지는 않는다.
-    m_fontMono.CreateFont(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
+    // 로그 글자는 다른 칸보다 25% 크게 한다(14 -> 18). 결과를 읽고 판단하는
+    // 자리라 잠깐 보고 넘기는 라벨과 같은 크기일 이유가 없다.
+    m_fontMono.CreateFont(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
 
