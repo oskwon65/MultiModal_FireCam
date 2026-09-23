@@ -122,7 +122,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// -------------------------------------------------------------
 
 	m_stdFont.CreateFont(
-		17,                         // 폰트 높이. 설정 항목이 늘어 25% 줄였다 (22 -> 17)
+		UI_FONT_SIZE,               // 프로그램 전체 공통 크기
 		0, 0, 0,
 		FW_NORMAL, //FW_BOLD,                  
 		FALSE, FALSE, 0,
@@ -214,7 +214,9 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 넷뿐이라 빽빽해 보이지 않는다.
 	// 절대 임계값 줄도 같은 간격을 쓴다. 두 묶음이 바로 위아래에 있어
 	// 간격이 다르면 눈에 거슬린다.
-	const long lbl_w = 155, ed_w = 80, row_h = 27;
+	// 글자가 17 에서 20 으로 커진 만큼 넓힌다. 그대로 두면 "기준선 최소
+	// 표본수" 같은 라벨이 잘린다.
+	const long lbl_w = 184, ed_w = 92, row_h = 31;
 	const long stage_top = ctrl_btn_top + mask_btn_h + 16;
 	long y = stage_top;
 
@@ -378,8 +380,8 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 넘어 잘린다. 그래서 단계마다 두 줄로 적는다. 컨트롤을 6개로 늘리는
 	// 대신 라벨 하나를 두 줄 높이로 만들고 \r\n 으로 줄을 나눈다.
 	// -------------------------------------------------------------
-	const long col2_x = nBase_X + 320;
-	const long col2_w = 320;
+	const long col2_x = nBase_X + 360;
+	const long col2_w = 380;
 
 	// 0~2 는 "지금 무엇으로 채점할 수 있는가"(상태)이고, 연속학습은
 	// "모델을 어떻게 갱신하는가"(활동)다. 성격이 달라 번호를 붙이지 않는다.
@@ -395,10 +397,10 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		// 연속학습 칸만 세 줄이다 — 제목 · 재학습 가능 건수 · 판단 점수와 기여도.
 		// 나머지와 같은 46 으로 두면 마지막 줄이 잘려 보이지 않는다.
 		// 맨 아래 항목이라 아래로 늘려도 다른 것을 가리지 않는다.
-		const long h = (i == 3) ? 70 : 46;
+		const long h = (i == 3) ? 80 : 52;
 		stg[i]->Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
 			CRect(col2_x, ny, col2_x + col2_w, ny + h), this);
-		ny += 54;
+		ny += 60;
 	}
 
 	LoadStageSettings();

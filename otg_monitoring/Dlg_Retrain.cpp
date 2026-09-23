@@ -83,15 +83,15 @@ BOOL CDlg_Retrain::OnInitDialog()
     // 창 안의 글자를 모두 같은 크기로 둔다. 안내와 로그 크기가 다르면
     // 안내가 곁다리처럼 보이는데, 여기서는 그 안내가 핵심이다.
     //
-    // 20 은 설정 창(17)보다 크되 이 창의 넓이에 견주어 과하지 않은 값이다.
-    m_font.CreateFont(20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
+    // 프로그램 전체 공통 크기(UI_FONT_SIZE).
+    m_font.CreateFont(UI_FONT_SIZE, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
 
     // 로그도 안내와 같은 글꼴·같은 크기다. 가변폭이라 감도 시험 표의 열이
     // 정확히 맞지는 않지만, 파이썬 쪽에서 자리수를 맞춰 찍고 있어 크게
     // 어긋나지는 않는다.
-    m_fontMono.CreateFont(20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
+    m_fontMono.CreateFont(UI_FONT_SIZE, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
 

@@ -36,7 +36,7 @@ BOOL CDlg_CamPos::OnInitDialog()
 
     // 프로그램 전체와 같은 글꼴을 쓴다. 창마다 글꼴이 다르면 같은
     // 프로그램인데 화면마다 인상이 달라진다.
-    m_font.CreateFont(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
+    m_font.CreateFont(UI_FONT_SIZE, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
 
