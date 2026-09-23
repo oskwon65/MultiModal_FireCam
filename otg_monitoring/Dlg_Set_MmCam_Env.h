@@ -39,7 +39,7 @@ public:
     // 날짜는 직접 입력받지 않고 달력에서 고른다. DTS_SHOWNONE 체크박스가
     // "기준일 없음(전체 기간)" 상태를 표현한다.
     CDateTimeCtrl m_dtBaseDate;
-    CButton m_btnSaveStage;
+    CButton m_btnSaveStage, m_btnRetrain;
 
     // 0단계 절대 임계값. 적용 버튼은 연속학습 조건과 하나를 같이 쓴다.
     CStatic m_capAbs, m_lblAbsTemp, m_lblAbsRise;
@@ -53,7 +53,8 @@ public:
     afx_msg void OnBnClickedButtonChangeMask();
     afx_msg void OnBnClickedButtonGetMask();
     afx_msg void OnBnClickedClose();
-    afx_msg void OnBnClickedSaveStage();   // 연속학습 조건 + 절대 임계값을 함께 저장
+    afx_msg void OnBnClickedSaveStage();
+    afx_msg void OnBnClickedRetrain();   // 재학습 창을 띄운다   // 연속학습 조건 + 절대 임계값을 함께 저장
 
     // 모덜리스로 쓰므로 OK/취소가 창을 없애면 안 된다. 숨기기만 한다.
     virtual void OnOK();

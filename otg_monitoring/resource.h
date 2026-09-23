@@ -9,6 +9,7 @@
 #define IDR_MAINFRAME                   128
 #define IDD_DLG_CMD                     130
 #define IDD_DLG_CAMPOS                  131
+#define IDD_DLG_RETRAIN                 132
 #define IDC_STATIC_0                    1004
 #define IDC_CAP_0                       1004
 #define IDC_COMBO_ID                    1005

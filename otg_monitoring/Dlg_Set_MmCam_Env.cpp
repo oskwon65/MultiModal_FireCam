@@ -8,6 +8,7 @@
 #include "afxdialogex.h"
 #include "MmCam_monitoringDlg.h"
 #include "Dlg_CamPos.h"
+#include "Dlg_Retrain.h"
 
 #include <wininet.h>
 #pragma comment(lib, "wininet.lib")
@@ -29,6 +30,7 @@ extern const char* GetMmCamStartPath();
 #define ID_ED_BASE_DATE						2103
 #define ID_ED_AE_HOURS						2104
 #define ID_BTN_SAVE_STAGE					2110
+#define ID_BTN_RETRAIN						2205
 
 // 0단계 절대 임계값
 #define ID_ED_ABS_TEMP_W					2120
@@ -94,6 +96,7 @@ BEGIN_MESSAGE_MAP(CDlg_Set_MmCam_Env, CDialogEx)
 	ON_BN_CLICKED(ID_BTN_GET_MASK_SVR, &CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask)
 	ON_BN_CLICKED(ID_BTN_CLOSE, &CDlg_Set_MmCam_Env::OnBnClickedClose)
 	ON_BN_CLICKED(ID_BTN_SAVE_STAGE, &CDlg_Set_MmCam_Env::OnBnClickedSaveStage)
+	ON_BN_CLICKED(ID_BTN_RETRAIN, &CDlg_Set_MmCam_Env::OnBnClickedRetrain)
 END_MESSAGE_MAP()
 
 extern void update_db_main_command(const char* new_code);
@@ -342,6 +345,12 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	m_btnSaveStage.Create("설정 적용", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
 		CRect(nBase_X, y + 6, nBase_X + btn_w, y + 6 + 26),
 		this, ID_BTN_SAVE_STAGE);
+
+	// 재학습은 운용 모델을 바꾸는 일이라 여기서 바로 돌리지 않는다.
+	// 창을 띄워 예행연습 결과를 먼저 보여 준다.
+	m_btnRetrain.Create("재학습", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+		CRect(nBase_X + btn_w + 10, y + 6, nBase_X + btn_w * 2 + 10, y + 6 + 26),
+		this, ID_BTN_RETRAIN);
 
 	// 설정 영역의 끝을 긋는다. 위쪽 두 구분선과 짝을 이뤄 영역이 어디서
 	// 끝나는지 분명해진다.
@@ -1087,3 +1096,23 @@ void CDlg_Set_MmCam_Env::LoadAbsSettings()
 //---------------------------------------------------------
 
 //---------------------------------------------------------
+//---------------------------------------------------------
+// 재학습 창을 띄운다.
+//
+// 버튼을 누르자마자 학습이 돌지 않는다. 운용 모델을 바꾸는 일이라
+// 예행연습 결과를 먼저 보여 주고, 승격 판정이 난 경우에만 [진행] 이 열린다.
+//---------------------------------------------------------
+
+void CDlg_Set_MmCam_Env::OnBnClickedRetrain()
+{
+	if (gUserID.empty()) {
+		m_cap_0.SetWindowTextA("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		return;
+	}
+
+	CDlg_Retrain dlg(this);
+	dlg.DoModal();
+
+	// 재학습이 끝났으면 세대·모델 시각이 바뀌었을 수 있다.
+	LoadStageStatus();
+}

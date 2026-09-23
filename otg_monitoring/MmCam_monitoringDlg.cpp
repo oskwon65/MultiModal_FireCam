@@ -81,6 +81,11 @@ static const char* GetAnacondaEnv() { LoadMmCamEnvFromIni(); return g_anaconda_e
 static const char* GetAnacondaRoot() { LoadMmCamEnvFromIni(); return g_anaconda_root.c_str(); }
 const char* GetMmCamStartPath() { LoadMmCamEnvFromIni(); return g_MmCam_start_path.c_str(); }
 
+// 재학습 창이 같은 conda 환경으로 파이썬을 띄우려면 이 둘이 필요하다.
+// 정적 함수라 다른 번역 단위에서 못 쓰므로 공개판을 따로 둔다.
+const char* GetAnacondaRootPub() { return GetAnacondaRoot(); }
+const char* GetAnacondaEnvPub()  { return GetAnacondaEnv(); }
+
 // ---------------------------------------------------------
 
 struct ConfigInfo {
