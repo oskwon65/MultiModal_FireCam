@@ -5,7 +5,11 @@
   python retrain/nightly_retrain.py kict1
   python retrain/nightly_retrain.py kict1 --dry-run     시험만, 교체 안 함
   python retrain/nightly_retrain.py kict1 --rollback    직전 세대로 되돌림
+  python retrain/nightly_retrain.py kict1 --rollback 20260923_144613
   python retrain/nightly_retrain.py kict1 --list        세대 목록
+
+되돌리면 칸별 기준선도 함께 치운다. 기준선은 그 모델의 오차 분포이므로
+모델만 갈면 임계치가 어긋난다. --keep-baseline 으로 막을 수 있다.
 
 절차는 넷이다.
 
@@ -35,6 +39,7 @@ sensitivity_gate 의 설명을 참고할 것. 요약하면, 정상 데이터에 
 
 import argparse
 import os
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -97,6 +102,10 @@ KEEP_GENERATIONS = 10
 GEN_DIR_NAME = "model_generations"
 ARTIFACTS = ("autoencoder_final.pth", "scaler.pkl", "scaler.npz")
 
+# 칸별 기준선. 세대 산출물이 아니라 운용 중에 쌓이는 상태다.
+BASELINE_NAME = "online_baseline.npz"
+RETIRED_DIR_NAME = "_retired_baseline"
+
 
 # ======================================================================
 # 세대 관리
@@ -130,12 +139,18 @@ def gen_root(user_path):
     return os.path.join(user_path, GEN_DIR_NAME)
 
 
+# 세대 폴더 이름은 YYYYMMDD_HHMMSS 다. 기준선 보관함(_retired_baseline)
+# 처럼 세대가 아닌 폴더가 같은 곳에 있으므로 이름으로 가린다.
+GEN_STAMP_RE = re.compile(r"^\d{8}_\d{6}$")
+
+
 def list_generations(user_path):
     root = gen_root(user_path)
     if not os.path.isdir(root):
         return []
     return sorted(d for d in os.listdir(root)
-                  if os.path.isdir(os.path.join(root, d)))
+                  if GEN_STAMP_RE.match(d)
+                  and os.path.isdir(os.path.join(root, d)))
 
 
 def save_generation(user_path, files, report):
@@ -156,6 +171,53 @@ def save_generation(user_path, files, report):
         shutil.rmtree(os.path.join(gen_root(user_path), old), ignore_errors=True)
 
     return stamp
+
+
+def reset_baseline(user_path, why=""):
+    """
+    칸별 기준선을 치운다. 되돌리기와 함께 쓴다.
+
+    [왜 치워야 하는가]
+
+    기준선은 "이 모델이 이 칸에서 내는 오차" 의 분포다. 칸마다 256구간
+    히스토그램으로 0.999 분위를 잡아 임계치로 쓴다. 모델을 갈면 오차의
+    크기 자체가 달라지므로, 남은 분포는 다른 모델의 것이다. 임계치가 너무
+    느슨하면 놓치고 너무 빡빡하면 오경보가 쏟아진다.
+
+    [왜 지우지 않고 옮기는가]
+
+    되돌리기를 또 되돌릴 수 있어야 한다. 기준선은 다시 쌓는 데 시간이
+    걸리고(MIN_SAMPLES 3,000 · 시간대 조건) 그 동안 현장은 임계치 없이
+    돈다. 잘못 판단해 치웠다면 파일을 되돌려 놓는 것이 가장 빠른 복구다.
+
+    파일이 없으면 OnlineBaseline.load() 가 새로 시작하므로 따로 알릴 것은
+    없다.
+    """
+    src = os.path.join(user_path, BASELINE_NAME)
+    if not os.path.exists(src):
+        print("[기준선] 쌓인 것이 없어 치울 것도 없습니다.")
+        return None
+
+    dst_dir = os.path.join(gen_root(user_path), RETIRED_DIR_NAME)
+    os.makedirs(dst_dir, exist_ok=True)
+    dst = os.path.join(dst_dir,
+                       datetime.now().strftime("%Y%m%d_%H%M%S") + ".npz")
+    shutil.move(src, dst)
+
+    # 치운 것이 쌓이면 오래된 것부터 지운다.
+    kept = sorted(f for f in os.listdir(dst_dir) if f.endswith(".npz"))
+    for old_f in kept[:-KEEP_GENERATIONS]:
+        try:
+            os.remove(os.path.join(dst_dir, old_f))
+        except OSError:
+            pass
+
+    tail = f" ({why})" if why else ""
+    print(f"[기준선] 치웠습니다{tail} - "
+          f"{GEN_DIR_NAME}/{RETIRED_DIR_NAME}/{os.path.basename(dst)}")
+    print("[기준선] 다시 쌓는 동안에는 칸별 임계치가 나오지 않습니다. "
+          "절대 온도 임계치는 그대로 작동합니다.")
+    return dst
 
 
 def activate(user_path, stamp):
@@ -259,8 +321,11 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="학습과 시험만 하고 운용 모델을 바꾸지 않는다")
     ap.add_argument("--rollback", nargs="?", const="__prev__",
-                    help="지정 세대(없으면 직전)로 되돌린다")
+                    help="지정 세대(없으면 운용 중인 것의 직전)로 되돌린다")
     ap.add_argument("--list", action="store_true", help="세대 목록")
+    ap.add_argument("--keep-baseline", action="store_true",
+                    help="되돌릴 때 칸별 기준선을 그대로 둔다 "
+                         "(기본은 치우고 다시 쌓게 한다)")
     args = ap.parse_args()
 
     config = Set_Env_Config(args.user_id)
@@ -327,6 +392,15 @@ def main():
             print(f"[ERROR] 그런 세대가 없습니다: {target}")
             return 1
         activate(user_path, target)
+
+        # 기준선은 갈아 낸 모델의 오차 분포다. 모델만 되돌리면 임계치가
+        # 다른 모델 것이라 어긋난다. --keep-baseline 으로 막을 수 있다.
+        if args.keep_baseline:
+            print("[기준선] --keep-baseline 이므로 그대로 둡니다. "
+                  "임계치가 한동안 어긋날 수 있습니다.")
+        else:
+            reset_baseline(user_path, f"{target} 로 되돌림")
+
         print(f"[OK] {target} 세대로 되돌렸습니다. predict_machine 을 재시작하십시오.")
         return 0
 

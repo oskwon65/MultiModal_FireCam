@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <string>
+#include <vector>
 
 // 재학습 실행 창
 //
@@ -10,6 +11,13 @@
 //
 // 학습이 몇 분 걸리므로 UI 스레드에서 돌릴 수 없다. 자식 프로세스의 출력을
 // 파이프로 받아 작업 스레드가 읽고, 메시지로 넘겨 창에 이어 붙인다.
+//
+// [되돌리기]
+//
+// 새 모델이 감도 시험을 통과했어도 현장에서 겪어 보면 아닌 경우가 있다.
+// 세대는 model_generations 에 남아 있으므로 직전 세대로 돌아갈 수 있다.
+// 어느 세대로 갈지는 창이 직접 폴더를 읽어 정하고, 확인 창에 적어 보인
+// 뒤에만 실행한다 - 무인자 --rollback 에 맡기지 않는다.
 
 class CDlg_Retrain : public CDialogEx
 {
@@ -31,6 +39,7 @@ public:
     virtual BOOL OnInitDialog();
     afx_msg void OnBnClickedDryRun();
     afx_msg void OnBnClickedApply();
+    afx_msg void OnBnClickedRollback();
     afx_msg void OnDestroy();
     afx_msg void OnTimer(UINT_PTR nIDEvent);
     virtual void OnCancel();
@@ -41,8 +50,11 @@ public:
     afx_msg LRESULT OnRunDone(WPARAM, LPARAM);
 
 private:
+    // 무엇을 돌리고 있는가. 끝난 뒤 상태 문구와 단추 상태가 달라진다.
+    enum RunKind { RUN_DRY = 0, RUN_APPLY = 1, RUN_ROLLBACK = 2 };
+
     CEdit    m_edLog;
-    CButton  m_btnDry, m_btnApply, m_btnClose;
+    CButton  m_btnDry, m_btnApply, m_btnBack, m_btnClose;
     CStatic  m_lblHead, m_lblState;
     CFont    m_font, m_fontMono;
 
@@ -63,12 +75,22 @@ private:
     bool     m_bDryDone = false;      // 예행연습을 한 번이라도 끝냈는가
     bool     m_bDryPassed = false;    // 그 결과가 '승격' 이었는가
 
-    void Run(bool dryRun);
+    // 되돌릴 대상. 창을 열 때와 실행이 끝날 때마다 다시 구한다.
+    CStringA m_curGen;                // 운용 중인 세대
+    CStringA m_backGen;               // 그 바로 앞 세대 (없으면 빈 문자열)
+    CStringA m_backWhy;               // 되돌릴 수 없는 이유
+
+    std::string UserPath() const;
+    std::vector<std::string> ListGenerations() const;
+    void ScanGenerations();           // m_curGen · m_backGen · m_backWhy 갱신
+    void ShowGenerations();           // 세대 목록을 로그에 적는다
+
+    void Run(RunKind kind);
     void SetPhase(int permille);     // 단계가 바뀔 때 목표치를 올린다
     void ShowProgress(bool bShow);
     void AppendLog(const char* text);
     void SetButtons();
 
-    struct RunCtx { CDlg_Retrain* dlg; std::string cmd; bool dry; };
+    struct RunCtx { CDlg_Retrain* dlg; std::string cmd; int kind; };
     static UINT __cdecl ThreadProc(LPVOID param);
 };
