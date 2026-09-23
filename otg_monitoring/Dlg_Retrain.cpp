@@ -20,6 +20,8 @@ extern const char* GetAnacondaEnvPub();
 
 #define ID_BTN_DRY     3001
 #define ID_BTN_APPLY   3002
+#define ID_LOG_EDIT    3003
+#define ID_PROGRESS    3004
 
 // 파이썬은 UTF-8 로 내보내는데(PYTHONIOENCODING=utf-8) 이 빌드는 MBCS 라
 // CEdit 가 CP949 를 기대한다. 그대로 넣으면 한글이 깨진다.
@@ -106,31 +108,37 @@ BOOL CDlg_Retrain::OnInitDialog()
     m_lblHead.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
         CRect(M, M, rc.right - M, M + headH), this);
 
+    // 아래에서부터 쌓아 올린다. 서로 겹치지 않게 y 를 한 번씩만 계산한다.
+    const int yBtnTop   = rc.bottom - M - btnH;
+    const int yStateTop = yBtnTop - 6 - stateH;
+    const int yProgTop  = yStateTop - 6 - progH;
+    const int yLogBot   = yProgTop - 8;
+
     m_edLog.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_HSCROLL
         | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
-        CRect(M, M + headH + 4, rc.right - M,
-              rc.bottom - M - btnH - stateH - progH - 16),
-        this, 0);
+        CRect(M, M + headH + 4, rc.right - M, yLogBot),
+        this, ID_LOG_EDIT);
 
+    // 자식 컨트롤의 ID 는 서로 달라야 한다. 앞서 로그와 진행바에 모두 0 을
+    // 줘서 진행바가 화면에 나오지 않았다.
     m_progress.Create(WS_CHILD | PBS_SMOOTH,
-        CRect(M, rc.bottom - M - btnH - stateH - progH - 8,
-              rc.right - M, rc.bottom - M - btnH - stateH + progH - 8),
-        this, 0);
+        CRect(M, yProgTop, rc.right - M, yProgTop + progH),
+        this, ID_PROGRESS);
     m_progress.SetRange32(0, 1000);
 
     m_lblState.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
-        CRect(M, rc.bottom - M - btnH - stateH - 6, rc.right - M, rc.bottom - M - btnH - 6),
+        CRect(M, yStateTop, rc.right - M, yStateTop + stateH),
         this);
 
     int bx = rc.right - M - btnW;
     m_btnClose.Create("닫기", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(bx, rc.bottom - M - btnH, bx + btnW, rc.bottom - M), this, IDCANCEL);
+        CRect(bx, yBtnTop, bx + btnW, yBtnTop + btnH), this, IDCANCEL);
     bx -= (btnW + 8);
     m_btnApply.Create("진행", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(bx, rc.bottom - M - btnH, bx + btnW, rc.bottom - M), this, ID_BTN_APPLY);
+        CRect(bx, yBtnTop, bx + btnW, yBtnTop + btnH), this, ID_BTN_APPLY);
     bx -= (btnW + 8);
     m_btnDry.Create("예행연습", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(bx, rc.bottom - M - btnH, bx + btnW, rc.bottom - M), this, ID_BTN_DRY);
+        CRect(bx, yBtnTop, bx + btnW, yBtnTop + btnH), this, ID_BTN_DRY);
 
     SetFont(&m_font);
     SendMessageToDescendants(WM_SETFONT, (WPARAM)m_font.GetSafeHandle(), TRUE);
