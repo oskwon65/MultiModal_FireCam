@@ -279,9 +279,14 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 
 	m_dtBaseDate.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER
 		| DTS_SHORTDATEFORMAT,
-		// 달력 폭을 25% 줄인다. yyyy-MM-dd 열 글자에 드롭다운 단추만 들어가면 된다.
+		// "2026-09-21" 열 글자와 드롭다운 단추가 들어갈 만큼.
+		//
+		// 예전에 25% 줄여 두었는데 글꼴이 17 에서 20 으로 커지면서 날짜가
+		// 잘렸다. 글자 폭에 맞춰 잡아야 글꼴을 또 바꿔도 깨지지 않는다.
+		// 한 글자를 대략 글꼴 높이의 0.62배로 보고, 단추 몫 24px 을 더한다.
 		CRect(nBase_X + lbl_w + 10, y,
-		      nBase_X + lbl_w + 10 + (ed_w + 60) * 3 / 4, y + 22),
+		      nBase_X + lbl_w + 10 + (UI_FONT_SIZE * 62 / 100) * 10 + 24,
+		      y + row_h - 5),
 		this, ID_ED_BASE_DATE);
 
 	// 지역 설정에 따라 표시 형식이 달라지면 env.ini 에 쓰는 값과 화면이
