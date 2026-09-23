@@ -228,9 +228,9 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 
 	struct Row { CStatic* lbl; CEdit* ed; const char* text; UINT id; };
 	Row rows[] = {
-		{ &m_lblBaseSamples, &m_edBaseSamples, "1단계 필터링 표본수",   ID_ED_BASE_SAMPLES },
-		{ &m_lblBaseHours,   &m_edBaseHours,   "1단계 관측 시간",       ID_ED_BASE_HOURS     },
-		{ &m_lblAeSamples,   &m_edAeSamples,   "2단계 필터링 표본수",   ID_ED_AE_SAMPLES    },
+		{ &m_lblBaseSamples, &m_edBaseSamples, "1단계 표본수",        ID_ED_BASE_SAMPLES },
+		{ &m_lblBaseHours,   &m_edBaseHours,   "1단계 최소 시간대",    ID_ED_BASE_HOURS     },
+		{ &m_lblAeSamples,   &m_edAeSamples,   "2단계 표본수",        ID_ED_AE_SAMPLES    },
 	};
 
 	const int nRows = (int)(sizeof(rows) / sizeof(rows[0]));
@@ -267,7 +267,9 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 
 	m_dtBaseDate.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER
 		| DTS_SHORTDATEFORMAT,
-		CRect(nBase_X + lbl_w + 10, y, nBase_X + lbl_w + 10 + ed_w + 60, y + 22),
+		// 달력 폭을 25% 줄인다. yyyy-MM-dd 열 글자에 드롭다운 단추만 들어가면 된다.
+		CRect(nBase_X + lbl_w + 10, y,
+		      nBase_X + lbl_w + 10 + (ed_w + 60) * 3 / 4, y + 22),
 		this, ID_ED_BASE_DATE);
 
 	// 지역 설정에 따라 표시 형식이 달라지면 env.ini 에 쓰는 값과 화면이
@@ -372,8 +374,12 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	CStatic* stg[4] = { &m_lblStage0, &m_lblStage1, &m_lblStage2, &m_lblStage3 };
 	for (int i = 0; i < 4; ++i)
 	{
+		// 3단계만 세 줄이다 — 제목 · 재학습 가능 건수 · 판단 점수와 기여도.
+		// 나머지와 같은 46 으로 두면 마지막 줄이 잘려 보이지 않는다.
+		// 맨 아래 항목이라 아래로 늘려도 다른 것을 가리지 않는다.
+		const long h = (i == 3) ? 70 : 46;
 		stg[i]->Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
-			CRect(col2_x, ny, col2_x + col2_w, ny + 46), this);
+			CRect(col2_x, ny, col2_x + col2_w, ny + h), this);
 		ny += 54;
 	}
 
