@@ -34,8 +34,8 @@ public:
     CStatic m_sepStage;                                  // 마스크 버튼과 가르는 구분선
     CStatic m_sepBottom;                                 // 설정 영역의 끝을 긋는 구분선
     CStatic m_capStage;                                  // 안내 문구
-    CStatic m_lblBaseSamples, m_lblBaseHours, m_lblAeSamples, m_lblBaseDate;
-    CEdit   m_edBaseSamples, m_edBaseHours, m_edAeSamples;
+    CStatic m_lblBaseSamples, m_lblBaseHours, m_lblAeSamples, m_lblAeHours, m_lblBaseDate;
+    CEdit   m_edBaseSamples, m_edBaseHours, m_edAeSamples, m_edAeHours;
     // 날짜는 직접 입력받지 않고 달력에서 고른다. DTS_SHOWNONE 체크박스가
     // "기준일 없음(전체 기간)" 상태를 표현한다.
     CDateTimeCtrl m_dtBaseDate;

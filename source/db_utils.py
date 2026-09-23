@@ -774,7 +774,7 @@ def Set_Env_Config(user_ID):
         # 모으는 시간이 크게 차이나므로 코드에 박지 않는다. 없으면 None 을 넘겨
         # 파이썬 쪽 기본값(online_baseline.MIN_SAMPLES 등)을 쓰게 한다.
         for _k in ("BASELINE_MIN_SAMPLES", "BASELINE_MIN_HOURS",
-                   "RETRAIN_MIN_SAMPLES"):
+                   "RETRAIN_MIN_SAMPLES", "RETRAIN_MIN_HOURS"):
             local_config[_k] = (config.getint("CONSTANTS", _k)
                                 if config.has_option("CONSTANTS", _k)
                                 else None)

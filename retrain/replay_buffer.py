@@ -211,6 +211,10 @@ def collect(conn, db_name, n_cells, target, mask=None,
             # drawn 은 보고서가 쓰는 키다. 두 시기를 합칠 때 빠뜨리면
             # 학습이 다 끝난 뒤 보고서에서 KeyError 로 죽는다.
             "drawn": int(len(X)),
+            # 두 시기를 합치면 시간대도 합집합이어야 하나, 여기서는 개수만
+            # 들고 있어 정확히 합칠 수 없다. 많은 쪽을 쓴다 — 적게 잡는 것이
+            # 관문을 느슨하게 만들지는 않는다.
+            "hours": max(info_old.get("hours", 0), info_new.get("hours", 0)),
             "split": info_new.get("split", info_old.get("split")),
             "old_rows": int(len(X_old)), "new_rows": int(len(X_new)),
             "old_weight": float(old_weight),
@@ -247,6 +251,13 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
 
     rows_seen = 0
     kept = 0
+    # 덮은 시각(0~23) 비트마스크.
+    #
+    # 개수만으로는 "낮에만 아는 모델" 을 막지 못한다. kict1 은 표본
+    # 15,352건으로 최소 기준(5,000)을 세 배 넘겼지만 새벽 02~07시가 통째로
+    # 비어 있었다. 1단계 기준선에는 같은 뜻의 조건이 이미 있는데 재학습에만
+    # 없었다.
+    hours_seen = 0
 
     for t in tables:
         cur.execute(
@@ -278,6 +289,7 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
                 running = 1 if peak >= split else 0
 
             res.offer((when.hour, running), v)
+            hours_seen |= (1 << int(when.hour))
             kept += 1
 
     cur.close()
@@ -291,13 +303,14 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
         "kept": kept,
         "cells": len(seen),
         "drawn": int(X.shape[0]),
+        "hours": bin(hours_seen).count("1"),
         "split": split,
     }
 
     if verbose:
         print(f"[재생버퍼] 테이블 {info['tables']}개 ({info['period']})")
         print(f"           정상 프레임 {kept:,}건 중 {info['drawn']:,}건 표집, "
-              f"{info['cells']}개 칸(시간대x가동상태)")
+              f"{info['cells']}개 칸(시간대x가동상태) · {info['hours']}개 시간대")
         if info["drawn"] < target:
             print(f"           (목표 {target:,}건에 못 미칩니다. 중복 복제 대신 "
                   f"있는 만큼만 씁니다)")

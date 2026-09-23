@@ -75,6 +75,17 @@ TARGET_SAMPLES = 60000
 # env.ini 의 RETRAIN_MIN_SAMPLES 가 없을 때 쓰는 기본값.
 # Dlg_Set_MmCam_Env.cpp 의 DEF_AE_SAMPLES 와 반드시 같아야 한다.
 MIN_SAMPLES_DEFAULT = 5000
+
+# env.ini 의 RETRAIN_MIN_HOURS 가 없을 때 쓰는 기본값.
+# Dlg_Set_MmCam_Env.cpp 의 DEF_AE_HOURS 와 반드시 같아야 한다.
+#
+# 개수 조건만으로는 "낮에만 아는 모델" 을 막을 수 없다. kict1 은 표본
+# 15,352건으로 최소 기준의 세 배를 넘겼지만 새벽 02~07시가 통째로 비어
+# 있었다. 그대로 학습하면 평범한 새벽 3시를 이상으로 판정한다.
+#
+# 1단계 기준선에는 같은 뜻의 조건(BASELINE_MIN_HOURS)이 처음부터 있었는데
+# 재학습에만 빠져 있었다. 값을 1단계와 같은 18 로 맞춘다.
+MIN_HOURS_DEFAULT = 18
 HOLDOUT_RATIO = 0.15
 EPOCHS = 400
 BATCH_SIZE = 512
@@ -344,14 +355,24 @@ def main():
     # 최소 표본 수는 모니터링 프로그램의 [설정] 창에서 바꾼다.
     min_samples = config.get("RETRAIN_MIN_SAMPLES") or MIN_SAMPLES_DEFAULT
 
+    min_hours = config.get("RETRAIN_MIN_HOURS") or MIN_HOURS_DEFAULT
+
     if len(X) < min_samples:
         print(f"[보류] 표본이 {len(X):,}건뿐입니다. 최소 {min_samples:,}건이 필요합니다.")
         print("       1단계 기준선이 채점을 시작한 뒤부터 정상 프레임이 쌓입니다.")
         return 2
 
+    if info.get("hours", 0) < min_hours:
+        print(f"[보류] 덮은 시간대가 {info.get('hours', 0)}개뿐입니다. "
+              f"최소 {min_hours}개가 필요합니다.")
+        print("       표본 수는 충분해도 특정 시간대만 배우면 나머지 시간을")
+        print("       이상으로 판정합니다. 감시를 더 돌려 하루 주기를 덮으십시오.")
+        return 2
+
     cut = int(len(X) * (1 - HOLDOUT_RATIO))
     X_train, X_hold = X[:cut], X[cut:]
-    print(f"[학습] {len(X_train):,}건 학습 / {len(X_hold):,}건 검증")
+    print(f"[학습] {len(X_train):,}건 학습 / {len(X_hold):,}건 검증 "
+          f"({info.get('hours', 0)}/{min_hours} 시간대)")
 
     init_state = None
     _mp = os.path.join(user_path, "autoencoder_final.pth")

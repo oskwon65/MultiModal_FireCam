@@ -27,6 +27,7 @@ extern const char* GetMmCamStartPath();
 #define ID_ED_BASE_HOURS					2101
 #define ID_ED_AE_SAMPLES					2102
 #define ID_ED_BASE_DATE						2103
+#define ID_ED_AE_HOURS						2104
 #define ID_BTN_SAVE_STAGE					2110
 
 // 0단계 절대 임계값
@@ -47,6 +48,11 @@ extern const char* GetMmCamStartPath();
 #define DEF_BASE_SAMPLES	3000
 #define DEF_BASE_HOURS		18
 #define DEF_AE_SAMPLES		5000
+// 재학습에도 시간대 다양성 조건을 둔다. 개수만으로는 "낮에만 아는
+// 모델" 을 막지 못한다 — kict1 은 표본 15,352건으로 최소 기준의 세 배를
+// 넘겼지만 새벽 02~07시가 통째로 비어 있었다.
+// retrain/nightly_retrain.py 의 MIN_HOURS_DEFAULT 와 같아야 한다.
+#define DEF_AE_HOURS		18
 // 계산 기준일은 기본값이 없다. 빈 값 = 제한 없이 전체 기간 사용.
 #define DEF_CALC_BASE_DATE	""
 
@@ -228,9 +234,10 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 
 	struct Row { CStatic* lbl; CEdit* ed; const char* text; UINT id; };
 	Row rows[] = {
-		{ &m_lblBaseSamples, &m_edBaseSamples, "1단계 표본수",        ID_ED_BASE_SAMPLES },
-		{ &m_lblBaseHours,   &m_edBaseHours,   "1단계 최소 시간대",    ID_ED_BASE_HOURS     },
-		{ &m_lblAeSamples,   &m_edAeSamples,   "2단계 표본수",        ID_ED_AE_SAMPLES    },
+		{ &m_lblBaseSamples, &m_edBaseSamples, "1단계 최소 표본수",   ID_ED_BASE_SAMPLES },
+		{ &m_lblBaseHours,   &m_edBaseHours,   "1단계 최소 시간대",   ID_ED_BASE_HOURS   },
+		{ &m_lblAeSamples,   &m_edAeSamples,   "2단계 최소 표본수",   ID_ED_AE_SAMPLES   },
+		{ &m_lblAeHours,     &m_edAeHours,     "2단계 최소 시간대",   ID_ED_AE_HOURS     },
 	};
 
 	const int nRows = (int)(sizeof(rows) / sizeof(rows[0]));
@@ -340,7 +347,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 끝나는지 분명해진다.
 	//
 	// 오른쪽 현재 진행 열(네 항목, 353 근처에서 끝)보다 아래에 와야 열을
-	// 가로지르지 않는다. 적용 버튼이 367 에서 끝나므로 그 아래에 둔다.
+	// 가로지르지 않는다. 적용 버튼이 394 에서 끝나므로 그 아래에 둔다.
 	{
 		CRect rcC;
 		GetClientRect(&rcC);
@@ -415,6 +422,9 @@ void CDlg_Set_MmCam_Env::LoadStageSettings()
 
 	s.Format("%d", ini_read_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_SAMPLES", DEF_AE_SAMPLES));
 	m_edAeSamples.SetWindowTextA(s);
+
+	s.Format("%d", ini_read_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_HOURS", DEF_AE_HOURS));
+	m_edAeHours.SetWindowTextA(s);
 
 	// 저장된 기준일이 있으면 그 날짜를, 없으면 오늘을 보여준다.
 	//
@@ -689,6 +699,8 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	const int base_samples = atoi(a);
 	const int base_hours   = atoi(b);
 	const int ae_samples   = atoi(c);
+	m_edAeHours.GetWindowTextA(c);
+	const int ae_hours     = atoi(c);
 
 	// 터무니없는 값이 들어가면 감시가 영영 시작되지 않거나(너무 큼),
 	// 아무것도 못 배운 상태로 채점을 시작한다(너무 작음). 여기서 막는다.
@@ -702,6 +714,10 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	}
 	if (ae_samples < 1000 || ae_samples > 1000000) {
 		m_cap_0.SetWindowTextA("[ERROR] 2단계 최소 표본은 1,000 ~ 1,000,000 사이여야 합니다.");
+		return;
+	}
+	if (ae_hours < 1 || ae_hours > 24) {
+		m_cap_0.SetWindowTextA("[ERROR] 2단계 최소 시간대는 1 ~ 24 사이여야 합니다.");
 		return;
 	}
 
@@ -783,6 +799,7 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	bool ok = ini_write_int_utf8(ini, "CONSTANTS", "BASELINE_MIN_SAMPLES", base_samples)
 		&& ini_write_int_utf8(ini, "CONSTANTS", "BASELINE_MIN_HOURS", base_hours)
 		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_SAMPLES", ae_samples)
+		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_HOURS", ae_hours)
 		&& ini_write_utf8(ini, "CONSTANTS", "CALC_BASE_DATE", new_date)
 		&& ini_write_utf8(ini, "CONSTANTS", "ABS_TEMP_WARN",  (const char*)CStringA(at))
 		&& ini_write_utf8(ini, "CONSTANTS", "ABS_TEMP_ALARM", (const char*)CStringA(aa))
