@@ -1111,8 +1111,8 @@ steps4 = [
      "모델이 작아 CPU 로 수 분입니다."),
     ("3", "감도 회귀 시험", "정상 적합도만 보면 절반만 본 것입니다. 합성 이상을 주입해 "
      "여전히 잡아내는지 함께 봅니다."),
-    ("4", "세대 보관", "10세대까지 보관해 언제든 되돌립니다. 통과하지 못한 후보도 "
-     "남겨 원인을 확인합니다."),
+    ("4", "세대 보관", "10세대까지 보관합니다. 통과하지 못한 후보와 예행연습 결과도 "
+     "남겨 원인을 확인합니다. 되돌리기는 다음 장에서 다룹니다."),
 ]
 y4 = 2.28
 for num, name, desc in steps4:
@@ -1129,9 +1129,11 @@ write(tf, [("실행", dict(size=13, bold=True, color=INK), dict(space_after=0))]
 code_block(s, bx7, 2.6, 4.21, [
     "$ python retrain/nightly_retrain.py <user>",
     "",
-    "  --dry-run    시험만, 교체 안 함",
-    "  --list       세대 목록",
-    "  --rollback   직전 세대로 복귀",
+    "  --dry-run     시험만, 교체 안 함",
+    "  --list        세대 목록",
+    "  --rollback    직전 운용 세대로",
+    "  --rollback <세대>",
+    "  --keep-baseline",
 ], size=10)
 
 tf = textbox(s, bx7, 4.36, 4.21, 0.3)
@@ -1295,9 +1297,60 @@ write(tf, [("기여 가중치를 낮추려면 [설정] 창에서 계산 기준�
             dict(size=11, bold=True, color=TEAL), dict(space_after=0))])
 page_num(s, 21)
 
-# =================================================================== 21 단계 설정
+# =================================================================== 22 되돌리기
 s = slide_light(prs)
-title_bar(s, "22  STAGE SETTINGS", "단계 전환 조건 바꾸기")
+title_bar(s, "22  ROLLBACK", "되돌리기 - 무엇으로 돌아가는가")
+
+tf = textbox(s, M, 1.72, 11.5, 0.35)
+write(tf, [("감도 시험을 통과한 모델도 현장에서 겪어 보면 아닐 수 있습니다. "
+            "[재학습] 창의 [되돌리기] 로 직전에 운용하던 세대로 돌립니다.",
+            dict(size=13.5, color=MUTED), dict(space_after=0))])
+
+code_block(s, M, 2.2, W - 2 * M, two_col([
+    ("[ 재학습 창 ]",                              "[ generation_history.txt ]"),
+    ("[cj_busan_1] 운용에 올라간 세대",            "09-23 14:51  20260923_145111  승격"),
+    ("   20260923_145111   운영중",                "09-24 12:14  20260924_121452  승격"),
+    ("   20260924_121452   운용된 적 있음",        "09-24 12:54  20260923_145111  되돌림"),
+    ("", ""),
+    ("예행연습 후보 3개는 숨겼습니다.",            "승격과 되돌림을 남깁니다. 되돌리기는"),
+    ("되돌릴 대상이 아닙니다.",                    "이 순서를 거슬러 갑니다."),
+    ("", ""),
+    ("[되돌리기] 대상은 20260924_121452 입니다.",  ""),
+    ("", ""),
+    ("[ 되돌리기 ]        [예행연습] [진행] [닫기]", ""),
+]), size=10)
+
+cR = (W - 2 * M - 0.3) / 2
+
+card(s, M, 5.16, cR, 1.58, fill=PAPER)
+tf = textbox(s, M + 0.28, 5.32, cR - 0.56, 0.3)
+write(tf, [("예행연습 후보는 대상이 아니다", dict(size=12.5, bold=True, color=INK),
+            dict(space_after=0))])
+tf = textbox(s, M + 0.28, 5.66, cR - 0.56, 1.0)
+write(tf, [("예행연습도 학습을 끝까지 돌리고 결과를 같은 곳에 보관합니다. 그래서 폴더 "
+            "순서로 \"직전\" 을 고르면 운용된 적 없는 후보로 갑니다.",
+            dict(size=11, color=INK), dict(space_after=5, line=1.25)),
+           ("cj_busan_1 은 세대 10개 중 실제로 올라간 것이 하나였습니다. 그래서 폴더가 "
+            "아니라 승격 기록을 기준으로 삼습니다.",
+            dict(size=11, color=INK), dict(space_after=0, line=1.25))])
+
+rR = M + cR + 0.3
+card(s, rR, 5.16, cR, 1.58, fill=RGBColor(0xFD, 0xF1, 0xEC))
+tf = textbox(s, rR + 0.28, 5.32, cR - 0.56, 0.3)
+write(tf, [("되돌리면 칸별 기준선도 함께 치웁니다",
+            dict(size=12.5, bold=True, color=EMBER), dict(space_after=0))])
+tf = textbox(s, rR + 0.28, 5.66, cR - 0.56, 1.0)
+write(tf, [("기준선은 그 모델이 칸마다 내는 오차의 분포입니다. 모델을 갈면 오차 크기가 "
+            "달라져 임계치가 다른 모델 것이 됩니다.",
+            dict(size=11, color=INK), dict(space_after=5, line=1.25)),
+           ("지우지 않고 보관하므로 되돌릴 수 있습니다. 다시 쌓는 동안에는 0단계 절대 "
+            "임계치만 작동합니다. 되돌린 뒤 [정지] -> [시작] 이 필요합니다.",
+            dict(size=11, bold=True, color=EMBER), dict(space_after=0, line=1.25))])
+page_num(s, 22)
+
+# =================================================================== 23 단계 설정
+s = slide_light(prs)
+title_bar(s, "23  STAGE SETTINGS", "단계 전환 조건 바꾸기")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
 write(tf, [("[설정] 버튼을 누르면 창 아래가 펼쳐집니다. 목록과 같은 토글이라 펼친 채로 "
@@ -1316,7 +1369,7 @@ code_block(s, M, 2.2, W - 2 * M, two_col([
     ("마스크 셀 최고 온도  [ 207 ][ 222 ]",  "   재학습 가능 9,299/5,000건"),
     ("분당 상승률          [  20 ][  34 ]",  "   판단 점수 0.088 → 기여 0.00"),
     ("", ""),
-    ("[ 설정 적용 ]", ""),
+    ("[ 설정 적용 ]   [ 재학습 ]", ""),
 ]), size=10)
 
 cS = (W - 2 * M - 0.3) / 2
@@ -1343,11 +1396,11 @@ write(tf, [("히스토리 DB 는 날짜별 테이블이라 정확히 잘라내�
             dict(size=11, color=INK), dict(space_after=5, line=1.25)),
            ("저장 후 [정지] → [시작] 을 눌러야 반영됩니다.",
             dict(size=11, bold=True, color=EMBER), dict(space_after=0, line=1.25))])
-page_num(s, 22)
+page_num(s, 23)
 
 # =================================================================== 22 안전 규칙
 s = slide_dark(prs)
-title_bar(s, "23  SAFETY RULES", "연속 학습의 안전 규칙", dark=True)
+title_bar(s, "24  SAFETY RULES", "연속 학습의 안전 규칙", dark=True)
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
 write(tf, [("적응(무엇이 정상인가 배우기)과 탐지(이상을 알리기)는 반드시 분리되어야 합니다.",
@@ -1379,11 +1432,11 @@ tf = textbox(s, M + 0.3, 6.36, W - 2 * M - 0.6, 0.32)
 write(tf, [("kict1 사례 — 카메라가 틀어진 뒤 모든 프레임이 이상으로 판정되어, "
             "재생 버퍼가 비고 재학습이 자동 보류되었습니다. 규칙 1이 동작한 것입니다.",
             dict(size=11, bold=True, color=TEAL), dict(space_after=0))])
-page_num(s, 23, dark=True)
+page_num(s, 24, dark=True)
 
 # =================================================================== 22 시운전 도입
 s = slide_light(prs)
-title_bar(s, "24  COMMISSIONING", "신규 현장 도입 절차")
+title_bar(s, "25  COMMISSIONING", "신규 현장 도입 절차")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
 write(tf, [("오토인코더는 그 현장을 본 적이 있어야 만들 수 있습니다. 첫날부터 2단계로 "
@@ -1470,11 +1523,11 @@ write(tf, [("현장 배선과 시험 운전에 어차피 며칠이 듭니다. �
            ("시운전 중 설비를 세워 두면 '정지 상태' 만 배웁니다. 가동과 정지를 "
             "모두 겪게 하십시오.",
             dict(size=11, color=TEAL), dict(space_after=0, line=1.25))])
-page_num(s, 24)
+page_num(s, 25)
 
 # =================================================================== 23 문제 해결
 s = slide_dark(prs)
-title_bar(s, "25  TROUBLESHOOTING", "자주 겪는 문제", dark=True)
+title_bar(s, "26  TROUBLESHOOTING", "자주 겪는 문제", dark=True)
 
 probs = [
     ("점수가 계속 같은 값", "현장 서버의 파일이 갱신되지 않는 경우입니다.",
@@ -1500,11 +1553,11 @@ for i, (title, cause, fix) in enumerate(probs):
     tf = textbox(s, M + 4.7, y + 0.2, 6.9, 0.58)
     write(tf, [(fix, dict(size=11.5, color=RGBColor(0xC8, 0xD3, 0xE3)), dict(space_after=0, line=1.25))])
     y += 1.0
-page_num(s, 25, dark=True)
+page_num(s, 26, dark=True)
 
 # =================================================================== 19 체크리스트
 s = slide_light(prs)
-title_bar(s, "26  CHECKLIST", "설치 점검표")
+title_bar(s, "27  CHECKLIST", "설치 점검표")
 
 left = [
     "Visual Studio (MFC 포함) 설치",
@@ -1543,7 +1596,7 @@ card(s, M, 6.2, W - 2 * M, 0.6, fill=RGBColor(0xEC, 0xF6, 0xF4))
 tf = textbox(s, M + 0.34, 6.36, W - 2 * M - 0.68, 0.32)
 write(tf, [("모두 완료되면 현장 두 곳 합쳐 6개가 기동하고, 상태줄에는 선택한 현장 기준으로 [3] processes | err=0000 이 표시됩니다.",
             dict(size=12.5, bold=True, color=TEAL), dict(space_after=0))])
-page_num(s, 26)
+page_num(s, 27)
 
 # 출력 경로는 인자로 바꿀 수 있다 (PowerPoint 가 원본을 열고 있을 때 임시본 생성용)
 import sys
