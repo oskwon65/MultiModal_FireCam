@@ -197,8 +197,8 @@ BOOL CDlg_Retrain::OnInitDialog()
         this, ID_PROGRESS);
     m_progress.SetRange32(0, 1000);
 
-    // 단계 이름은 길이가 많이 변한다(epoch 143/400). 가운데로 맞추면
-    // 바뀔 때마다 흔들리지만, 한 줄만 쓰는 곳이라 눈에 거슬리지 않는다.
+    // 눈금 아래 줄은 시작할 때 적은 안내를 그대로 둔다. 몇 분 걸리는
+    // 일이라, 기다려도 되는지를 판에서 바로 알 수 있어야 한다.
     m_lblElapsed.Create("", WS_CHILD | SS_CENTER,
         CRect(bx0 + 16, by0 + 210, bx0 + BUSY_W - 16, by0 + 238),
         this, ID_LBL_ELAPSED);
@@ -457,6 +457,9 @@ void CDlg_Retrain::ShowProgress(bool bShow)
         m_progress.SetRange32(0, 1000);
         m_progress.SetPos(0);
 
+        // 안내는 실행 내내 그대로 둔다. 타이머가 건드리지 않는다.
+        m_lblElapsed.SetWindowTextA(m_notice);
+
         // 판을 로그 위로 올린다. z 순서는 만든 차례를 따르지만, 실행을
         // 거듭하면 어긋날 수 있어 띄울 때마다 못 박는다.
         m_pnlBusy.SetWindowPos(&wndTop, 0, 0, 0, 0,
@@ -518,37 +521,30 @@ void CDlg_Retrain::AnimateBusy()
     // 링. 점과 가운데 시간을 함께 다시 그린다. 글자 회전자는 없앴다 -
     // 링이 도는데 옆에서 또 돌면 어수선하다.
     if (m_ring.GetSafeHwnd()) m_ring.Invalidate(FALSE);
-
-    if (m_busyWhat != m_lastBusy)
-    {
-        m_lastBusy = m_busyWhat;
-        m_lblBusy.SetWindowTextA(m_busyWhat);
-    }
 }
 
-// 링 아래 줄. 경과 시간은 링 가운데에 있으므로 여기에는 얼마나 왔는지와
-// 무엇을 하는 중인지만 적는다.
+// 눈금 위 줄. 경과 시간은 링 가운데에 있으므로 여기에는 무엇을 하는
+// 중인지와 얼마나 왔는지를 적는다.
 void CDlg_Retrain::UpdateElapsed()
 {
-    CStringA t;
+    CStringA t = m_busyWhat;
+
     if (m_target > 0)
     {
-        t.Format("%d%%", m_target / 10);
-        if (!m_phaseNote.IsEmpty())
-        {
-            t += "   ·   ";
-            t += m_phaseNote;
-        }
+        CStringA pct;
+        pct.Format("   ·   %d%%", m_target / 10);
+        t += pct;
     }
-    else
+    if (!m_phaseNote.IsEmpty())
     {
-        t = m_phaseNote.IsEmpty() ? "준비하는 중" : m_phaseNote;
+        t += "   ·   ";
+        t += m_phaseNote;
     }
 
-    if (t != m_lastElapsed)
+    if (t != m_lastBusy)
     {
-        m_lastElapsed = t;
-        m_lblElapsed.SetWindowTextA(t);
+        m_lastBusy = t;
+        m_lblBusy.SetWindowTextA(t);
     }
 }
 
@@ -845,6 +841,8 @@ void CDlg_Retrain::Run(RunKind kind)
 
     m_busyWhat = back   ? "되돌리는 중" :
                  dryRun ? "예행연습 중" : "재학습 중";
+    m_notice = dryRun ? "예행연습을 시작합니다. 몇 분 걸립니다."
+                      : "재학습을 시작합니다. 몇 분 걸립니다.";
 
     // 되돌리기는 파일 몇 개를 옮기고 끝난다. 판을 띄우면 차기도 전에
     // 사라져 오히려 무엇이 일어났는지 알기 어렵다.

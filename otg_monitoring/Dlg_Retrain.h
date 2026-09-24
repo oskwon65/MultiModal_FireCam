@@ -79,8 +79,8 @@ private:
     // 단계는 출력에서 읽어(재생버퍼 -> 학습 -> epoch N/400 -> 감도 시험)
     // 백분율로 함께 적는다. 못 읽으면 시간만 나온다.
     CStatic   m_pnlBusy;         // 흰 판 - 뒤의 로그를 가린다
-    CStatic   m_lblBusy;         // "예행연습 중"
-    CStatic   m_lblElapsed;      // "경과 2분 14초 · 34%"
+    CStatic   m_lblBusy;         // 눈금 위 - "예행연습 중 · 34% · epoch 143/400"
+    CStatic   m_lblElapsed;      // 눈금 아래 - "예행연습을 시작합니다..."
 
     // 진행 링. 점 24개를 둘레에 놓고, 가운데에 경과 시간을 적는다.
     //
@@ -99,7 +99,8 @@ private:
     int       m_frame = 0;       // 회전자 프레임
     UINT_PTR  m_timer = 0;
     ULONGLONG m_tickStart = 0;
-    CStringA  m_busyWhat;        // 판에 적을 말
+    CStringA  m_busyWhat;        // "예행연습 중"
+    CStringA  m_notice;          // 눈금 아래에 그대로 두는 안내
     CStringA  m_phaseNote;       // "재생버퍼" · "epoch 143/400" 같은 것
     CStringA  m_lastElapsed;     // 같은 글자를 다시 쓰지 않으려고
     CStringA  m_lastBusy;
