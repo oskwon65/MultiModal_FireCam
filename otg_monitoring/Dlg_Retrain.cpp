@@ -302,39 +302,52 @@ void CDlg_Retrain::ScanGenerations()
     m_backGen = prev.c_str();
 }
 
-// 어느 세대를 쓰고 있고 어디로 되돌릴 수 있는지 로그 칸에 적는다. 창을
-// 열면 로그가 비어 있으므로 따로 자리를 내지 않아도 된다.
+// 어디로 되돌릴 수 있는지 로그 칸에 적는다. 창을 열면 로그가 비어 있으므로
+// 따로 자리를 내지 않아도 된다.
+//
+// 운용에 올라간 세대만 보인다. 예행연습 후보는 보여 줘도 할 수 있는 것이
+// 없다 - 되돌릴 대상이 아니다. 몇 개가 있는지만 한 줄로 적는다.
 void CDlg_Retrain::ShowGenerations()
 {
     const std::vector<std::string> gens = ListGenerations();
     const std::vector<std::string> served = ServedGenerations();
 
-    CStringA t;
-    t.Format("[%s] 보관된 세대\r\n", gUserID.c_str());
+    // 기록에는 같은 세대가 여러 번 나올 수 있다(올렸다 내렸다 다시 올림).
+    // 폴더가 남아 있는 것만 한 번씩 이름 순으로 모은다.
+    std::vector<std::string> shown;
     for (size_t i = 0; i < gens.size(); ++i)
     {
-        bool wasServed = false;
         for (size_t k = 0; k < served.size(); ++k)
-            if (served[k] == gens[i]) { wasServed = true; break; }
+            if (served[k] == gens[i]) { shown.push_back(gens[i]); break; }
+    }
 
+    CStringA t;
+    t.Format("[%s] 운용에 올라간 세대\r\n", gUserID.c_str());
+    for (size_t i = 0; i < shown.size(); ++i)
+    {
         t += "    ";
-        t += gens[i].c_str();
-        if (m_curGen.Compare(gens[i].c_str()) == 0) t += "   <= 운용 중";
-        else if (wasServed)                         t += "   (운용된 적 있음)";
-        else                                        t += "   예행연습";
+        t += shown[i].c_str();
+        t += (m_curGen.Compare(shown[i].c_str()) == 0)
+             ? "   <= 운용 중" : "   운용된 적 있음";
         t += "\r\n";
     }
-    if (gens.empty()) t += "    (없음)\r\n";
+    if (shown.empty()) t += "    (없음)\r\n";
 
-    // 예행연습 후보와 실제로 운용된 세대를 구별해 적는다. 이 구별이 없으면
-    // 목록만 보고 되돌릴 곳이 있다고 오해한다.
+    const size_t hidden = gens.size() - shown.size();
+    if (hidden > 0)
+    {
+        CStringA h;
+        h.Format("\r\n예행연습 후보 %u개는 숨겼습니다. 되돌릴 대상이 "
+                 "아닙니다.\r\n", (unsigned)hidden);
+        t += h;
+    }
+
     t += "\r\n";
     if (!m_backGen.IsEmpty())
     {
         CStringA b;
-        b.Format("[되돌리기] 대상은 %s 입니다. 운용 중인 %s 직전에 "
-                 "운용하던 세대입니다.\r\n",
-                 (LPCSTR)m_backGen, (LPCSTR)m_curGen);
+        b.Format("[되돌리기] 대상은 %s 입니다.\r\n",
+                 (LPCSTR)m_backGen);
         t += b;
     }
     else
