@@ -178,28 +178,31 @@ BOOL CDlg_Retrain::OnInitDialog()
     const int bx0 = (rc.Width() - BUSY_W) / 2;
     const int by0 = (rc.Height() - BUSY_H) / 2;
 
-    m_pnlBusy.Create("", WS_CHILD | SS_WHITERECT | SS_SUNKEN,
+    // WS_CLIPSIBLINGS 가 없으면 이 판이 위에 있는 글자까지 덮어 칠한다.
+    // 타이머가 매번 다시 쓰는 줄은 곧 되살아나지만, 한 번만 쓰는 안내 줄은
+    // 그대로 사라진다.
+    m_pnlBusy.Create("", WS_CHILD | WS_CLIPSIBLINGS | SS_WHITERECT | SS_SUNKEN,
         CRect(bx0, by0, bx0 + BUSY_W, by0 + BUSY_H), this, ID_PNL_BUSY);
 
     // 링을 위에 두고 그 아래로 말·눈금·단계를 쌓는다. 경과 시간은 링
     // 가운데에 있어 따로 줄을 차지하지 않는다.
-    m_ring.Create("", WS_CHILD | SS_OWNERDRAW,
+    m_ring.Create("", WS_CHILD | WS_CLIPSIBLINGS | SS_OWNERDRAW,
         CRect(bx0 + (BUSY_W - RING_D) / 2, by0 + 18,
               bx0 + (BUSY_W + RING_D) / 2, by0 + 18 + RING_D),
         this, ID_RING);
 
-    m_lblBusy.Create("", WS_CHILD | SS_CENTER,
+    m_lblBusy.Create("", WS_CHILD | WS_CLIPSIBLINGS | SS_CENTER,
         CRect(bx0 + 16, by0 + 146, bx0 + BUSY_W - 16, by0 + 178),
         this, ID_LBL_BUSY);
 
-    m_progress.Create(WS_CHILD | PBS_SMOOTH,
+    m_progress.Create(WS_CHILD | WS_CLIPSIBLINGS | PBS_SMOOTH,
         CRect(bx0 + 40, by0 + 184, bx0 + BUSY_W - 40, by0 + 202),
         this, ID_PROGRESS);
     m_progress.SetRange32(0, 1000);
 
     // 눈금 아래 줄은 시작할 때 적은 안내를 그대로 둔다. 몇 분 걸리는
     // 일이라, 기다려도 되는지를 판에서 바로 알 수 있어야 한다.
-    m_lblElapsed.Create("", WS_CHILD | SS_CENTER,
+    m_lblElapsed.Create("", WS_CHILD | WS_CLIPSIBLINGS | SS_CENTER,
         CRect(bx0 + 16, by0 + 210, bx0 + BUSY_W - 16, by0 + 238),
         this, ID_LBL_ELAPSED);
 
@@ -457,8 +460,6 @@ void CDlg_Retrain::ShowProgress(bool bShow)
         m_progress.SetRange32(0, 1000);
         m_progress.SetPos(0);
 
-        // 안내는 실행 내내 그대로 둔다. 타이머가 건드리지 않는다.
-        m_lblElapsed.SetWindowTextA(m_notice);
 
         // 판을 로그 위로 올린다. z 순서는 만든 차례를 따르지만, 실행을
         // 거듭하면 어긋날 수 있어 띄울 때마다 못 박는다.
@@ -469,6 +470,11 @@ void CDlg_Retrain::ShowProgress(bool bShow)
         m_ring.SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         m_lblElapsed.SetWindowPos(&wndTop, 0, 0, 0, 0,
                                   SWP_NOMOVE | SWP_NOSIZE);
+
+        // 안내는 z 순서를 정리한 뒤에 쓴다. 먼저 쓰면 판이 올라오면서
+        // 덮어 버린다. 실행 내내 그대로 두고 타이머가 건드리지 않는다.
+        m_lblElapsed.SetWindowTextA(m_notice);
+        m_lblElapsed.Invalidate(FALSE);
 
         // 첫 프레임을 바로 그린다. 안 그리면 판이 잠깐 비어 보인다.
         AnimateBusy();
