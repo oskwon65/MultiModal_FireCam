@@ -42,6 +42,8 @@ extern const char* GetAnacondaEnvPub();
 // 둘만으로 움직인다.
 #define ANIM_MS      120      // 한 프레임
 #define SWEEP_STEP    45      // 총량을 모를 때 한 프레임에 쓸어 가는 양
+#define PANEL_BG  RGB(255, 255, 255)   // 판 · 글자 바탕 · 링 바탕
+
 #define RING_D       116      // 링 지름
 #define RING_DOTS     24      // 둘레의 점 수
 #define RING_COMET     6      // 총량을 모를 때 꼬리 길이
@@ -119,6 +121,7 @@ BEGIN_MESSAGE_MAP(CDlg_Retrain, CDialogEx)
     ON_WM_DESTROY()
     ON_WM_TIMER()
     ON_WM_DRAWITEM()
+    ON_WM_CTLCOLOR()
 END_MESSAGE_MAP()
 
 //---------------------------------------------------------
@@ -181,10 +184,13 @@ BOOL CDlg_Retrain::OnInitDialog()
     const int bx0 = (rc.Width() - BUSY_W) / 2;
     const int by0 = (rc.Height() - BUSY_H) / 2;
 
+    // 테두리를 두지 않는다. 뒤의 로그도 흰 바탕이라, 선을 그으면 표식이
+    // 아니라 상자가 먼저 보인다.
+    //
     // WS_CLIPSIBLINGS 가 없으면 이 판이 위에 있는 글자까지 덮어 칠한다.
     // 타이머가 매번 다시 쓰는 줄은 곧 되살아나지만, 한 번만 쓰는 안내 줄은
     // 그대로 사라진다.
-    m_pnlBusy.Create("", WS_CHILD | WS_CLIPSIBLINGS | SS_WHITERECT | SS_SUNKEN,
+    m_pnlBusy.Create("", WS_CHILD | WS_CLIPSIBLINGS | SS_WHITERECT,
         CRect(bx0, by0, bx0 + BUSY_W, by0 + BUSY_H), this, ID_PNL_BUSY);
 
     // 링을 위에 두고 그 아래로 말·눈금·단계를 쌓는다. 경과 시간은 링
@@ -208,6 +214,8 @@ BOOL CDlg_Retrain::OnInitDialog()
     m_lblElapsed.Create("", WS_CHILD | WS_CLIPSIBLINGS | SS_CENTER,
         CRect(bx0 + 16, by0 + 210, bx0 + BUSY_W - 16, by0 + 238),
         this, ID_LBL_ELAPSED);
+
+    m_brPanel.CreateSolidBrush(PANEL_BG);
 
     // 링 가운데 시간은 더 크고 굵게 - 이 판에서 제일 먼저 눈에 와야 한다.
     m_fontRing.CreateFont(UI_FONT_SIZE + 10, 0, 0, 0, FW_BOLD, FALSE, FALSE, 0,
@@ -582,6 +590,26 @@ static COLORREF Mix(COLORREF a, COLORREF b, double t)
 // 가운데에는 경과 시간을 적는다. 이 판에서 제일 먼저 눈에 와야 하는 값이다.
 //
 // 메모리에 그려 한 번에 옮긴다. 바로 그리면 매 프레임 깜빡인다.
+// 판 위 글자의 바탕을 판과 같은 흰색으로 돌려준다.
+//
+// 정적 컨트롤은 그릴 때 부모에게 바탕 브러시를 물어본다. 그냥 두면
+// 대화상자 색(회색)을 받아, 흰 판 위에 글자 크기만 한 회색 네모가 생긴다.
+HBRUSH CDlg_Retrain::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
+{
+    if (nCtlColor == CTLCOLOR_STATIC && pWnd)
+    {
+        const int id = pWnd->GetDlgCtrlID();
+        if (id == ID_LBL_BUSY || id == ID_LBL_ELAPSED ||
+            id == ID_PNL_BUSY || id == ID_RING)
+        {
+            pDC->SetBkMode(TRANSPARENT);
+            pDC->SetTextColor(RGB(0x1A, 0x24, 0x35));
+            return (HBRUSH)m_brPanel.GetSafeHandle();
+        }
+    }
+    return CDialogEx::OnCtlColor(pDC, pWnd, nCtlColor);
+}
+
 void CDlg_Retrain::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
 {
     if (nIDCtl != ID_RING || !lpDIS)
@@ -601,7 +629,7 @@ void CDlg_Retrain::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
     if (!bmp.CreateCompatibleBitmap(pDC, w, h)) return;
     CBitmap* pOldBmp = mem.SelectObject(&bmp);
 
-    mem.FillSolidRect(0, 0, w, h, RGB(255, 255, 255));
+    mem.FillSolidRect(0, 0, w, h, PANEL_BG);
 
     const COLORREF DIM  = RGB(0xDD, 0xE2, 0xE9);   // 꺼진 점
     const COLORREF DONE = RGB(0x2A, 0x9D, 0x8F);   // 지나온 점

@@ -49,6 +49,7 @@ public:
     afx_msg void OnDestroy();
     afx_msg void OnTimer(UINT_PTR nIDEvent);
     afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS);
+    afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
     virtual void OnCancel();
 
     // 작업 스레드 -> 창. WPARAM 없음, LPARAM 은 new CStringA (창이 지운다)
@@ -92,6 +93,10 @@ private:
     //   알 때         - 진행만큼 점이 켜지고, 밝은 점 하나가 계속 돈다
     CStatic   m_ring;
     CFont     m_fontRing;        // 링 가운데 시간 (굵게)
+
+    // 판 위 글자의 바탕. 정적 컨트롤은 부모에게 바탕 브러시를 물어보는데,
+    // 그냥 두면 대화상자 색(회색)을 받아 흰 판 위에 회색 네모가 생긴다.
+    CBrush    m_brPanel;
     CProgressCtrl m_progress;
     int       m_target = 0;      // 출력에서 읽은 진행 (0~1000)
     int       m_pos = 0;         // 눈금이 실제로 가 있는 곳
