@@ -103,6 +103,14 @@ private:
     // 판 위 글자의 바탕. 정적 컨트롤은 부모에게 바탕 브러시를 물어보는데,
     // 그냥 두면 대화상자 색(회색)을 받아 흰 판 위에 회색 네모가 생긴다.
     CBrush    m_brPanel;
+
+    // 진행 판은 로그 아래에 놓는다. 로그 위에 겹쳐 두면 실행 중에 결과가
+    // 가려지고, 로그가 다시 칠할 때마다 판 위를 덮는 문제도 생긴다.
+    //
+    // 쉴 때까지 그 자리를 비워 두면 빈 띠가 남으므로, 판을 띄울 때만 창을
+    // 그만큼 늘린다.
+    int       m_cliCompact = 0;   // 판을 감췄을 때의 속창 높이
+    int       m_cliBusy = 0;      // 판을 띄웠을 때의 속창 높이
     CProgressCtrl m_progress;
     int       m_target = 0;      // 출력에서 읽은 진행 (0~1000)
     int       m_pos = 0;         // 눈금이 실제로 가 있는 곳
@@ -138,6 +146,7 @@ private:
     void Run(RunKind kind);
     void SetPhase(int permille);     // 단계가 바뀔 때 목표치를 올린다
     void ShowProgress(bool bShow);
+    void SetClientHeight(int cliH);
     void UpdateElapsed();
     void AnimateBusy();          // 눈금과 회전자를 한 칸 옮긴다
     void AppendLog(const char* text);

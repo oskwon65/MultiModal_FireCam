@@ -174,8 +174,11 @@ BOOL CDlg_Retrain::OnInitDialog()
     const int yLogTop   = yStateTop + stateH + 8;
     const int yLogBot   = yLogTop + logH;
 
-    // 줄어든 뒤의 속창 높이. 가운데 판을 이 값 기준으로 놓는다.
-    const int cliH = yLogBot + M;
+    // 진행 판은 로그 아래에 둔다. 겹치면 실행 중에 결과가 가려진다.
+    const int yBusyTop = yLogBot + 10;
+
+    m_cliCompact = yLogBot + M;                     // 판을 감췄을 때
+    m_cliBusy    = yBusyTop + BUSY_H + M;           // 판을 띄웠을 때
 
     // WS_CLIPSIBLINGS 가 없으면, 줄이 들어와 다시 칠할 때마다 위에 떠 있는
     // 진행 판과 그 글자까지 덮는다.
@@ -195,7 +198,7 @@ BOOL CDlg_Retrain::OnInitDialog()
     // 자식 컨트롤의 ID 는 서로 달라야 한다. 앞서 로그와 진행바에 모두 0 을
     // 줘서 진행바가 화면에 나오지 않았다.
     const int bx0 = (rc.Width() - BUSY_W) / 2;
-    const int by0 = (cliH - BUSY_H) / 2;
+    const int by0 = yBusyTop;
 
     // 테두리를 두지 않는다. 뒤의 로그도 흰 바탕이라, 선을 그으면 표식이
     // 아니라 상자가 먼저 보인다.
@@ -284,16 +287,9 @@ BOOL CDlg_Retrain::OnInitDialog()
     SetButtons();
     m_lblState.SetWindowTextA("[예행연습] 을 눌러 시작하십시오. 아직 [재학습 실행] 은 꺼져 있습니다.");
 
-    // 로그를 줄인 만큼 창도 줄인다. 컨트롤을 다 만든 뒤에 한다 - 먼저
-    // 줄이면 GetClientRect 가 바뀌어 배치가 어긋난다.
-    {
-        CRect wr, cr;
-        GetWindowRect(&wr);
-        GetClientRect(&cr);
-        const int chrome = wr.Height() - cr.Height();
-        SetWindowPos(nullptr, 0, 0, wr.Width(), cliH + chrome,
-                     SWP_NOMOVE | SWP_NOZORDER);
-    }
+    // 컨트롤을 다 만든 뒤에 줄인다. 먼저 줄이면 GetClientRect 가 바뀌어
+    // 배치가 어긋난다. 진행 판 자리는 띄울 때 늘려서 낸다.
+    SetClientHeight(m_cliCompact);
 
     CenterWindow(GetParent());
     return TRUE;
@@ -533,8 +529,25 @@ void CDlg_Retrain::SetButtons()
     m_btnClose.EnableWindow(!m_bRunning);
 }
 
+void CDlg_Retrain::SetClientHeight(int cliH)
+{
+    if (cliH <= 0) return;
+
+    CRect wr, cr;
+    GetWindowRect(&wr);
+    GetClientRect(&cr);
+    if (cr.Height() == cliH) return;
+
+    const int chrome = wr.Height() - cr.Height();
+    SetWindowPos(nullptr, 0, 0, wr.Width(), cliH + chrome,
+                 SWP_NOMOVE | SWP_NOZORDER);
+}
+
 void CDlg_Retrain::ShowProgress(bool bShow)
 {
+    // 판 자리는 띄울 때만 낸다. 늘 비워 두면 쉬는 동안 빈 띠가 남는다.
+    SetClientHeight(bShow ? m_cliBusy : m_cliCompact);
+
     const int cmd = bShow ? SW_SHOW : SW_HIDE;
     m_pnlBusy.ShowWindow(cmd);
     m_lblBusy.ShowWindow(cmd);
