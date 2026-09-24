@@ -161,7 +161,10 @@ BOOL CDlg_Retrain::OnInitDialog()
     const int yStateTop = yBtnTop - 6 - stateH;
     const int yLogBot   = yStateTop - 8;
 
-    m_edLog.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_HSCROLL
+    // WS_CLIPSIBLINGS 가 없으면, 줄이 들어와 다시 칠할 때마다 위에 떠 있는
+    // 진행 판과 그 글자까지 덮는다.
+    m_edLog.Create(WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS
+        | WS_BORDER | WS_VSCROLL | WS_HSCROLL
         | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
         CRect(M, M + headH + 4, rc.right - M, yLogBot),
         this, ID_LOG_EDIT);
@@ -527,6 +530,11 @@ void CDlg_Retrain::AnimateBusy()
     // 링. 점과 가운데 시간을 함께 다시 그린다. 글자 회전자는 없앴다 -
     // 링이 도는데 옆에서 또 돌면 어수선하다.
     if (m_ring.GetSafeHwnd()) m_ring.Invalidate(FALSE);
+
+    // 안내 줄은 한 번만 쓰므로 무엇에 지워지면 돌아오지 않는다. 1초에
+    // 한 번 다시 그린다. 글자는 컨트롤이 들고 있어 Invalidate 면 된다.
+    if ((m_frame % 8) == 0 && m_lblElapsed.GetSafeHwnd())
+        m_lblElapsed.Invalidate(FALSE);
 }
 
 // 눈금 위 줄. 경과 시간은 링 가운데에 있으므로 여기에는 무엇을 하는
