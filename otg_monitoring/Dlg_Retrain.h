@@ -138,6 +138,7 @@ private:
     std::string UserPath() const;
     std::vector<std::string> ListGenerations() const;
     std::vector<std::string> ServedGenerations() const;   // 승격 기록 순서
+    CStringA GenScore(const char* stamp) const;   // 그 세대의 정상 평균 점수
     void ScanGenerations();           // m_curGen · m_backGen · m_backWhy 갱신
     void FillGenCombo();              // 고를 수 있는 세대를 목록에 채운다
     CStringA PickedGen() const;       // 목록에서 고른 세대 (없으면 빈 문자열)

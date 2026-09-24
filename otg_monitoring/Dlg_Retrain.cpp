@@ -357,6 +357,40 @@ std::vector<std::string> CDlg_Retrain::ServedGenerations() const
     return out;
 }
 
+// 그 세대가 학습 직후에 낸 정상 평균 점수. report.txt 에서 읽는다.
+//
+// 감도 회귀 시험표의 "정상 평균 점수" 줄에서 앞의 값(후보)을 쓴다. 뒤의
+// 값은 그때 운용 중이던 모델 것이라 세대의 성질이 아니다.
+//
+// 물러나는 운용 모델을 떠 둔 세대에는 시험표가 없다. 그때는 빈 문자열이다.
+CStringA CDlg_Retrain::GenScore(const char* stamp) const
+{
+    const std::string path =
+        UserPath() + "model_generations\\" + stamp + "\\report.txt";
+
+    CStdioFile f;
+    if (!f.Open(path.c_str(), CFile::modeRead | CFile::typeText))
+        return CStringA();
+
+    CStringA line, out;
+    while (f.ReadString(line))
+    {
+        // report.txt 는 UTF-8 이고 이 빌드는 MBCS 다. 줄마다 바꾸지 않으면
+        // 한글로 찾을 수 없다.
+        const CStringA t = Utf8ToAnsi(line);
+        const int at = t.Find("정상 평균 점수");
+        if (at < 0) continue;
+
+        int i = at;
+        while (t[i] != 0 && (t[i] < '0' || t[i] > '9')) ++i;
+        const double cand = atof((LPCSTR)t + i);
+        if (cand > 0.0) out.Format("%.3f", cand);
+        break;
+    }
+    f.Close();
+    return out;
+}
+
 // 되돌릴 대상을 정한다. 폴더 순서가 아니라 승격 기록을 거슬러 간다.
 void CDlg_Retrain::ScanGenerations()
 {
@@ -440,8 +474,11 @@ void CDlg_Retrain::FillGenCombo()
             if (served[k] == gens[i]) { wasServed = true; break; }
         if (!wasServed) continue;
 
+        CStringA sc = GenScore(gens[i].c_str());
+        if (sc.IsEmpty()) sc = "  -  ";
+
         CStringA line;
-        line.Format("%s%s", gens[i].c_str(),
+        line.Format("%s   %s%s", gens[i].c_str(), (LPCSTR)sc,
                     (m_backGen.Compare(gens[i].c_str()) == 0) ? "   (직전)" : "");
         m_cboGen.AddString(line);
         m_cboStamps.push_back(gens[i]);
@@ -480,14 +517,18 @@ void CDlg_Retrain::ShowGenerations()
     m_edLog.SetWindowTextA("");
 
     CStringA head;
-    head.Format("[%s] 운용에 올라간 세대\r\n", gUserID.c_str());
+    head.Format("[%s] 운용에 올라간 세대   (점수는 학습 직후 정상 평균)\r\n",
+                gUserID.c_str());
     AppendLog(head);
 
     for (size_t i = 0; i < shown.size(); ++i)
     {
         const bool live = (m_curGen.Compare(shown[i].c_str()) == 0);
+        CStringA sc = GenScore(shown[i].c_str());
+        if (sc.IsEmpty()) sc = "  -  ";
+
         CStringA line;
-        line.Format("    %s   %s\r\n", shown[i].c_str(),
+        line.Format("    %s   %s   %s\r\n", shown[i].c_str(), (LPCSTR)sc,
                     live ? "운영중" : "운용된 적 있음");
         AppendLog(line, live ? COLOR_LOG_NORMAL : COLOR_LOG_DIM);
     }
