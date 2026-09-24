@@ -174,11 +174,12 @@ BOOL CDlg_Retrain::OnInitDialog()
     const int yLogTop   = yStateTop + stateH + 8;
     const int yLogBot   = yLogTop + logH;
 
-    // 진행 판은 로그 아래에 둔다. 겹치면 실행 중에 결과가 가려진다.
-    const int yBusyTop = yLogBot + 10;
+    // 진행 판은 로그 칸 안에 가운데로 놓는다. 로그 아래로 내리면 창이
+    // 그만큼 길어져 표식이 너무 멀어진다.
+    int yBusyTop = yLogTop + (logH - BUSY_H) / 2;
+    if (yBusyTop < yLogTop + 4) yBusyTop = yLogTop + 4;
 
-    m_cliCompact = yLogBot + M;                     // 판을 감췄을 때
-    m_cliBusy    = yBusyTop + BUSY_H + M;           // 판을 띄웠을 때
+    m_cliCompact = yLogBot + M;
 
     // WS_CLIPSIBLINGS 가 없으면, 줄이 들어와 다시 칠할 때마다 위에 떠 있는
     // 진행 판과 그 글자까지 덮는다.
@@ -545,9 +546,6 @@ void CDlg_Retrain::SetClientHeight(int cliH)
 
 void CDlg_Retrain::ShowProgress(bool bShow)
 {
-    // 판 자리는 띄울 때만 낸다. 늘 비워 두면 쉬는 동안 빈 띠가 남는다.
-    SetClientHeight(bShow ? m_cliBusy : m_cliCompact);
-
     const int cmd = bShow ? SW_SHOW : SW_HIDE;
     m_pnlBusy.ShowWindow(cmd);
     m_lblBusy.ShowWindow(cmd);
