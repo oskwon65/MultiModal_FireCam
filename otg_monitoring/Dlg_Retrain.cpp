@@ -430,13 +430,26 @@ void CDlg_Retrain::AppendLog(const char* text)
 
 // 넣은 뒤에 그 범위만 물들인다. 빈 선택에 서식을 걸고 나중에 넣는 방식은
 // RichEdit 판에 따라 먹지 않는 경우가 있다.
+//
+// 위치는 GetWindowTextLength() 로 잡으면 안 된다. 이 빌드는 MBCS 라 그것은
+// **바이트 수** 를 주는데 SetSel() 은 **문자 위치** 를 받는다. 한글 한 자가
+// CP949 에서 2바이트라 줄마다 어긋나고, 물들일 범위가 오른쪽으로 밀려 줄
+// 앞부분이 색을 못 받는다. 날짜(yyyymmdd)가 검게 남은 것이 그 때문이다.
+//
+// 그래서 캐럿을 끝으로 보내고 GetSel() 로 문자 위치를 되묻는다.
 void CDlg_Retrain::AppendLog(const char* text, COLORREF color)
 {
-    const long n0 = m_edLog.GetWindowTextLength();
-    m_edLog.SetSel(n0, n0);
+    const long END = 0x7FFFFFFF;      // 끝으로. RichEdit 이 잘라서 맞춘다.
+    long n0 = 0, n1 = 0, ignored = 0;
+
+    m_edLog.SetSel(END, END);
+    m_edLog.GetSel(n0, ignored);
+
     m_edLog.ReplaceSel(text);
 
-    const long n1 = m_edLog.GetWindowTextLength();
+    m_edLog.SetSel(END, END);
+    m_edLog.GetSel(n1, ignored);
+
     if (n1 > n0)
     {
         m_edLog.SetSel(n0, n1);
