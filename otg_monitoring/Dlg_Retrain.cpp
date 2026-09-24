@@ -160,17 +160,29 @@ BOOL CDlg_Retrain::OnInitDialog()
     m_lblHead.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
         CRect(M, M, rc.right - M, M + headH), this);
 
-    // 아래에서부터 쌓아 올린다. 서로 겹치지 않게 y 를 한 번씩만 계산한다.
-    const int yBtnTop   = rc.bottom - M - btnH;
-    const int yStateTop = yBtnTop - 6 - stateH;
-    const int yLogBot   = yStateTop - 8;
+    // 위에서부터 쌓는다. 단추가 먼저고 로그가 그 아래다.
+    //
+    // 로그는 예전에 창 바닥까지 찼다. 읽는 것은 대개 끝 몇 줄이고, 실행
+    // 중에는 가운데 판이 그 위를 덮는다. 절반으로 줄이고 창도 그만큼
+    // 줄인다 - 빈자리를 남기면 고장으로 보인다.
+    const int oldLogH = (rc.bottom - M - btnH - 6 - stateH - 8)
+                        - (M + headH + 4);
+    const int logH    = (oldLogH > 240) ? oldLogH / 2 : 200;
+
+    const int yBtnTop   = M + headH + 8;
+    const int yStateTop = yBtnTop + btnH + 8;
+    const int yLogTop   = yStateTop + stateH + 8;
+    const int yLogBot   = yLogTop + logH;
+
+    // 줄어든 뒤의 속창 높이. 가운데 판을 이 값 기준으로 놓는다.
+    const int cliH = yLogBot + M;
 
     // WS_CLIPSIBLINGS 가 없으면, 줄이 들어와 다시 칠할 때마다 위에 떠 있는
     // 진행 판과 그 글자까지 덮는다.
     m_edLog.Create(WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS
         | WS_BORDER | WS_VSCROLL | WS_HSCROLL
         | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
-        CRect(M, M + headH + 4, rc.right - M, yLogBot),
+        CRect(M, yLogTop, rc.right - M, yLogBot),
         this, ID_LOG_EDIT);
 
     // RichEdit 은 판에 따라 읽기전용이면 배경을 회색으로 칠한다. 그러면
@@ -183,7 +195,7 @@ BOOL CDlg_Retrain::OnInitDialog()
     // 자식 컨트롤의 ID 는 서로 달라야 한다. 앞서 로그와 진행바에 모두 0 을
     // 줘서 진행바가 화면에 나오지 않았다.
     const int bx0 = (rc.Width() - BUSY_W) / 2;
-    const int by0 = (rc.Height() - BUSY_H) / 2;
+    const int by0 = (cliH - BUSY_H) / 2;
 
     // 테두리를 두지 않는다. 뒤의 로그도 흰 바탕이라, 선을 그으면 표식이
     // 아니라 상자가 먼저 보인다.
@@ -271,6 +283,17 @@ BOOL CDlg_Retrain::OnInitDialog()
 
     SetButtons();
     m_lblState.SetWindowTextA("[예행연습] 을 눌러 시작하십시오. 아직 [재학습 실행] 은 꺼져 있습니다.");
+
+    // 로그를 줄인 만큼 창도 줄인다. 컨트롤을 다 만든 뒤에 한다 - 먼저
+    // 줄이면 GetClientRect 가 바뀌어 배치가 어긋난다.
+    {
+        CRect wr, cr;
+        GetWindowRect(&wr);
+        GetClientRect(&cr);
+        const int chrome = wr.Height() - cr.Height();
+        SetWindowPos(nullptr, 0, 0, wr.Width(), cliH + chrome,
+                     SWP_NOMOVE | SWP_NOZORDER);
+    }
 
     CenterWindow(GetParent());
     return TRUE;
