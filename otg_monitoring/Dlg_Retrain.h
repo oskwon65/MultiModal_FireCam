@@ -59,7 +59,9 @@ private:
     // 무엇을 돌리고 있는가. 끝난 뒤 상태 문구와 단추 상태가 달라진다.
     enum RunKind { RUN_DRY = 0, RUN_APPLY = 1, RUN_ROLLBACK = 2 };
 
-    CEdit    m_edLog;
+    // 로그 칸은 RichEdit 이다. 일반 CEdit 은 글자색을 칸 전체에만 줄 수
+    // 있어, 운용 중인 세대와 나머지를 줄 단위로 구분할 수 없다.
+    CRichEditCtrl m_edLog;
     CButton  m_btnDry, m_btnApply, m_btnBack, m_btnClose;
     CStatic  m_lblHead, m_lblState;
     CFont    m_font, m_fontMono;
@@ -96,6 +98,7 @@ private:
     void SetPhase(int permille);     // 단계가 바뀔 때 목표치를 올린다
     void ShowProgress(bool bShow);
     void AppendLog(const char* text);
+    void AppendLog(const char* text, COLORREF color);
     void SetButtons();
 
     struct RunCtx { CDlg_Retrain* dlg; std::string cmd; int kind; };

@@ -26,6 +26,11 @@ extern const char* GetAnacondaEnvPub();
 #define ID_PROGRESS    3004
 #define ID_BTN_BACK    3005
 
+// 운용 중인 세대만 검정, 나머지는 진회색. 목록에서 눈이 먼저 가야 하는 줄이
+// 하나뿐이기 때문이다.
+#define COLOR_LOG_NORMAL  RGB(0, 0, 0)
+#define COLOR_LOG_DIM     RGB(105, 105, 105)
+
 // 파이썬은 UTF-8 로 내보내는데(PYTHONIOENCODING=utf-8) 이 빌드는 MBCS 라
 // CEdit 가 CP949 를 기대한다. 그대로 넣으면 한글이 깨진다.
 //
@@ -115,6 +120,10 @@ BOOL CDlg_Retrain::OnInitDialog()
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
 
+    // RichEdit 을 쓰려면 먼저 DLL 을 올려야 한다. 이걸 빠뜨리면 Create 가
+    // 조용히 실패하고 로그 칸이 아예 안 보인다.
+    AfxInitRichEdit2();
+
     CRect rc;
     GetClientRect(&rc);
     const int M = 12;
@@ -135,6 +144,10 @@ BOOL CDlg_Retrain::OnInitDialog()
         | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
         CRect(M, M + headH + 4, rc.right - M, yLogBot),
         this, ID_LOG_EDIT);
+
+    // RichEdit 은 판에 따라 읽기전용이면 배경을 회색으로 칠한다. 그러면
+    // 진회색 글자가 배경에 묻는다. 흰색으로 못 박는다.
+    m_edLog.SetBackgroundColor(FALSE, RGB(255, 255, 255));
 
     // 자식 컨트롤의 ID 는 서로 달라야 한다. 앞서 로그와 진행바에 모두 0 을
     // 줘서 진행바가 화면에 나오지 않았다.
@@ -321,17 +334,22 @@ void CDlg_Retrain::ShowGenerations()
             if (served[k] == gens[i]) { shown.push_back(gens[i]); break; }
     }
 
-    CStringA t;
-    t.Format("[%s] 운용에 올라간 세대\r\n", gUserID.c_str());
+    // 줄마다 색이 달라 한 덩어리로 넣을 수 없다. 한 줄씩 넣고 물들인다.
+    m_edLog.SetWindowTextA("");
+
+    CStringA head;
+    head.Format("[%s] 운용에 올라간 세대\r\n", gUserID.c_str());
+    AppendLog(head);
+
     for (size_t i = 0; i < shown.size(); ++i)
     {
-        t += "    ";
-        t += shown[i].c_str();
-        t += (m_curGen.Compare(shown[i].c_str()) == 0)
-             ? "   <= 운용 중" : "   운용된 적 있음";
-        t += "\r\n";
+        const bool live = (m_curGen.Compare(shown[i].c_str()) == 0);
+        CStringA line;
+        line.Format("    %s   %s\r\n", shown[i].c_str(),
+                    live ? "운영중" : "운용된 적 있음");
+        AppendLog(line, live ? COLOR_LOG_NORMAL : COLOR_LOG_DIM);
     }
-    if (shown.empty()) t += "    (없음)\r\n";
+    if (shown.empty()) AppendLog("    (없음)\r\n", COLOR_LOG_DIM);
 
     const size_t hidden = gens.size() - shown.size();
     if (hidden > 0)
@@ -339,24 +357,21 @@ void CDlg_Retrain::ShowGenerations()
         CStringA h;
         h.Format("\r\n예행연습 후보 %u개는 숨겼습니다. 되돌릴 대상이 "
                  "아닙니다.\r\n", (unsigned)hidden);
-        t += h;
+        AppendLog(h, COLOR_LOG_DIM);
     }
 
-    t += "\r\n";
     if (!m_backGen.IsEmpty())
     {
         CStringA b;
-        b.Format("[되돌리기] 대상은 %s 입니다.\r\n",
-                 (LPCSTR)m_backGen);
-        t += b;
+        b.Format("\r\n[되돌리기] 대상은 %s 입니다.\r\n", (LPCSTR)m_backGen);
+        AppendLog(b);
     }
     else
     {
-        t += "[되돌리기] 할 수 없습니다 · ";
-        t += m_backWhy;
-        t += "\r\n";
+        CStringA b;
+        b.Format("\r\n[되돌리기] 할 수 없습니다 · %s\r\n", (LPCSTR)m_backWhy);
+        AppendLog(b);
     }
-    m_edLog.SetWindowTextA(t);
 }
 
 void CDlg_Retrain::SetButtons()
@@ -410,9 +425,28 @@ void CDlg_Retrain::OnTimer(UINT_PTR nIDEvent)
 
 void CDlg_Retrain::AppendLog(const char* text)
 {
-    int n = m_edLog.GetWindowTextLengthA();
-    m_edLog.SetSel(n, n);
+    AppendLog(text, COLOR_LOG_NORMAL);
+}
+
+// 넣은 뒤에 그 범위만 물들인다. 빈 선택에 서식을 걸고 나중에 넣는 방식은
+// RichEdit 판에 따라 먹지 않는 경우가 있다.
+void CDlg_Retrain::AppendLog(const char* text, COLORREF color)
+{
+    const long n0 = m_edLog.GetWindowTextLength();
+    m_edLog.SetSel(n0, n0);
     m_edLog.ReplaceSel(text);
+
+    const long n1 = m_edLog.GetWindowTextLength();
+    if (n1 > n0)
+    {
+        m_edLog.SetSel(n0, n1);
+        CHARFORMAT cf = {};
+        cf.cbSize = sizeof(cf);
+        cf.dwMask = CFM_COLOR;
+        cf.crTextColor = color;
+        m_edLog.SetSelectionCharFormat(cf);
+        m_edLog.SetSel(n1, n1);
+    }
 }
 
 //---------------------------------------------------------
