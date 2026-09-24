@@ -29,11 +29,11 @@ extern const char* GetAnacondaEnvPub();
 #define ID_PNL_BUSY    3006
 #define ID_LBL_BUSY    3007
 #define ID_LBL_ELAPSED 3008
-#define ID_CLOCK       3009
+#define ID_RING        3009
 
 // 가운데 판 크기
 #define BUSY_W  460
-#define BUSY_H  150
+#define BUSY_H  248
 
 // 눈금 애니메이션은 직접 돌린다.
 //
@@ -42,7 +42,9 @@ extern const char* GetAnacondaEnvPub();
 // 둘만으로 움직인다.
 #define ANIM_MS      120      // 한 프레임
 #define SWEEP_STEP    45      // 총량을 모를 때 한 프레임에 쓸어 가는 양
-#define CLOCK_D       28      // 시계 지름
+#define RING_D       116      // 링 지름
+#define RING_DOTS     24      // 둘레의 점 수
+#define RING_COMET     6      // 총량을 모를 때 꼬리 길이
 #define TWO_PI    6.283185307179586
 
 // 운용 중인 세대만 검정, 나머지는 진회색. 목록에서 눈이 먼저 가야 하는 줄이
@@ -179,26 +181,32 @@ BOOL CDlg_Retrain::OnInitDialog()
     m_pnlBusy.Create("", WS_CHILD | SS_WHITERECT | SS_SUNKEN,
         CRect(bx0, by0, bx0 + BUSY_W, by0 + BUSY_H), this, ID_PNL_BUSY);
 
+    // 링을 위에 두고 그 아래로 말·눈금·단계를 쌓는다. 경과 시간은 링
+    // 가운데에 있어 따로 줄을 차지하지 않는다.
+    m_ring.Create("", WS_CHILD | SS_OWNERDRAW,
+        CRect(bx0 + (BUSY_W - RING_D) / 2, by0 + 18,
+              bx0 + (BUSY_W + RING_D) / 2, by0 + 18 + RING_D),
+        this, ID_RING);
+
     m_lblBusy.Create("", WS_CHILD | SS_CENTER,
-        CRect(bx0 + 16, by0 + 22, bx0 + BUSY_W - 16, by0 + 54),
+        CRect(bx0 + 16, by0 + 146, bx0 + BUSY_W - 16, by0 + 178),
         this, ID_LBL_BUSY);
 
     m_progress.Create(WS_CHILD | PBS_SMOOTH,
-        CRect(bx0 + 32, by0 + 64, bx0 + BUSY_W - 32, by0 + 88),
+        CRect(bx0 + 40, by0 + 184, bx0 + BUSY_W - 40, by0 + 202),
         this, ID_PROGRESS);
     m_progress.SetRange32(0, 1000);
 
-    // 시계와 경과 글자를 한 줄에 둔다. 글자는 길이가 변하므로 왼쪽으로
-    // 맞춘다 - 가운데로 맞추면 epoch 이 붙을 때마다 좌우로 흔들린다.
-    const int rowY = by0 + 100;
-    m_clock.Create("", WS_CHILD | SS_OWNERDRAW,
-        CRect(bx0 + 32, rowY, bx0 + 32 + CLOCK_D, rowY + CLOCK_D),
-        this, ID_CLOCK);
-
-    m_lblElapsed.Create("", WS_CHILD | SS_LEFT,
-        CRect(bx0 + 32 + CLOCK_D + 10, rowY - 2,
-              bx0 + BUSY_W - 16, rowY + CLOCK_D + 2),
+    // 단계 이름은 길이가 많이 변한다(epoch 143/400). 가운데로 맞추면
+    // 바뀔 때마다 흔들리지만, 한 줄만 쓰는 곳이라 눈에 거슬리지 않는다.
+    m_lblElapsed.Create("", WS_CHILD | SS_CENTER,
+        CRect(bx0 + 16, by0 + 210, bx0 + BUSY_W - 16, by0 + 238),
         this, ID_LBL_ELAPSED);
+
+    // 링 가운데 시간은 더 크고 굵게 - 이 판에서 제일 먼저 눈에 와야 한다.
+    m_fontRing.CreateFont(UI_FONT_SIZE + 10, 0, 0, 0, FW_BOLD, FALSE, FALSE, 0,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
 
     m_lblState.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
         CRect(M, yStateTop, rc.right - M, yStateTop + stateH),
@@ -436,7 +444,7 @@ void CDlg_Retrain::ShowProgress(bool bShow)
     m_pnlBusy.ShowWindow(cmd);
     m_lblBusy.ShowWindow(cmd);
     m_progress.ShowWindow(cmd);
-    m_clock.ShowWindow(cmd);
+    m_ring.ShowWindow(cmd);
     m_lblElapsed.ShowWindow(cmd);
 
     if (bShow)
@@ -455,7 +463,7 @@ void CDlg_Retrain::ShowProgress(bool bShow)
                                SWP_NOMOVE | SWP_NOSIZE);
         m_lblBusy.SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         m_progress.SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-        m_clock.SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        m_ring.SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         m_lblElapsed.SetWindowPos(&wndTop, 0, 0, 0, 0,
                                   SWP_NOMOVE | SWP_NOSIZE);
 
@@ -507,40 +515,34 @@ void CDlg_Retrain::AnimateBusy()
         m_progress.SetPos(m_pos);
     }
 
-    // 시계 바늘. 지름 28px 짜리라 매 프레임 다시 그려도 부담이 없다.
-    if (m_clock.GetSafeHwnd()) m_clock.Invalidate(FALSE);
+    // 링. 점과 가운데 시간을 함께 다시 그린다. 글자 회전자는 없앴다 -
+    // 링이 도는데 옆에서 또 돌면 어수선하다.
+    if (m_ring.GetSafeHwnd()) m_ring.Invalidate(FALSE);
 
-    // 글자 회전자. SetWindowText 만 쓰므로 어떤 환경에서도 돈다.
-    static const char* SPIN[4] = { "|", "/", "-", "\\" };
-    CStringA t;
-    t.Format("%s   %s", (LPCSTR)m_busyWhat, SPIN[(m_frame / 3) % 4]);
-    if (t != m_lastBusy)
+    if (m_busyWhat != m_lastBusy)
     {
-        m_lastBusy = t;
-        m_lblBusy.SetWindowTextA(t);
+        m_lastBusy = m_busyWhat;
+        m_lblBusy.SetWindowTextA(m_busyWhat);
     }
 }
 
+// 링 아래 줄. 경과 시간은 링 가운데에 있으므로 여기에는 얼마나 왔는지와
+// 무엇을 하는 중인지만 적는다.
 void CDlg_Retrain::UpdateElapsed()
 {
-    const ULONGLONG ms = GetTickCount64() - m_tickStart;
-    const unsigned sec = (unsigned)(ms / 1000);
-
     CStringA t;
-    if (sec < 60) t.Format("경과 %u초", sec);
-    else          t.Format("경과 %u분 %u초", sec / 60, sec % 60);
-
-    // 단계를 읽었으면 얼마나 왔는지, 무엇을 하는 중인지 함께 적는다.
     if (m_target > 0)
     {
-        CStringA pct;
-        pct.Format("  ·  %d%%", m_target / 10);
-        t += pct;
+        t.Format("%d%%", m_target / 10);
+        if (!m_phaseNote.IsEmpty())
+        {
+            t += "   ·   ";
+            t += m_phaseNote;
+        }
     }
-    if (!m_phaseNote.IsEmpty())
+    else
     {
-        t += "  ·  ";
-        t += m_phaseNote;
+        t = m_phaseNote.IsEmpty() ? "준비하는 중" : m_phaseNote;
     }
 
     if (t != m_lastElapsed)
@@ -550,15 +552,29 @@ void CDlg_Retrain::UpdateElapsed()
     }
 }
 
-// 경과 시간대로 바늘이 도는 시계.
+// 두 색 사이를 t(0~1) 로 섞는다.
+static COLORREF Mix(COLORREF a, COLORREF b, double t)
+{
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    const int r = (int)(GetRValue(a) + (GetRValue(b) - GetRValue(a)) * t);
+    const int g = (int)(GetGValue(a) + (GetGValue(b) - GetGValue(a)) * t);
+    const int bb = (int)(GetBValue(a) + (GetBValue(b) - GetBValue(a)) * t);
+    return RGB(r, g, bb);
+}
+
+// 진행 링.
 //
-// 초침은 1분에 한 바퀴, 분침은 1시간에 한 바퀴다. 경과 시간을 글자로도
-// 적지만, 바늘은 읽지 않아도 움직임이 보인다.
+// 점 24개를 둘레에 놓는다. 총량을 모르는 동안에는 밝은 점 여섯이 꼬리를
+// 물고 돌고, 단계를 읽으면 진행만큼 점이 켜진다. 켜진 뒤에도 밝은 점
+// 하나가 계속 돌아 멈춘 것으로 보이지 않는다.
+//
+// 가운데에는 경과 시간을 적는다. 이 판에서 제일 먼저 눈에 와야 하는 값이다.
 //
 // 메모리에 그려 한 번에 옮긴다. 바로 그리면 매 프레임 깜빡인다.
 void CDlg_Retrain::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
 {
-    if (nIDCtl != ID_CLOCK || !lpDIS)
+    if (nIDCtl != ID_RING || !lpDIS)
     {
         CDialogEx::OnDrawItem(nIDCtl, lpDIS);
         return;
@@ -567,7 +583,7 @@ void CDlg_Retrain::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
     CDC* pDC = CDC::FromHandle(lpDIS->hDC);
     const int w = lpDIS->rcItem.right - lpDIS->rcItem.left;
     const int h = lpDIS->rcItem.bottom - lpDIS->rcItem.top;
-    if (w <= 4 || h <= 4) return;
+    if (w <= 8 || h <= 8) return;
 
     CDC mem;
     if (!mem.CreateCompatibleDC(pDC)) return;
@@ -575,42 +591,73 @@ void CDlg_Retrain::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
     if (!bmp.CreateCompatibleBitmap(pDC, w, h)) return;
     CBitmap* pOldBmp = mem.SelectObject(&bmp);
 
-    // 판과 같은 흰 바탕
     mem.FillSolidRect(0, 0, w, h, RGB(255, 255, 255));
 
-    CPen penRim(PS_SOLID, 2, RGB(90, 96, 108));
-    CBrush brFace(RGB(255, 255, 255));
-    CPen* pOldPen = mem.SelectObject(&penRim);
-    CBrush* pOldBr = mem.SelectObject(&brFace);
-    mem.Ellipse(1, 1, w - 1, h - 1);
+    const COLORREF DIM  = RGB(0xDD, 0xE2, 0xE9);   // 꺼진 점
+    const COLORREF DONE = RGB(0x2A, 0x9D, 0x8F);   // 지나온 점
+    const COLORREF HEAD = RGB(0xE4, 0x57, 0x2E);   // 도는 점
 
     const int cx = w / 2, cy = h / 2;
-    int r = ((w < h ? w : h) / 2) - 4;
-    if (r < 3) r = 3;
+    const int dotR = 5;
+    const int R = (w < h ? w : h) / 2 - dotR - 3;
 
+    const int head = (m_frame / 2) % RING_DOTS;
+    const int lit = (m_target > 0) ? (m_pos * RING_DOTS + 500) / 1000 : 0;
+
+    CBrush* pOldBr = nullptr;
+    CPen penNone(PS_NULL, 0, (COLORREF)0);
+    CPen* pOldPen = mem.SelectObject(&penNone);
+
+    for (int i = 0; i < RING_DOTS; ++i)
+    {
+        const double a = (double)i / RING_DOTS * TWO_PI - TWO_PI / 4.0;
+        const int x = cx + (int)(R * cos(a));
+        const int y = cy + (int)(R * sin(a));
+
+        // head 에서 뒤로 몇 칸인가
+        const int back = (head - i + RING_DOTS) % RING_DOTS;
+
+        COLORREF c = DIM;
+        if (m_target > 0)
+        {
+            if (i < lit) c = DONE;
+            if (back == 0) c = HEAD;                  // 도는 점 하나
+        }
+        else if (back < RING_COMET)
+        {
+            // 꼬리는 뒤로 갈수록 옅어진다
+            c = Mix(HEAD, DIM, (double)back / RING_COMET);
+        }
+
+        // 도는 점은 조금 크게 - 색만으로는 덜 보인다
+        const int rr = (back == 0) ? dotR + 1 : dotR;
+        CBrush br(c);
+        CBrush* prev = mem.SelectObject(&br);
+        if (!pOldBr) pOldBr = prev;
+        mem.Ellipse(x - rr, y - rr, x + rr, y + rr);
+        mem.SelectObject(prev);
+    }
+
+    // 가운데 경과 시간
     const ULONGLONG ms = m_tickStart ? (GetTickCount64() - m_tickStart) : 0;
-    const double secs = (double)(ms % 60000) / 1000.0;          // 0~60
-    const double mins = (double)((ms / 1000) % 3600) / 60.0;    // 0~60
+    const unsigned sec = (unsigned)(ms / 1000);
+    CStringA t;
+    if (sec < 3600) t.Format("%u:%02u", sec / 60, sec % 60);
+    else            t.Format("%u:%02u:%02u", sec / 3600, (sec / 60) % 60,
+                             sec % 60);
 
-    // 분침 - 굵고 짧게
-    CPen penMin(PS_SOLID, 2, RGB(40, 46, 58));
-    mem.SelectObject(&penMin);
-    double a = (mins / 60.0) * TWO_PI - TWO_PI / 4.0;
-    mem.MoveTo(cx, cy);
-    mem.LineTo(cx + (int)(r * 0.52 * cos(a)), cy + (int)(r * 0.52 * sin(a)));
-
-    // 초침 - 가늘고 길게, 눈에 띄는 색
-    CPen penSec(PS_SOLID, 1, RGB(0xE4, 0x57, 0x2E));
-    mem.SelectObject(&penSec);
-    a = (secs / 60.0) * TWO_PI - TWO_PI / 4.0;
-    mem.MoveTo(cx, cy);
-    mem.LineTo(cx + (int)(r * 0.86 * cos(a)), cy + (int)(r * 0.86 * sin(a)));
+    CFont* pOldFont = mem.SelectObject(&m_fontRing);
+    mem.SetBkMode(TRANSPARENT);
+    mem.SetTextColor(RGB(0x1A, 0x24, 0x35));
+    CRect rcT(0, 0, w, h);
+    mem.DrawTextA(t, &rcT, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    mem.SelectObject(pOldFont);
 
     pDC->BitBlt(lpDIS->rcItem.left, lpDIS->rcItem.top, w, h, &mem, 0, 0,
                 SRCCOPY);
 
+    if (pOldBr) mem.SelectObject(pOldBr);
     mem.SelectObject(pOldPen);
-    mem.SelectObject(pOldBr);
     mem.SelectObject(pOldBmp);
 }
 
