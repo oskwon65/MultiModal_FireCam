@@ -502,14 +502,9 @@ void CDlg_Retrain::ShowGenerations()
         AppendLog(h, COLOR_LOG_DIM);
     }
 
-    if (!m_backGen.IsEmpty())
-    {
-        CStringA b;
-        b.Format("\r\n[되돌리기] 는 아래 목록에서 고른 세대로 갑니다. "
-                 "기본값은 직전에 운용하던 %s 입니다.\r\n", (LPCSTR)m_backGen);
-        AppendLog(b);
-    }
-    else
+    // 되돌릴 수 있을 때는 따로 적지 않는다. 위 목록과 단추 옆 목록이
+    // 이미 말해 준다. 못 할 때만 이유를 적는다.
+    if (m_backGen.IsEmpty())
     {
         CStringA b;
         b.Format("\r\n[되돌리기] 할 수 없습니다 · %s\r\n", (LPCSTR)m_backWhy);
