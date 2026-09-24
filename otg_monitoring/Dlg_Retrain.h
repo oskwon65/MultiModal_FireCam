@@ -48,6 +48,7 @@ public:
     afx_msg void OnBnClickedRollback();
     afx_msg void OnDestroy();
     afx_msg void OnTimer(UINT_PTR nIDEvent);
+    afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS);
     virtual void OnCancel();
 
     // 작업 스레드 -> 창. WPARAM 없음, LPARAM 은 new CStringA (창이 지운다)
@@ -80,6 +81,11 @@ private:
     CStatic   m_pnlBusy;         // 흰 판 - 뒤의 로그를 가린다
     CStatic   m_lblBusy;         // "예행연습 중"
     CStatic   m_lblElapsed;      // "경과 2분 14초 · 34%"
+
+    // 시계. 유니코드 시계 문자는 CP949 에 없어 MBCS 빌드에서 깨진다.
+    // 직접 그린다 - 분침과 초침이 경과 시간대로 돌아, 글자를 안 읽어도
+    // 움직이는 것이 보인다.
+    CStatic   m_clock;
     CProgressCtrl m_progress;
     int       m_target = 0;      // 출력에서 읽은 진행 (0~1000)
     int       m_pos = 0;         // 눈금이 실제로 가 있는 곳

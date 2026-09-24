@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <cmath>
 
 extern std::string gUserID;
 extern const char* GetMmCamStartPath();
@@ -28,6 +29,7 @@ extern const char* GetAnacondaEnvPub();
 #define ID_PNL_BUSY    3006
 #define ID_LBL_BUSY    3007
 #define ID_LBL_ELAPSED 3008
+#define ID_CLOCK       3009
 
 // 가운데 판 크기
 #define BUSY_W  460
@@ -40,6 +42,8 @@ extern const char* GetAnacondaEnvPub();
 // 둘만으로 움직인다.
 #define ANIM_MS      120      // 한 프레임
 #define SWEEP_STEP    45      // 총량을 모를 때 한 프레임에 쓸어 가는 양
+#define CLOCK_D       28      // 시계 지름
+#define TWO_PI    6.283185307179586
 
 // 운용 중인 세대만 검정, 나머지는 진회색. 목록에서 눈이 먼저 가야 하는 줄이
 // 하나뿐이기 때문이다.
@@ -112,6 +116,7 @@ BEGIN_MESSAGE_MAP(CDlg_Retrain, CDialogEx)
     ON_MESSAGE(WM_RUN_DONE, &CDlg_Retrain::OnRunDone)
     ON_WM_DESTROY()
     ON_WM_TIMER()
+    ON_WM_DRAWITEM()
 END_MESSAGE_MAP()
 
 //---------------------------------------------------------
@@ -183,8 +188,16 @@ BOOL CDlg_Retrain::OnInitDialog()
         this, ID_PROGRESS);
     m_progress.SetRange32(0, 1000);
 
-    m_lblElapsed.Create("", WS_CHILD | SS_CENTER,
-        CRect(bx0 + 16, by0 + 98, bx0 + BUSY_W - 16, by0 + 130),
+    // 시계와 경과 글자를 한 줄에 둔다. 글자는 길이가 변하므로 왼쪽으로
+    // 맞춘다 - 가운데로 맞추면 epoch 이 붙을 때마다 좌우로 흔들린다.
+    const int rowY = by0 + 100;
+    m_clock.Create("", WS_CHILD | SS_OWNERDRAW,
+        CRect(bx0 + 32, rowY, bx0 + 32 + CLOCK_D, rowY + CLOCK_D),
+        this, ID_CLOCK);
+
+    m_lblElapsed.Create("", WS_CHILD | SS_LEFT,
+        CRect(bx0 + 32 + CLOCK_D + 10, rowY - 2,
+              bx0 + BUSY_W - 16, rowY + CLOCK_D + 2),
         this, ID_LBL_ELAPSED);
 
     m_lblState.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
@@ -423,6 +436,7 @@ void CDlg_Retrain::ShowProgress(bool bShow)
     m_pnlBusy.ShowWindow(cmd);
     m_lblBusy.ShowWindow(cmd);
     m_progress.ShowWindow(cmd);
+    m_clock.ShowWindow(cmd);
     m_lblElapsed.ShowWindow(cmd);
 
     if (bShow)
@@ -441,6 +455,7 @@ void CDlg_Retrain::ShowProgress(bool bShow)
                                SWP_NOMOVE | SWP_NOSIZE);
         m_lblBusy.SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         m_progress.SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        m_clock.SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         m_lblElapsed.SetWindowPos(&wndTop, 0, 0, 0, 0,
                                   SWP_NOMOVE | SWP_NOSIZE);
 
@@ -492,6 +507,9 @@ void CDlg_Retrain::AnimateBusy()
         m_progress.SetPos(m_pos);
     }
 
+    // 시계 바늘. 지름 28px 짜리라 매 프레임 다시 그려도 부담이 없다.
+    if (m_clock.GetSafeHwnd()) m_clock.Invalidate(FALSE);
+
     // 글자 회전자. SetWindowText 만 쓰므로 어떤 환경에서도 돈다.
     static const char* SPIN[4] = { "|", "/", "-", "\\" };
     CStringA t;
@@ -530,6 +548,70 @@ void CDlg_Retrain::UpdateElapsed()
         m_lastElapsed = t;
         m_lblElapsed.SetWindowTextA(t);
     }
+}
+
+// 경과 시간대로 바늘이 도는 시계.
+//
+// 초침은 1분에 한 바퀴, 분침은 1시간에 한 바퀴다. 경과 시간을 글자로도
+// 적지만, 바늘은 읽지 않아도 움직임이 보인다.
+//
+// 메모리에 그려 한 번에 옮긴다. 바로 그리면 매 프레임 깜빡인다.
+void CDlg_Retrain::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
+{
+    if (nIDCtl != ID_CLOCK || !lpDIS)
+    {
+        CDialogEx::OnDrawItem(nIDCtl, lpDIS);
+        return;
+    }
+
+    CDC* pDC = CDC::FromHandle(lpDIS->hDC);
+    const int w = lpDIS->rcItem.right - lpDIS->rcItem.left;
+    const int h = lpDIS->rcItem.bottom - lpDIS->rcItem.top;
+    if (w <= 4 || h <= 4) return;
+
+    CDC mem;
+    if (!mem.CreateCompatibleDC(pDC)) return;
+    CBitmap bmp;
+    if (!bmp.CreateCompatibleBitmap(pDC, w, h)) return;
+    CBitmap* pOldBmp = mem.SelectObject(&bmp);
+
+    // 판과 같은 흰 바탕
+    mem.FillSolidRect(0, 0, w, h, RGB(255, 255, 255));
+
+    CPen penRim(PS_SOLID, 2, RGB(90, 96, 108));
+    CBrush brFace(RGB(255, 255, 255));
+    CPen* pOldPen = mem.SelectObject(&penRim);
+    CBrush* pOldBr = mem.SelectObject(&brFace);
+    mem.Ellipse(1, 1, w - 1, h - 1);
+
+    const int cx = w / 2, cy = h / 2;
+    int r = ((w < h ? w : h) / 2) - 4;
+    if (r < 3) r = 3;
+
+    const ULONGLONG ms = m_tickStart ? (GetTickCount64() - m_tickStart) : 0;
+    const double secs = (double)(ms % 60000) / 1000.0;          // 0~60
+    const double mins = (double)((ms / 1000) % 3600) / 60.0;    // 0~60
+
+    // 분침 - 굵고 짧게
+    CPen penMin(PS_SOLID, 2, RGB(40, 46, 58));
+    mem.SelectObject(&penMin);
+    double a = (mins / 60.0) * TWO_PI - TWO_PI / 4.0;
+    mem.MoveTo(cx, cy);
+    mem.LineTo(cx + (int)(r * 0.52 * cos(a)), cy + (int)(r * 0.52 * sin(a)));
+
+    // 초침 - 가늘고 길게, 눈에 띄는 색
+    CPen penSec(PS_SOLID, 1, RGB(0xE4, 0x57, 0x2E));
+    mem.SelectObject(&penSec);
+    a = (secs / 60.0) * TWO_PI - TWO_PI / 4.0;
+    mem.MoveTo(cx, cy);
+    mem.LineTo(cx + (int)(r * 0.86 * cos(a)), cy + (int)(r * 0.86 * sin(a)));
+
+    pDC->BitBlt(lpDIS->rcItem.left, lpDIS->rcItem.top, w, h, &mem, 0, 0,
+                SRCCOPY);
+
+    mem.SelectObject(pOldPen);
+    mem.SelectObject(pOldBr);
+    mem.SelectObject(pOldBmp);
 }
 
 void CDlg_Retrain::OnTimer(UINT_PTR nIDEvent)
