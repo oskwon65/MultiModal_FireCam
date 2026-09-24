@@ -15,9 +15,15 @@
 // [되돌리기]
 //
 // 새 모델이 감도 시험을 통과했어도 현장에서 겪어 보면 아닌 경우가 있다.
-// 세대는 model_generations 에 남아 있으므로 직전 세대로 돌아갈 수 있다.
-// 어느 세대로 갈지는 창이 직접 폴더를 읽어 정하고, 확인 창에 적어 보인
-// 뒤에만 실행한다 - 무인자 --rollback 에 맡기지 않는다.
+// 그럴 때 직전에 운용하던 세대로 돌아간다.
+//
+// 어디로 갈지는 폴더 순서로 알 수 없다. 예행연습 후보가 같은 곳에 보관되기
+// 때문이다. cj_busan_1 은 세대가 10개인데 실제로 올라간 것은 하나였고,
+// 폴더 기준으로 "직전" 을 고르면 운용된 적 없는 후보로 갔다. 그래서
+// generation_history.txt(승격 기록)를 읽어 정한다.
+//
+// 정한 세대는 확인 창에 적어 보인 뒤 --rollback <세대> 로 넘긴다. 무인자에
+// 맡기면 보여 준 것과 실제로 올라가는 것이 어긋날 수 있다.
 
 class CDlg_Retrain : public CDialogEx
 {
@@ -82,6 +88,7 @@ private:
 
     std::string UserPath() const;
     std::vector<std::string> ListGenerations() const;
+    std::vector<std::string> ServedGenerations() const;   // 승격 기록 순서
     void ScanGenerations();           // m_curGen · m_backGen · m_backWhy 갱신
     void ShowGenerations();           // 세대 목록을 로그에 적는다
 

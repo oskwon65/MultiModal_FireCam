@@ -172,8 +172,8 @@ BOOL CDlg_Retrain::OnInitDialog()
     head.Format("[%s]  재학습은 운용 모델을 바꿉니다. 먼저 [예행연습] 으로 결과를 확인하십시오.\r\n"
                 "[진행] 은 예행연습이 \"판정: 승격\" 을 낸 경우에만 켜집니다. "
                 "보류로 끝나면 사유가 아래에 남으며 진행할 수 없습니다.\r\n"
-                "[되돌리기] 는 운용 모델을 직전 세대로 돌리고, 칸별 기준선도 "
-                "함께 치워 그 모델 기준으로 다시 쌓게 합니다.",
+                "[되돌리기] 는 직전에 운용하던 세대로 돌리고, 칸별 기준선도 "
+                "함께 치웁니다. 예행연습 후보는 대상이 아닙니다.",
                 gUserID.c_str());
     m_lblHead.SetWindowTextA(head);
 
@@ -215,11 +215,41 @@ std::vector<std::string> CDlg_Retrain::ListGenerations() const
     return out;
 }
 
-// 되돌릴 대상을 정한다.
+// 운용에 올라간 세대를 기록된 순서대로. 연달아 같은 것은 하나로 본다.
 //
-// 목록의 뒤에서 두 번째가 아니라 운용 중인 것의 바로 앞이다. 예행연습은
-// 후보를 보관만 하고 올리지 않으므로, 운용 중인 세대보다 새로운 폴더가
-// 남아 있을 수 있다. 끝에서 세면 승격된 적 없는 후보로 되돌아가 버린다.
+// generation_history.txt 한 줄은  언제<탭>세대<탭>어떻게  이고 '#' 로
+// 시작하는 줄은 주석이다.
+std::vector<std::string> CDlg_Retrain::ServedGenerations() const
+{
+    std::vector<std::string> out;
+
+    CStdioFile f;
+    if (!f.Open((UserPath() + "generation_history.txt").c_str(),
+                CFile::modeRead | CFile::typeText))
+        return out;
+
+    CStringA line;
+    while (f.ReadString(line))
+    {
+        line.Trim();
+        if (line.IsEmpty() || line[0] == '#') continue;
+
+        // 둘째 칸이 세대다.
+        int pos = 0;
+        CStringA tok = line.Tokenize("\t", pos);          // 언제
+        if (pos < 0) continue;
+        tok = line.Tokenize("\t", pos);                   // 세대
+        tok.Trim();
+        if (!IsGenStamp(tok)) continue;
+
+        if (out.empty() || tok.Compare(out.back().c_str()) != 0)
+            out.push_back((LPCSTR)tok);
+    }
+    f.Close();
+    return out;
+}
+
+// 되돌릴 대상을 정한다. 폴더 순서가 아니라 승격 기록을 거슬러 간다.
 void CDlg_Retrain::ScanGenerations()
 {
     m_curGen = ""; m_backGen = ""; m_backWhy = "";
@@ -240,30 +270,36 @@ void CDlg_Retrain::ScanGenerations()
         f.Close();
     }
 
-    if (m_curGen.IsEmpty())
+    const std::vector<std::string> served = ServedGenerations();
+    if (served.empty())
     {
-        m_backWhy = "운용 중인 세대를 알 수 없습니다 "
-                    "(current_generation.txt 가 없거나 비었습니다).";
+        m_backWhy = "승격 기록(generation_history.txt)이 없어 어느 세대가 "
+                    "실제로 운용되었는지 알 수 없습니다.";
+        return;
+    }
+    if (served.size() < 2)
+    {
+        m_backWhy.Format("운용에 올라간 세대가 %s 하나뿐입니다. 나머지는 "
+                         "예행연습 후보이며 운용된 적이 없습니다.",
+                         served.back().c_str());
         return;
     }
 
-    size_t i = 0;
-    bool found = false;
-    for (; i < gens.size(); ++i)
-        if (m_curGen.Compare(gens[i].c_str()) == 0) { found = true; break; }
+    const std::string prev = served[served.size() - 2];
 
-    if (!found)
+    // 기록이 가리키는 세대가 실제로 남아 있는지 본다. 오래된 세대는
+    // 정리될 수 있다.
+    bool onDisk = false;
+    for (size_t k = 0; k < gens.size(); ++k)
+        if (prev == gens[k]) { onDisk = true; break; }
+    if (!onDisk)
     {
-        m_backWhy.Format("운용 중인 세대 %s 가 보관 목록에 없습니다.",
-                         (LPCSTR)m_curGen);
+        m_backWhy.Format("직전에 운용한 세대 %s 의 폴더가 남아 있지 "
+                         "않습니다.", prev.c_str());
         return;
     }
-    if (i == 0)
-    {
-        m_backWhy = "가장 오래된 세대를 쓰고 있어 되돌릴 곳이 없습니다.";
-        return;
-    }
-    m_backGen = gens[i - 1].c_str();
+
+    m_backGen = prev.c_str();
 }
 
 // 어느 세대를 쓰고 있고 어디로 되돌릴 수 있는지 로그 칸에 적는다. 창을
@@ -271,24 +307,34 @@ void CDlg_Retrain::ScanGenerations()
 void CDlg_Retrain::ShowGenerations()
 {
     const std::vector<std::string> gens = ListGenerations();
+    const std::vector<std::string> served = ServedGenerations();
 
     CStringA t;
     t.Format("[%s] 보관된 세대\r\n", gUserID.c_str());
     for (size_t i = 0; i < gens.size(); ++i)
     {
+        bool wasServed = false;
+        for (size_t k = 0; k < served.size(); ++k)
+            if (served[k] == gens[i]) { wasServed = true; break; }
+
         t += "    ";
         t += gens[i].c_str();
         if (m_curGen.Compare(gens[i].c_str()) == 0) t += "   <= 운용 중";
+        else if (wasServed)                         t += "   (운용된 적 있음)";
+        else                                        t += "   예행연습";
         t += "\r\n";
     }
     if (gens.empty()) t += "    (없음)\r\n";
 
+    // 예행연습 후보와 실제로 운용된 세대를 구별해 적는다. 이 구별이 없으면
+    // 목록만 보고 되돌릴 곳이 있다고 오해한다.
     t += "\r\n";
     if (!m_backGen.IsEmpty())
     {
         CStringA b;
-        b.Format("[되돌리기] 대상은 %s 입니다. 운용 중인 %s 의 바로 앞 "
-                 "세대입니다.\r\n", (LPCSTR)m_backGen, (LPCSTR)m_curGen);
+        b.Format("[되돌리기] 대상은 %s 입니다. 운용 중인 %s 직전에 "
+                 "운용하던 세대입니다.\r\n",
+                 (LPCSTR)m_backGen, (LPCSTR)m_curGen);
         t += b;
     }
     else
@@ -530,7 +576,7 @@ void CDlg_Retrain::OnBnClickedRollback()
     }
 
     CStringA q;
-    q.Format("운용 모델을 직전 세대로 되돌립니다.\r\n\r\n"
+    q.Format("직전에 운용하던 세대로 되돌립니다.\r\n\r\n"
              "    지금  %s\r\n"
              "    이후  %s\r\n\r\n"
              "칸별 기준선(online_baseline.npz)도 함께 치웁니다. 기준선은 "

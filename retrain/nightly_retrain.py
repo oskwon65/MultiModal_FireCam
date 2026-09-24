@@ -42,7 +42,7 @@ import os
 import re
 import shutil
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import torch
@@ -106,6 +106,14 @@ ARTIFACTS = ("autoencoder_final.pth", "scaler.pkl", "scaler.npz")
 BASELINE_NAME = "online_baseline.npz"
 RETIRED_DIR_NAME = "_retired_baseline"
 
+# 승격 기록.
+#
+# 세대 폴더만 보고는 무엇이 실제로 운용에 올라갔는지 알 수 없다. --dry-run
+# 후보도 같은 곳에 보관되기 때문이다. cj_busan_1 은 세대가 10개인데 승격된
+# 것은 20260923_145111 하나였다. 폴더 순서로 "직전" 을 고르면 운용된 적
+# 없는 후보로 되돌아간다.
+HISTORY_NAME = "generation_history.txt"
+
 
 # ======================================================================
 # 세대 관리
@@ -139,6 +147,49 @@ def gen_root(user_path):
     return os.path.join(user_path, GEN_DIR_NAME)
 
 
+def history_path(user_path):
+    return os.path.join(user_path, HISTORY_NAME)
+
+
+def read_history(user_path):
+    """[(언제, 세대, 어떻게)] 를 기록된 순서대로. '#' 로 시작하는 줄은 주석."""
+    p = history_path(user_path)
+    if not os.path.exists(p):
+        return []
+
+    out = []
+    with open(p, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = [c.strip() for c in line.split("\t")]
+            if len(parts) < 2 or not GEN_STAMP_RE.match(parts[1]):
+                continue
+            out.append((parts[0], parts[1], parts[2] if len(parts) > 2 else ""))
+    return out
+
+
+def append_history(user_path, stamp, how):
+    p = history_path(user_path)
+    new = not os.path.exists(p)
+    with open(p, "a", encoding="utf-8") as f:
+        if new:
+            f.write("# 운용에 올라간 세대의 기록. 되돌리기가 이 순서를 거슬러 "
+                    "간다.\n")
+            f.write("# 언제\t세대\t어떻게\n")
+        f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S}\t{stamp}\t{how}\n")
+
+
+def served_generations(user_path):
+    """운용에 올라간 세대를 순서대로. 연달아 같은 것은 하나로 본다."""
+    out = []
+    for _when, stamp, _how in read_history(user_path):
+        if not out or out[-1] != stamp:
+            out.append(stamp)
+    return out
+
+
 # 세대 폴더 이름은 YYYYMMDD_HHMMSS 다. 기준선 보관함(_retired_baseline)
 # 처럼 세대가 아닌 폴더가 같은 곳에 있으므로 이름으로 가린다.
 GEN_STAMP_RE = re.compile(r"^\d{8}_\d{6}$")
@@ -165,9 +216,13 @@ def save_generation(user_path, files, report):
     with open(os.path.join(dst, "report.txt"), "w", encoding="utf-8") as f:
         f.write(report + "\n")
 
-    # 오래된 세대 정리
+    # 오래된 세대 정리. 단 운용에 올라간 적이 있는 것은 지우지 않는다 -
+    # 그것을 지우면 되돌릴 곳이 사라진다.
+    served = set(served_generations(user_path))
     gens = list_generations(user_path)
     for old in gens[:-KEEP_GENERATIONS]:
+        if old in served:
+            continue
         shutil.rmtree(os.path.join(gen_root(user_path), old), ignore_errors=True)
 
     return stamp
@@ -220,8 +275,77 @@ def reset_baseline(user_path, why=""):
     return dst
 
 
-def activate(user_path, stamp):
-    """세대 하나를 운용 모델로 올린다."""
+def archive_incumbent(user_path):
+    """
+    물러나는 운용 모델을 세대로 떠 둔다. 덮어쓰기 전에 부른다.
+
+    [왜 필요한가]
+
+    activate() 는 산출물을 users/<id>/ 에 제자리 복사한다. 그래서 첫 승격
+    때 그 전까지 돌던 모델이 흔적 없이 사라진다. cj_busan_1 이 그렇게
+    되었다 - 2026-09-23 14:51 에 20260923_145111 이 올라가면서 점수 0.81
+    짜리 모델이 사라졌고, 어디에도 남지 않았다.
+
+    이미 세대로 보관된 것(current_generation.txt 가 가리키는 것)이면 다시
+    뜰 필요가 없다.
+    """
+    cur = ""
+    cp = os.path.join(user_path, "current_generation.txt")
+    if os.path.exists(cp):
+        cur = open(cp, encoding="utf-8").read().strip()
+    if cur and cur in list_generations(user_path):
+        return None
+
+    live = [(n, os.path.join(user_path, n)) for n in ARTIFACTS]
+    live = [(n, q) for n, q in live if os.path.exists(q)]
+    if not live:
+        return None
+
+    # 이름은 모델 파일의 시각에서 딴다. 언제부터 돌던 것인지가 남는다.
+    mp = os.path.join(user_path, "autoencoder_final.pth")
+    base = datetime.fromtimestamp(os.path.getmtime(mp)) if os.path.exists(mp) \
+        else datetime.now()
+    # 이름이 겹치면 초를 밀어 비킨다. 접미사를 붙이면 세대 이름 형식
+    # (YYYYMMDD_HHMMSS · 15자)에서 벗어나 목록에서 빠진다.
+    stamp = base.strftime("%Y%m%d_%H%M%S")
+    dst = os.path.join(gen_root(user_path), stamp)
+    tries = 0
+    while os.path.isdir(dst):
+        tries += 1
+        if tries > 60:
+            print("[경고] 보관할 이름을 찾지 못해 물러나는 운용 모델을 뜨지 "
+                  "못했습니다.")
+            return None
+        stamp = (base + timedelta(seconds=tries)).strftime("%Y%m%d_%H%M%S")
+        dst = os.path.join(gen_root(user_path), stamp)
+
+    os.makedirs(dst, exist_ok=True)
+    for name, q in live:
+        shutil.copy2(q, os.path.join(dst, name))
+
+    with open(os.path.join(dst, "report.txt"), "w", encoding="utf-8") as f:
+        f.write(f"보관 {datetime.now():%Y-%m-%d %H:%M:%S}\n\n"
+                f"승격 전에 물러나는 운용 모델을 그대로 떠 둔 것입니다. 학습\n"
+                f"후보가 아니므로 감도 회귀 시험 결과가 없습니다.\n\n"
+                f"모델 파일 시각 {base:%Y-%m-%d %H:%M:%S}\n")
+
+    print(f"[보관] 물러나는 운용 모델을 {GEN_DIR_NAME}/{stamp} 로 떠 두었습니다.")
+    return stamp
+
+
+def activate(user_path, stamp, how="승격"):
+    """
+    세대 하나를 운용 모델로 올리고 기록에 남긴다.
+
+    기록이 없으면 무엇이 실제로 돌았는지 알 수 없다. 폴더에는 --dry-run
+    후보가 섞여 있어 순서만으로는 구별되지 않는다.
+    """
+    # 아직 세대로 안 뜬 운용 모델이 있으면 먼저 뜬다. 그래야 되돌릴 곳이
+    # 생기고, 그 모델이 기록의 첫 줄이 된다.
+    kept = archive_incumbent(user_path)
+    if kept:
+        append_history(user_path, kept, "보관(기록 이전부터 운용 중)")
+
     src = os.path.join(gen_root(user_path), stamp)
     for name in ARTIFACTS:
         s = os.path.join(src, name)
@@ -231,6 +355,8 @@ def activate(user_path, stamp):
     with open(os.path.join(user_path, "current_generation.txt"),
               "w", encoding="utf-8") as f:
         f.write(stamp + "\n")
+
+    append_history(user_path, stamp, how)
 
 
 # ======================================================================
@@ -344,8 +470,15 @@ def main():
         if not gens:
             print("보관된 세대가 없습니다.")
             return 0
+        served = set(served_generations(user_path))
         for g in gens:
-            print(f"  {g}{'   <= 운용 중' if g == cur else ''}")
+            tag = "   <= 운용 중" if g == cur else \
+                  ("   (운용된 적 있음)" if g in served else "   예행연습")
+            print(f"  {g}{tag}")
+        if not served:
+            print()
+            print(f"  승격 기록({HISTORY_NAME})이 없습니다. 어느 것이 실제로 "
+                  f"운용되었는지 알 수 없습니다.")
         return 0
 
     # ---------------- 되돌리기 ----------------
@@ -358,40 +491,43 @@ def main():
         if args.rollback != "__prev__":
             target = args.rollback
         else:
-            # "직전" 은 목록의 뒤에서 두 번째가 아니라 지금 운용 중인 것의
-            # 바로 앞이다.
+            # "직전" 은 폴더 순서가 아니라 **승격 기록** 을 거슬러 간다.
             #
-            # --dry-run 은 후보를 보관만 하고 올리지 않으므로, 운용 중인
-            # 세대보다 새로운 세대가 목록에 남아 있을 수 있다. 목록 끝에서
-            # 세면 승격된 적 없는 후보로 "되돌아가" 버린다. cj_busan_1 이
-            # 실제로 그 상태였다 - 운용 145111, 목록 끝은 153607.
+            # --dry-run 후보가 같은 폴더에 보관되므로 순서로는 구별되지
+            # 않는다. cj_busan_1 은 세대 10개 중 승격된 것이 20260923_145111
+            # 하나였고, 폴더 기준으로 "직전" 을 고르면 운용된 적 없는
+            # 20260923_144613 으로 갔다.
+            served = served_generations(user_path)
+            if not served:
+                print(f"[ERROR] 승격 기록({HISTORY_NAME})이 없어 직전 세대를 "
+                      f"알 수 없습니다.")
+                print(f"        --list 로 세대를 확인한 뒤 "
+                      f"--rollback <세대> 로 지정하십시오.")
+                return 1
+
             cur = ""
             cp = os.path.join(user_path, "current_generation.txt")
             if os.path.exists(cp):
                 cur = open(cp, encoding="utf-8").read().strip()
+            if cur and served[-1] != cur:
+                print(f"[경고] 기록의 마지막({served[-1]})과 운용 중인 "
+                      f"세대({cur})가 다릅니다. 기록을 기준으로 삼습니다.")
 
-            if cur and cur in gens:
-                i = gens.index(cur)
-                if i == 0:
-                    print(f"[ERROR] {cur} 이 가장 오래된 세대라 되돌릴 곳이 "
-                          f"없습니다.")
-                    return 1
-                target = gens[i - 1]
-                print(f"[되돌리기] 운용 중 {cur} -> 직전 {target}")
-            elif len(gens) >= 2:
-                # 운용 중인 세대를 알 수 없으면 목록 기준으로 센다.
-                print("[경고] 운용 중인 세대를 알 수 없어 목록 끝에서 셉니다. "
-                      "원하는 세대가 아니면 --rollback <세대> 로 직접 "
-                      "지정하십시오.")
-                target = gens[-2]
-            else:
-                print("[ERROR] 되돌릴 세대가 없습니다.")
+            if len(served) < 2:
+                print(f"[ERROR] 운용에 올라간 세대가 {served[-1]} 하나뿐이라 "
+                      f"되돌릴 곳이 없습니다.")
+                print(f"        나머지 세대는 예행연습 후보이며 운용된 적이 "
+                      f"없습니다. --rollback <세대> 로 지정하면 그 후보를 "
+                      f"올릴 수는 있습니다.")
                 return 1
+
+            target = served[-2]
+            print(f"[되돌리기] 운용 중 {served[-1]} -> 직전 {target}")
 
         if target not in gens:
             print(f"[ERROR] 그런 세대가 없습니다: {target}")
             return 1
-        activate(user_path, target)
+        activate(user_path, target, how="되돌림")
 
         # 기준선은 갈아 낸 모델의 오차 분포다. 모델만 되돌리면 임계치가
         # 다른 모델 것이라 어긋난다. --keep-baseline 으로 막을 수 있다.
