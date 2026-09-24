@@ -11,6 +11,9 @@
 되돌리면 칸별 기준선도 함께 치운다. 기준선은 그 모델의 오차 분포이므로
 모델만 갈면 임계치가 어긋난다. --keep-baseline 으로 막을 수 있다.
 
+--dry-run 은 모델을 저장하지 않는다. 결과는 보고서로 다 나오고 그 모델을
+나중에 쓸 일이 없다. 세대는 실제 재학습에서만 생긴다.
+
 절차는 넷이다.
 
   1. 히스토리 DB 에서 재생 버퍼를 만든다        (replay_buffer)
@@ -473,7 +476,7 @@ def main():
         served = set(served_generations(user_path))
         for g in gens:
             tag = "   <= 운용 중" if g == cur else \
-                  ("   (운용된 적 있음)" if g in served else "   예행연습")
+                  ("   (운용된 적 있음)" if g in served else "   승격 안 됨")
             print(f"  {g}{tag}")
         if not served:
             print()
@@ -516,7 +519,7 @@ def main():
             if len(served) < 2:
                 print(f"[ERROR] 운용에 올라간 세대가 {served[-1]} 하나뿐이라 "
                       f"되돌릴 곳이 없습니다.")
-                print(f"        나머지 세대는 예행연습 후보이며 운용된 적이 "
+                print(f"        나머지 세대는 감도 시험에서 막혀 운용된 적이 "
                       f"없습니다. --rollback <세대> 로 지정하면 그 후보를 "
                       f"올릴 수는 있습니다.")
                 return 1
@@ -657,6 +660,19 @@ def main():
     print()
 
     # ---------------- 보관 및 승격 ----------------
+    #
+    # 예행연습은 아무것도 남기지 않는다. 결과는 위 보고서로 다 나왔고, 그
+    # 모델을 나중에 쓸 일이 없다. 남기면 세대 폴더가 쓸 수 없는 후보로 차서
+    # 정작 되돌릴 대상을 가린다. cj_busan_1 이 세대 10개 중 9개가 예행연습인
+    # 상태였다.
+    #
+    # 학습한 가중치를 버리는 것이 아깝게 보이지만, 같은 자료로 다시 돌리면
+    # 같은 것이 나온다. 몇 분이 아까워 목록을 못 쓰게 만들 이유가 없다.
+    if args.dry_run:
+        print("[중단] --dry-run 이므로 모델을 저장하지 않았습니다. "
+              "운용 모델도 그대로입니다.")
+        return 0
+
     tmp = os.path.join(user_path, ".candidate")
     os.makedirs(tmp, exist_ok=True)
     torch.save(model.state_dict(), os.path.join(tmp, "autoencoder_final.pth"))
@@ -672,13 +688,10 @@ def main():
 
     print(f"[보관] {GEN_DIR_NAME}/{stamp}")
 
-    if args.dry_run:
-        print("[중단] --dry-run 이므로 운용 모델을 바꾸지 않았습니다.")
-        return 0
-
     if not passed:
         print("[보류] 감도 회귀 시험을 통과하지 못해 운용 모델을 유지합니다.")
-        print(f"       후보는 {GEN_DIR_NAME}/{stamp} 에 남아 있습니다.")
+        print(f"       후보는 {GEN_DIR_NAME}/{stamp} 에 남아 있습니다 - "
+              f"왜 막혔는지 보고서로 확인할 수 있습니다.")
         return 3
 
     activate(user_path, stamp)

@@ -187,7 +187,7 @@ BOOL CDlg_Retrain::OnInitDialog()
                 "[재학습 실행] 은 예행연습이 \"판정: 승격\" 을 낸 경우에만 "
                 "켜집니다. 보류로 끝나면 사유가 아래에 남으며 실행할 수 없습니다.\r\n"
                 "[되돌리기] 는 직전에 운용하던 세대로 돌리고, 칸별 기준선도 "
-                "함께 치웁니다. 예행연습 후보는 대상이 아닙니다.",
+                "함께 치웁니다. 예행연습은 아무것도 남기지 않습니다.",
                 gUserID.c_str());
     m_lblHead.SetWindowTextA(head);
 
@@ -293,9 +293,8 @@ void CDlg_Retrain::ScanGenerations()
     }
     if (served.size() < 2)
     {
-        m_backWhy.Format("운용에 올라간 세대가 %s 하나뿐입니다. 나머지는 "
-                         "예행연습 후보이며 운용된 적이 없습니다.",
-                         served.back().c_str());
+        m_backWhy.Format("운용에 올라간 세대가 %s 하나뿐입니다. "
+                         "되돌릴 곳이 없습니다.", served.back().c_str());
         return;
     }
 
@@ -319,8 +318,11 @@ void CDlg_Retrain::ScanGenerations()
 // 어디로 되돌릴 수 있는지 로그 칸에 적는다. 창을 열면 로그가 비어 있으므로
 // 따로 자리를 내지 않아도 된다.
 //
-// 운용에 올라간 세대만 보인다. 예행연습 후보는 보여 줘도 할 수 있는 것이
-// 없다 - 되돌릴 대상이 아니다. 몇 개가 있는지만 한 줄로 적는다.
+// 운용에 올라간 세대만 보인다. 나머지는 보여 줘도 할 수 있는 것이 없다 -
+// 되돌릴 대상이 아니다. 몇 개가 있는지만 한 줄로 적는다.
+//
+// 예행연습은 이제 세대를 만들지 않으므로, 여기 걸리는 것은 재학습을 실제로
+// 돌렸으나 감도 시험에서 막힌 후보다.
 void CDlg_Retrain::ShowGenerations()
 {
     const std::vector<std::string> gens = ListGenerations();
@@ -356,7 +358,7 @@ void CDlg_Retrain::ShowGenerations()
     if (hidden > 0)
     {
         CStringA h;
-        h.Format("\r\n예행연습 후보 %u개는 숨겼습니다. 되돌릴 대상이 "
+        h.Format("\r\n승격되지 않은 후보 %u개는 숨겼습니다. 되돌릴 대상이 "
                  "아닙니다.\r\n", (unsigned)hidden);
         AppendLog(h, COLOR_LOG_DIM);
     }
