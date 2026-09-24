@@ -82,10 +82,15 @@ private:
     CStatic   m_lblElapsed;      // "경과 2분 14초 · 34%"
     CProgressCtrl m_progress;
     int       m_target = 0;      // 출력에서 읽은 진행 (0~1000)
+    int       m_pos = 0;         // 눈금이 실제로 가 있는 곳
+    int       m_sweep = 0;       // 총량을 모를 때 좌우로 쓸기
+    int       m_frame = 0;       // 회전자 프레임
     UINT_PTR  m_timer = 0;
     ULONGLONG m_tickStart = 0;
     CStringA  m_busyWhat;        // 판에 적을 말
+    CStringA  m_phaseNote;       // "재생버퍼" · "epoch 143/400" 같은 것
     CStringA  m_lastElapsed;     // 같은 글자를 다시 쓰지 않으려고
+    CStringA  m_lastBusy;
 
     HANDLE   m_hThread = nullptr;
     HANDLE   m_hProc = nullptr;
@@ -108,6 +113,7 @@ private:
     void SetPhase(int permille);     // 단계가 바뀔 때 목표치를 올린다
     void ShowProgress(bool bShow);
     void UpdateElapsed();
+    void AnimateBusy();          // 눈금과 회전자를 한 칸 옮긴다
     void AppendLog(const char* text);
     void AppendLog(const char* text, COLORREF color);
     void SetButtons();

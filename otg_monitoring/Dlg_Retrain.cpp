@@ -33,10 +33,13 @@ extern const char* GetAnacondaEnvPub();
 #define BUSY_W  460
 #define BUSY_H  150
 
-// CProgressCtrl::SetMarquee 는 이 MFC 판에 없다. 메시지를 직접 보낸다.
-#ifndef PBM_SETMARQUEE
-#define PBM_SETMARQUEE  (WM_USER + 10)
-#endif
+// 눈금 애니메이션은 직접 돌린다.
+//
+// PBS_MARQUEE 를 써 봤으나 이 환경에서는 흐르지 않았다 - 비주얼 스타일과
+// comctl32 판에 걸린다. SetPos 와 SetWindowText 는 어디서든 먹으므로 그
+// 둘만으로 움직인다.
+#define ANIM_MS      120      // 한 프레임
+#define SWEEP_STEP    45      // 총량을 모를 때 한 프레임에 쓸어 가는 양
 
 // 운용 중인 세대만 검정, 나머지는 진회색. 목록에서 눈이 먼저 가야 하는 줄이
 // 하나뿐이기 때문이다.
@@ -175,7 +178,7 @@ BOOL CDlg_Retrain::OnInitDialog()
         CRect(bx0 + 16, by0 + 22, bx0 + BUSY_W - 16, by0 + 54),
         this, ID_LBL_BUSY);
 
-    m_progress.Create(WS_CHILD | PBS_SMOOTH | PBS_MARQUEE,
+    m_progress.Create(WS_CHILD | PBS_SMOOTH,
         CRect(bx0 + 32, by0 + 64, bx0 + BUSY_W - 32, by0 + 88),
         this, ID_PROGRESS);
     m_progress.SetRange32(0, 1000);
@@ -424,12 +427,13 @@ void CDlg_Retrain::ShowProgress(bool bShow)
 
     if (bShow)
     {
-        m_target = 0;
+        m_target = m_pos = m_sweep = m_frame = 0;
         m_tickStart = GetTickCount64();
         m_lastElapsed = "";
-
-        m_lblBusy.SetWindowTextA(m_busyWhat);
-        m_lblElapsed.SetWindowTextA("경과 0초");
+        m_lastBusy = "";
+        m_phaseNote = "";
+        m_progress.SetRange32(0, 1000);
+        m_progress.SetPos(0);
 
         // 판을 로그 위로 올린다. z 순서는 만든 차례를 따르지만, 실행을
         // 거듭하면 어긋날 수 있어 띄울 때마다 못 박는다.
@@ -440,16 +444,14 @@ void CDlg_Retrain::ShowProgress(bool bShow)
         m_lblElapsed.SetWindowPos(&wndTop, 0, 0, 0, 0,
                                   SWP_NOMOVE | SWP_NOSIZE);
 
-        // 총량을 모르는 동안에는 흐르게 둔다. 단계를 읽으면 그때 눈금으로
-        // 바꾼다.
-        m_progress.ModifyStyle(0, PBS_MARQUEE);
-        m_progress.SendMessage(PBM_SETMARQUEE, TRUE, 30);
+        // 첫 프레임을 바로 그린다. 안 그리면 판이 잠깐 비어 보인다.
+        AnimateBusy();
+        UpdateElapsed();
 
-        if (!m_timer) m_timer = SetTimer(1, 250, nullptr);
+        if (!m_timer) m_timer = SetTimer(1, ANIM_MS, nullptr);
     }
     else if (m_timer)
     {
-        m_progress.SendMessage(PBM_SETMARQUEE, FALSE, 0);
         KillTimer(m_timer);
         m_timer = 0;
     }
@@ -460,16 +462,45 @@ void CDlg_Retrain::ShowProgress(bool bShow)
 void CDlg_Retrain::SetPhase(int permille)
 {
     if (permille <= m_target) return;
-    m_target = permille;
 
-    // 처음으로 단계를 읽었으면 흐름을 멈추고 눈금으로 바꾼다.
-    if (m_progress.GetStyle() & PBS_MARQUEE)
+    // 쓸기에서 눈금으로 처음 넘어갈 때는 0 에서 다시 시작한다. 쓸기 위치는
+    // 진행과 아무 상관이 없어 그대로 두면 눈금이 뒤로 가는 것처럼 보인다.
+    if (m_target == 0) m_pos = 0;
+
+    m_target = permille;
+}
+
+// 눈금과 회전자를 한 칸 옮긴다.
+//
+// 단계를 읽기 전에는 총량을 모르므로 눈금을 좌우로 쓸어 움직임만 보인다.
+// 읽은 뒤에는 그 값으로 다가간다 - 단계 사이에도 조금씩 차올라 멈춘 것처럼
+// 보이지 않는다.
+void CDlg_Retrain::AnimateBusy()
+{
+    ++m_frame;
+
+    if (m_target <= 0)
     {
-        m_progress.SendMessage(PBM_SETMARQUEE, FALSE, 0);
-        m_progress.ModifyStyle(PBS_MARQUEE, 0);
-        m_progress.SetRange32(0, 1000);
+        m_sweep += SWEEP_STEP;
+        if (m_sweep > 2000) m_sweep = 0;
+        m_progress.SetPos(m_sweep <= 1000 ? m_sweep : 2000 - m_sweep);
     }
-    m_progress.SetPos(m_target);
+    else if (m_pos < m_target)
+    {
+        m_pos += (m_target - m_pos) / 10 + 1;
+        if (m_pos > m_target) m_pos = m_target;
+        m_progress.SetPos(m_pos);
+    }
+
+    // 글자 회전자. SetWindowText 만 쓰므로 어떤 환경에서도 돈다.
+    static const char* SPIN[4] = { "|", "/", "-", "\\" };
+    CStringA t;
+    t.Format("%s   %s", (LPCSTR)m_busyWhat, SPIN[(m_frame / 3) % 4]);
+    if (t != m_lastBusy)
+    {
+        m_lastBusy = t;
+        m_lblBusy.SetWindowTextA(t);
+    }
 }
 
 void CDlg_Retrain::UpdateElapsed()
@@ -481,12 +512,17 @@ void CDlg_Retrain::UpdateElapsed()
     if (sec < 60) t.Format("경과 %u초", sec);
     else          t.Format("경과 %u분 %u초", sec / 60, sec % 60);
 
-    // 단계를 읽었으면 얼마나 왔는지 함께 적는다.
+    // 단계를 읽었으면 얼마나 왔는지, 무엇을 하는 중인지 함께 적는다.
     if (m_target > 0)
     {
         CStringA pct;
         pct.Format("  ·  %d%%", m_target / 10);
         t += pct;
+    }
+    if (!m_phaseNote.IsEmpty())
+    {
+        t += "  ·  ";
+        t += m_phaseNote;
     }
 
     if (t != m_lastElapsed)
@@ -499,7 +535,10 @@ void CDlg_Retrain::UpdateElapsed()
 void CDlg_Retrain::OnTimer(UINT_PTR nIDEvent)
 {
     if (nIDEvent == 1 && m_bRunning)
+    {
+        AnimateBusy();
         UpdateElapsed();
+    }
     CDialogEx::OnTimer(nIDEvent);
 }
 
@@ -751,21 +790,24 @@ LRESULT CDlg_Retrain::OnLogLine(WPARAM, LPARAM lp)
 
         // 같은 줄에서 진행 단계도 읽는다. 학습 구간(epoch)이 가장 길어
         // 거기만 실제 숫자로 채우고 나머지는 지점마다 올린다.
-        if (s->Find("[기여도]") >= 0)        SetPhase(60);
-        if (s->Find("[재생버퍼]") >= 0)      SetPhase(140);
-        if (s->Find("[학습]") >= 0)          SetPhase(200);
+        if (s->Find("[기여도]") >= 0)   { SetPhase(60);  m_phaseNote = "기여도 판단"; }
+        if (s->Find("[재생버퍼]") >= 0) { SetPhase(140); m_phaseNote = "재생버퍼 수집"; }
+        if (s->Find("[학습]") >= 0)     { SetPhase(200); m_phaseNote = "학습 준비"; }
 
         int e = s->Find("epoch ");
         if (e >= 0)
         {
             int cur = 0, tot = 0;
             if (sscanf_s((LPCSTR)*s + e, "epoch %d/%d", &cur, &tot) == 2 && tot > 0)
+            {
                 SetPhase(200 + 600 * cur / tot);
+                m_phaseNote.Format("epoch %d/%d", cur, tot);
+            }
         }
 
-        if (s->Find("감도 회귀 시험") >= 0)  SetPhase(850);
-        if (s->Find("판정:") >= 0)           SetPhase(950);
-        if (s->Find("[보관]") >= 0)          SetPhase(980);
+        if (s->Find("감도 회귀 시험") >= 0) { SetPhase(850); m_phaseNote = "감도 시험"; }
+        if (s->Find("판정:") >= 0)          { SetPhase(950); m_phaseNote = "판정"; }
+        if (s->Find("[보관]") >= 0)         { SetPhase(980); m_phaseNote = "보관"; }
 
         delete s;
     }
