@@ -30,6 +30,7 @@ extern const char* GetAnacondaEnvPub();
 #define ID_LBL_BUSY    3007
 #define ID_LBL_ELAPSED 3008
 #define ID_RING        3009
+#define ID_CBO_GEN     3010
 
 // 가운데 판 크기
 #define BUSY_W  460
@@ -241,6 +242,13 @@ BOOL CDlg_Retrain::OnInitDialog()
     m_btnBack.Create("되돌리기", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(M, yBtnTop, M + btnW, yBtnTop + btnH), this, ID_BTN_BACK);
 
+    // 그 옆에 갈 세대를 고르는 목록. Create 에 주는 높이는 펼쳤을 때까지
+    // 포함해야 한다 - 32 만 주면 목록이 한 줄도 안 펼쳐진다.
+    m_cboGen.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL
+        | CBS_DROPDOWNLIST,
+        CRect(M + btnW + 10, yBtnTop, M + btnW + 10 + 330, yBtnTop + 260),
+        this, ID_CBO_GEN);
+
     SetFont(&m_font);
     SendMessageToDescendants(WM_SETFONT, (WPARAM)m_font.GetSafeHandle(), TRUE);
     m_edLog.SetFont(&m_fontMono);
@@ -251,13 +259,14 @@ BOOL CDlg_Retrain::OnInitDialog()
     head.Format("[%s]  재학습은 운용 모델을 바꿉니다. 먼저 [예행연습] 으로 결과를 확인하십시오.\r\n"
                 "[재학습 실행] 은 예행연습이 \"판정: 승격\" 을 낸 경우에만 "
                 "켜집니다. 보류로 끝나면 사유가 아래에 남으며 실행할 수 없습니다.\r\n"
-                "[되돌리기] 는 직전에 운용하던 세대로 돌리고, 칸별 기준선도 "
-                "함께 치웁니다. 예행연습은 아무것도 남기지 않습니다.",
+                "[되돌리기] 는 옆에서 고른 세대로 돌리고, 칸별 기준선도 함께 "
+                "치웁니다. 운용에 올라간 적이 있는 세대만 고를 수 있습니다.",
                 gUserID.c_str());
     m_lblHead.SetWindowTextA(head);
 
     // 어느 세대를 쓰고 있고 어디로 되돌릴 수 있는지 먼저 보여 준다.
     ScanGenerations();
+    FillGenCombo();
     ShowGenerations();
 
     SetButtons();
@@ -388,6 +397,51 @@ void CDlg_Retrain::ScanGenerations()
 //
 // 예행연습은 이제 세대를 만들지 않으므로, 여기 걸리는 것은 재학습을 실제로
 // 돌렸으나 감도 시험에서 막힌 후보다.
+// 고를 수 있는 세대를 채운다. 운용에 올라간 적이 있고, 폴더가 남아 있고,
+// 지금 돌고 있는 것이 아닌 세대다.
+//
+// 최근 것이 위로 오게 둔다. 대개는 맨 위(직전)를 고르게 된다.
+void CDlg_Retrain::FillGenCombo()
+{
+    if (!m_cboGen.GetSafeHwnd()) return;
+
+    m_cboGen.ResetContent();
+    m_cboStamps.clear();
+
+    const std::vector<std::string> gens = ListGenerations();
+    const std::vector<std::string> served = ServedGenerations();
+
+    for (int i = (int)gens.size() - 1; i >= 0; --i)
+    {
+        if (m_curGen.Compare(gens[i].c_str()) == 0) continue;   // 지금 것
+
+        bool wasServed = false;
+        for (size_t k = 0; k < served.size(); ++k)
+            if (served[k] == gens[i]) { wasServed = true; break; }
+        if (!wasServed) continue;
+
+        CStringA line;
+        line.Format("%s%s", gens[i].c_str(),
+                    (m_backGen.Compare(gens[i].c_str()) == 0) ? "   (직전)" : "");
+        m_cboGen.AddString(line);
+        m_cboStamps.push_back(gens[i]);
+    }
+
+    // 직전 세대를 기본으로 고른다.
+    int sel = 0;
+    for (size_t i = 0; i < m_cboStamps.size(); ++i)
+        if (m_backGen.Compare(m_cboStamps[i].c_str()) == 0) { sel = (int)i; break; }
+    if (!m_cboStamps.empty()) m_cboGen.SetCurSel(sel);
+}
+
+CStringA CDlg_Retrain::PickedGen() const
+{
+    const int i = m_cboGen.GetSafeHwnd() ? m_cboGen.GetCurSel() : CB_ERR;
+    if (i == CB_ERR || i < 0 || (size_t)i >= m_cboStamps.size())
+        return CStringA();
+    return m_cboStamps[i].c_str();
+}
+
 void CDlg_Retrain::ShowGenerations()
 {
     const std::vector<std::string> gens = ListGenerations();
@@ -431,7 +485,8 @@ void CDlg_Retrain::ShowGenerations()
     if (!m_backGen.IsEmpty())
     {
         CStringA b;
-        b.Format("\r\n[되돌리기] 대상은 %s 입니다.\r\n", (LPCSTR)m_backGen);
+        b.Format("\r\n[되돌리기] 는 아래 목록에서 고른 세대로 갑니다. "
+                 "기본값은 직전에 운용하던 %s 입니다.\r\n", (LPCSTR)m_backGen);
         AppendLog(b);
     }
     else
@@ -448,7 +503,10 @@ void CDlg_Retrain::SetButtons()
     // 예행연습이 '승격' 판정을 낸 뒤에만 실행할 수 있다. 결과를 안 보고
     // 누르는 것을 막는 것이 이 창의 존재 이유다.
     m_btnApply.EnableWindow(!m_bRunning && m_bDryDone && m_bDryPassed);
-    m_btnBack.EnableWindow(!m_bRunning && !m_backGen.IsEmpty());
+    // 목록에 고를 것이 있어야 되돌릴 수 있다.
+    const bool canBack = !m_cboStamps.empty();
+    m_btnBack.EnableWindow(!m_bRunning && canBack);
+    if (m_cboGen.GetSafeHwnd()) m_cboGen.EnableWindow(!m_bRunning && canBack);
     m_btnClose.EnableWindow(!m_bRunning);
 }
 
@@ -916,18 +974,33 @@ void CDlg_Retrain::OnBnClickedApply()
 
 void CDlg_Retrain::OnBnClickedRollback()
 {
-    // 누를 때마다 다시 읽는다. 창을 열어 둔 채로 재학습을 돌렸을 수 있다.
+    // 목록에서 고른 것을 먼저 집는다. 아래에서 다시 읽으면 고른 자리가
+    // 바뀔 수 있다.
+    CStringA picked = PickedGen();
+
+    // 창을 열어 둔 채로 재학습을 돌렸을 수 있다. 다시 읽고, 고른 세대가
+    // 아직 쓸 수 있는지 확인한다.
     ScanGenerations();
-    if (m_backGen.IsEmpty())
+    FillGenCombo();
+
+    bool ok = false;
+    for (size_t i = 0; i < m_cboStamps.size(); ++i)
+        if (picked.Compare(m_cboStamps[i].c_str()) == 0) { ok = true; break; }
+
+    if (!ok)
     {
-        CStringA m = "되돌릴 수 없습니다.\r\n\r\n" + m_backWhy;
+        CStringA m = "되돌릴 수 없습니다.\r\n\r\n";
+        m += m_backWhy.IsEmpty()
+             ? "고른 세대를 더는 쓸 수 없습니다. 목록에서 다시 고르십시오."
+             : m_backWhy;
         AfxMessageBox(m);
         SetButtons();
         return;
     }
+    m_backGen = picked;
 
     CStringA q;
-    q.Format("직전에 운용하던 세대로 되돌립니다.\r\n\r\n"
+    q.Format("고른 세대로 되돌립니다.\r\n\r\n"
              "    지금  %s\r\n"
              "    이후  %s\r\n\r\n"
              "칸별 기준선(online_baseline.npz)도 함께 치웁니다. 기준선은 "

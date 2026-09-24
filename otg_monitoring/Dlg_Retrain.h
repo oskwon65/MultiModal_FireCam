@@ -24,6 +24,10 @@
 //
 // 정한 세대는 확인 창에 적어 보인 뒤 --rollback <세대> 로 넘긴다. 무인자에
 // 맡기면 보여 준 것과 실제로 올라가는 것이 어긋날 수 있다.
+//
+// 어느 세대로 갈지는 목록에서 고른다. 한 걸음 뒤로만 갈 수 있게 두면 더
+// 앞으로는 못 간다 - 되돌리기도 승격으로 기록되므로, 버튼을 두 번 누르면
+// 방금 떠난 세대로 되돌아가 두 세대 사이를 왕복하게 된다.
 
 class CDlg_Retrain : public CDialogEx
 {
@@ -65,6 +69,8 @@ private:
     // 있어, 운용 중인 세대와 나머지를 줄 단위로 구분할 수 없다.
     CRichEditCtrl m_edLog;
     CButton  m_btnDry, m_btnApply, m_btnBack, m_btnClose;
+    CComboBox m_cboGen;                    // 되돌릴 세대
+    std::vector<std::string> m_cboStamps;  // 목록 순서대로의 세대 이름
     CStatic  m_lblHead, m_lblState;
     CFont    m_font, m_fontMono;
 
@@ -125,6 +131,8 @@ private:
     std::vector<std::string> ListGenerations() const;
     std::vector<std::string> ServedGenerations() const;   // 승격 기록 순서
     void ScanGenerations();           // m_curGen · m_backGen · m_backWhy 갱신
+    void FillGenCombo();              // 고를 수 있는 세대를 목록에 채운다
+    CStringA PickedGen() const;       // 목록에서 고른 세대 (없으면 빈 문자열)
     void ShowGenerations();           // 세대 목록을 로그에 적는다
 
     void Run(RunKind kind);
