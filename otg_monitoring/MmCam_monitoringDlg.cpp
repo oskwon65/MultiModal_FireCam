@@ -534,8 +534,16 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
         CRect(15, 20, 47, 40), this);
 
     mComboBox_ID.SetWindowPos(NULL, 45, 15, 160, 100, SWP_NOZORDER);
-    mComboBox_ID.AddString("cj_busan_1");
-    mComboBox_ID.AddString("kict1");
+
+    // 현장 목록은 START_USER_IDS 한 곳에서만 온다.
+    //
+    // 예전에는 여기에 따로 적어 두었다. 그래서 현장을 늘릴 때 이쪽만 고치면
+    // 콤보박스에는 보이는데 [시작] 이 그 현장을 띄우지 않는 일이 생길 수
+    // 있었다. 목록 행 수(PROC_ROW_COUNT)도 같은 배열에서 나온다.
+    //
+    // 콤보박스에 CBS_SORT 가 있어 배열 순서와 무관하게 이름순으로 보인다.
+    for (const char* userId : START_USER_IDS)
+        mComboBox_ID.AddString(userId);
     mComboBox_ID.SetCurSel(0);
 
     CString tSel;
