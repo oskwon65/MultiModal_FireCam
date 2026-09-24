@@ -128,6 +128,7 @@ BOOL CDlg_Retrain::OnInitDialog()
     GetClientRect(&rc);
     const int M = 12;
     const int btnW = 128, btnH = 32;
+    const int btnWrun = 176;          // [재학습 실행] 은 글자가 길어 더 넓다
     const int headH = 84, stateH = 28;
     const int progH = 14;
 
@@ -163,14 +164,14 @@ BOOL CDlg_Retrain::OnInitDialog()
     int bx = rc.right - M - btnW;
     m_btnClose.Create("닫기", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(bx, yBtnTop, bx + btnW, yBtnTop + btnH), this, IDCANCEL);
-    bx -= (btnW + 8);
-    m_btnApply.Create("진행", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(bx, yBtnTop, bx + btnW, yBtnTop + btnH), this, ID_BTN_APPLY);
+    bx -= (btnWrun + 8);
+    m_btnApply.Create("재학습 실행", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        CRect(bx, yBtnTop, bx + btnWrun, yBtnTop + btnH), this, ID_BTN_APPLY);
     bx -= (btnW + 8);
     m_btnDry.Create("예행연습", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(bx, yBtnTop, bx + btnW, yBtnTop + btnH), this, ID_BTN_DRY);
 
-    // [되돌리기] 는 왼쪽 끝에 따로 둔다. 예행연습 - 진행 흐름에 붙이면
+    // [되돌리기] 는 왼쪽 끝에 따로 둔다. 예행연습 - 재학습 실행 흐름에 붙이면
     // 그 다음 단계처럼 보인다. 하는 일은 반대다.
     m_btnBack.Create("되돌리기", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(M, yBtnTop, M + btnW, yBtnTop + btnH), this, ID_BTN_BACK);
@@ -179,12 +180,12 @@ BOOL CDlg_Retrain::OnInitDialog()
     SendMessageToDescendants(WM_SETFONT, (WPARAM)m_font.GetSafeHandle(), TRUE);
     m_edLog.SetFont(&m_fontMono);
 
-    // [진행] 이 왜 꺼져 있는지 화면에 적어 둔다. 눌리지 않는 버튼을 두고
+    // [재학습 실행] 이 왜 꺼져 있는지 화면에 적어 둔다. 눌리지 않는 버튼을 두고
     // 설명이 없으면 고장으로 오해한다.
     CStringA head;
     head.Format("[%s]  재학습은 운용 모델을 바꿉니다. 먼저 [예행연습] 으로 결과를 확인하십시오.\r\n"
-                "[진행] 은 예행연습이 \"판정: 승격\" 을 낸 경우에만 켜집니다. "
-                "보류로 끝나면 사유가 아래에 남으며 진행할 수 없습니다.\r\n"
+                "[재학습 실행] 은 예행연습이 \"판정: 승격\" 을 낸 경우에만 "
+                "켜집니다. 보류로 끝나면 사유가 아래에 남으며 실행할 수 없습니다.\r\n"
                 "[되돌리기] 는 직전에 운용하던 세대로 돌리고, 칸별 기준선도 "
                 "함께 치웁니다. 예행연습 후보는 대상이 아닙니다.",
                 gUserID.c_str());
@@ -195,7 +196,7 @@ BOOL CDlg_Retrain::OnInitDialog()
     ShowGenerations();
 
     SetButtons();
-    m_lblState.SetWindowTextA("[예행연습] 을 눌러 시작하십시오. 아직 [진행] 은 꺼져 있습니다.");
+    m_lblState.SetWindowTextA("[예행연습] 을 눌러 시작하십시오. 아직 [재학습 실행] 은 꺼져 있습니다.");
 
     CenterWindow(GetParent());
     return TRUE;
@@ -377,7 +378,7 @@ void CDlg_Retrain::ShowGenerations()
 void CDlg_Retrain::SetButtons()
 {
     m_btnDry.EnableWindow(!m_bRunning);
-    // 예행연습이 '승격' 판정을 낸 뒤에만 진행할 수 있다. 결과를 안 보고
+    // 예행연습이 '승격' 판정을 낸 뒤에만 실행할 수 있다. 결과를 안 보고
     // 누르는 것을 막는 것이 이 창의 존재 이유다.
     m_btnApply.EnableWindow(!m_bRunning && m_bDryDone && m_bDryPassed);
     m_btnBack.EnableWindow(!m_bRunning && !m_backGen.IsEmpty());
@@ -662,7 +663,7 @@ LRESULT CDlg_Retrain::OnLogLine(WPARAM, LPARAM lp)
     {
         AppendLog(*s);
 
-        // 예행연습 결과를 읽어 [진행] 을 열지 말지 정한다.
+        // 예행연습 결과를 읽어 [재학습 실행] 을 열지 말지 정한다.
         if (s->Find("판정: 승격") >= 0) m_bDryPassed = true;
         if (s->Find("판정: 보류") >= 0 || s->Find("[보류]") >= 0) m_bDryPassed = false;
 
@@ -710,11 +711,11 @@ LRESULT CDlg_Retrain::OnRunDone(WPARAM wp, LPARAM lp)
     if (wasDry)
     {
         if (code == 0 && m_bDryPassed)
-            st = "예행연습 완료 · 승격 판정입니다. [진행] 을 누르면 실제로 교체합니다.";
+            st = "예행연습 완료 · 승격 판정입니다. [재학습 실행] 을 누르면 실제로 교체합니다.";
         else if (code == 2)
             st = "예행연습 보류 · 조건이 아직 모자랍니다. 위 사유를 확인하십시오.";
         else
-            st = "예행연습 완료 · \"판정: 승격\" 이 아니어서 [진행] 을 켤 수 없습니다.";
+            st = "예행연습 완료 · \"판정: 승격\" 이 아니어서 [재학습 실행] 을 켤 수 없습니다.";
     }
     else if (wasBack)
     {
