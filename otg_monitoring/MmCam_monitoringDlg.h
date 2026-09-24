@@ -127,12 +127,15 @@ public:
 
 private:
 	CString m_shownUserId;                 // 현재 목록에 배치된 user ID (콤보박스 선택값)
-	std::vector<bool> m_rowSelected;       // 행이 선택된 user의 것인가
+	// 행이 선택된 user의 것인가. 화면에 보일지와는 무관하다 - 목록은 모든
+	// 현장을 보인다. 이 값은 뷰어 창을 어느 것만 띄울지, 상태줄이 어느
+	// 현장을 셀지에 쓴다.
+	std::vector<bool> m_rowSelected;
 	int  m_wndChromeH;                     // 캡션+테두리 높이(px)
 	bool m_bStarting;                      // Run_All_Processes 진행 중 (재진입 방지)
 	int  m_baseWndH;                       // 접었을 때 창 전체 높이(px)
 	int  m_expandedWndH;                   // 펼쳤을 때 창 전체 높이(px)
-	int  m_visibleRowCount;                // 현재 보이는 프로세스 행 수 (설정 영역 위치 계산용)
+	int  m_visibleRowCount;                // 보이는 행 수 (설정 영역 위치 계산용)
 
 	CProgressCtrl m_progress;              // '시작' 진행바
 	int  m_startStep;                      // 지금까지 띄운 스크립트 수

@@ -1490,7 +1490,11 @@ void CMmCammonitoringDlg::LayoutProcessRows()
 
     m_rowSelected.assign(PROC_ROW_COUNT, false);
 
-    int visible = 0;
+    // 목록은 모든 현장의 프로세스를 보인다. 6개가 다 도는데 3개만 보이면
+    // 어느 현장이 죽었는지 콤보박스를 바꿔 봐야 알 수 있었다.
+    //
+    // m_rowSelected 는 이제 화면에 보일지와 무관하다. 뷰어 창을 어느 것만
+    // 띄울지, 상태줄이 어느 현장을 셀지에만 쓴다.
     for (int u = 0; u < USER_COUNT; ++u)
     {
         const bool bMine = (sel.CompareNoCase(START_USER_IDS[u]) == 0);
@@ -1498,23 +1502,21 @@ void CMmCammonitoringDlg::LayoutProcessRows()
         for (int s = 0; s < SCRIPT_COUNT; ++s)
         {
             const int row = u * SCRIPT_COUNT + s;
-            if (!bMine) continue;
+            m_rowSelected[row] = bMine;
 
-            m_rowSelected[row] = true;
-
-            const int top = PROC_ROW_TOP_Y + visible * PROC_ROW_HEIGHT;
+            const int top = PROC_ROW_TOP_Y + row * PROC_ROW_HEIGHT;
             m_labels[row]->SetWindowPos(nullptr, PROC_ROW_LABEL_X, top, 0, 0,
                 SWP_NOSIZE | SWP_NOZORDER);
             m_stopButtons[row]->SetWindowPos(nullptr, PROC_ROW_BTN_X, top, 0, 0,
                 SWP_NOSIZE | SWP_NOZORDER);
-            ++visible;
         }
     }
 
-    // 보이는 행 수는 설정 영역 위치를 잡을 때도 필요하므로 남겨 둔다.
-    m_visibleRowCount = visible;
+    // 설정 영역 위치를 잡을 때 필요하다. 이제 늘 전체 행 수다.
+    m_visibleRowCount = PROC_ROW_COUNT;
 
-    const int expandedClientH = PROC_ROW_TOP_Y + visible * PROC_ROW_HEIGHT + 10;
+    const int expandedClientH =
+        PROC_ROW_TOP_Y + m_visibleRowCount * PROC_ROW_HEIGHT + 10;
     m_expandedWndH = expandedClientH + m_wndChromeH;
 
     ApplyExpandLayout();
@@ -1533,13 +1535,14 @@ void CMmCammonitoringDlg::LayoutProcessRows()
 // ---------------------------------------------------------
 void CMmCammonitoringDlg::ApplyExpandLayout()
 {
+    // 행은 현장을 가리지 않는다. "목록" 을 펼쳤으면 모두 보인다. 각 행
+    // 글자에 현장 이름이 들어 있어(kict1 | server_to_db | PID ...) 따로
+    // 묶음 제목을 두지 않아도 읽힌다.
+    const int rowCmd = m_bRowsVisible ? SW_SHOW : SW_HIDE;
     for (size_t i = 0; i < m_labels.size(); ++i)
     {
-        const bool bMine = (i < m_rowSelected.size()) && m_rowSelected[i];
-        const int  cmd   = (m_bRowsVisible && bMine) ? SW_SHOW : SW_HIDE;
-
-        if (m_labels[i])      m_labels[i]->ShowWindow(cmd);
-        if (m_stopButtons[i]) m_stopButtons[i]->ShowWindow(cmd);
+        if (m_labels[i])      m_labels[i]->ShowWindow(rowCmd);
+        if (m_stopButtons[i]) m_stopButtons[i]->ShowWindow(rowCmd);
     }
 
     m_lblRowsSeparator.ShowWindow(m_bRowsVisible ? SW_SHOW : SW_HIDE);
