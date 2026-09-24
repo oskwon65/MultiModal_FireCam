@@ -967,7 +967,8 @@ void CMmCammonitoringDlg::OnBnClickedCMD()
     if (m_bSettingVisible)
         m_pDlgSet->RefreshAll();
 
-    m_btnCmd.SetWindowText(m_bSettingVisible ? "닫기" : "설정");
+    // 문구는 "설정" 으로 둔다. 눌린 상태는 SetChecked 가 그림으로 보여
+    // 주므로, 글자까지 바꾸면 무슨 버튼이었는지 알아보기 어려워진다.
     m_btnCmd.SetChecked(m_bSettingVisible);
 
     ApplyExpandLayout();
@@ -979,7 +980,6 @@ void CMmCammonitoringDlg::OnBnClickedCMD()
 void CMmCammonitoringDlg::OnSettingPanelClosed()
 {
     m_bSettingVisible = false;
-    m_btnCmd.SetWindowText("설정");
     m_btnCmd.SetChecked(false);
     ApplyExpandLayout();
 }
