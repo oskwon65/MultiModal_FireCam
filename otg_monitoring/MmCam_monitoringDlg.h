@@ -94,7 +94,7 @@ public:
 protected:
 	HICON m_hIcon;
 
-	CFancyButton m_btnStartAll, m_btnKillAll, m_btnCmd, m_btnFolder, m_btnClose;
+	CFancyButton m_btnStartAll, m_btnKillAll, m_btnCmd, m_btnFolder;
 	CButton m_btnMinimize;
 	CFancyButton m_btnProcList;
 
@@ -163,7 +163,7 @@ private:
 	void OnBnClickedStartAll();
 	void Run_All_Processes(std::string sUserID);
 	void OnBnClickedKillAll();
-	void OnBnClickedClose();
+	void ShutdownAll();       // 되묻고 정리한 뒤 프로그램을 내린다
 	void OnBnClickedCMD();
 	void OnBnClickedFolder();
 	void RunCmdWithTitle(const char* title, const char* command);
@@ -193,7 +193,6 @@ private:
 	virtual void OnCancel();
 	afx_msg void OnClose();
 	afx_msg void OnDestroy();
-	virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam);   // 진단용 로깅
 
 	// 생성된 메시지 맵 함수
 	virtual BOOL OnInitDialog();

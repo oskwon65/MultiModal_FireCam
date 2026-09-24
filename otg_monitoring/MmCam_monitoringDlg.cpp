@@ -125,7 +125,6 @@ extern void            update_db_main_command(const char* new_code);
 #define IDC_BTN_CMD                1102
 #define IDC_BTN_FOLDER          1103
 #define IDC_BTN_PROC_LIST       1104
-#define IDC_BTN_CLOSE           2000
 #define IDC_BTN_MINIMIZE        2001
 #define IDC_PROGRESS_START      2002    // '시작' 진행바
 #define IDC_BTN_SIGN            3000
@@ -457,7 +456,6 @@ BEGIN_MESSAGE_MAP(CMmCammonitoringDlg, CDialogEx)
     ON_BN_CLICKED(IDC_BTN_CMD, &CMmCammonitoringDlg::OnBnClickedCMD)
     ON_BN_CLICKED(IDC_BTN_FOLDER, &CMmCammonitoringDlg::OnBnClickedFolder)
     ON_BN_CLICKED(IDC_BTN_PROC_LIST, &CMmCammonitoringDlg::OnBnClickedProcList)
-    ON_BN_CLICKED(IDC_BTN_CLOSE, &CMmCammonitoringDlg::OnBnClickedClose)
     ON_BN_CLICKED(IDC_BTN_MINIMIZE, &CMmCammonitoringDlg::OnBnClickedMinimize)
     ON_WM_LBUTTONDOWN()
     ON_WM_TIMER()
@@ -547,11 +545,10 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
     const long nBase_X = 160;
     const long ctrl_btn_hei = 40;
     const long ctrl_btn_top = 5;
-    const long ctrl_btn_wid = 60;                       // 버튼 공통 너비 ("X" 닫기 버튼 제외)
+    const long ctrl_btn_wid = 60;                       // 버튼 공통 너비
     const long ctrl_btn_gap = 2;                         // 버튼 사이 간격
     const long ctrl_btn_step = ctrl_btn_wid + ctrl_btn_gap;
     const long ctrl_btn_group_X = nBase_X + 120;         // 버튼 그룹 시작 X
-    const long ctrl_btn_close_wid = 40;                  // "X" 닫기 버튼 전용 너비
 
     // idx번째 버튼의 CRect 계산 (좌측 끝 = 그룹 시작 X + idx * (너비+간격))
     auto ButtonRect = [&](int idx) {
@@ -573,10 +570,8 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
     m_btnFolder.Create("폴더", fancyStyle, ButtonRect(3), this, IDC_BTN_FOLDER);
     m_btnProcList.Create("목록", fancyStyle, ButtonRect(4), this, IDC_BTN_PROC_LIST);
 
-    long closeLeft = ctrl_btn_group_X + 5 * ctrl_btn_step;
-    m_btnClose.Create("X", fancyStyle,
-        CRect(closeLeft, ctrl_btn_top, closeLeft + ctrl_btn_close_wid, ctrl_btn_top + ctrl_btn_hei),
-        this, IDC_BTN_CLOSE);
+    // 따로 둔 "X" 버튼은 없앴다. 제목표시줄에 이미 닫기가 있고, 되묻는
+    // 확인과 정리는 두 길이 같은 함수(ShutdownAll)를 쓴다.
 
     // 상단 버튼은 모두 연한 진회색 바탕에 흰 글자로 통일
     m_btnStartAll.SetAccent(FANCY_FACE_BUTTON, FANCY_TEXT_LIGHT);
@@ -584,11 +579,9 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
     m_btnCmd.SetAccent(FANCY_FACE_BUTTON,      FANCY_TEXT_LIGHT);
     m_btnFolder.SetAccent(FANCY_FACE_BUTTON,   FANCY_TEXT_LIGHT);
     m_btnProcList.SetAccent(FANCY_FACE_BUTTON, FANCY_TEXT_LIGHT);
-    m_btnClose.SetAccent(FANCY_FACE_BUTTON,    FANCY_TEXT_LIGHT);
 
     // 종료 버튼은 키보드로 눌리지 않게 한다. 포커스를 쥐면 스페이스/엔터로도
     // 눌려서, 오타 한 번에 감시가 통째로 중단될 수 있다.
-    m_btnClose.SetNoKeyActivate(true);
     int nBase_X_Msg = 50;
     int nBase_Y_Msg = 60;
 
@@ -1007,7 +1000,9 @@ void CMmCammonitoringDlg::OnBnClickedFolder()
 }
 
 // ---------------------------------------------------------
-void CMmCammonitoringDlg::OnBnClickedClose()
+// 프로그램을 내린다. 제목표시줄 닫기 · Alt+F4 · 시스템 메뉴가 모두 이리로
+// 온다. 예전에는 상단의 "X" 버튼도 여기로 왔으나 그 버튼은 없앴다.
+void CMmCammonitoringDlg::ShutdownAll()
 {
     // 감시 중이면 한 번 되묻는다. 종료하면 python 프로세스까지 모두 내려가므로
     // 실수로 닫히면 감시에 구멍이 생긴다. 기본 선택은 "아니오"라서
@@ -1029,7 +1024,7 @@ void CMmCammonitoringDlg::OnBnClickedClose()
         }
     }
 
-    LogEvent("종료: 'X' 버튼 (OnBnClickedClose)");
+    LogEvent("종료: 정리 후 프로세스 종료 (ShutdownAll)");
 
     KillTimer(TIMER_ID_BLINK);
     KillTimer(TIMER_ID_UPTIME);
@@ -1060,8 +1055,8 @@ void CMmCammonitoringDlg::OnCancel()
 // 제목표시줄 X / Alt+F4 / 작업표시줄 닫기 → 정리 후 종료
 void CMmCammonitoringDlg::OnClose()
 {
-    LogEvent("종료: WM_CLOSE (Alt+F4 또는 시스템 메뉴)");
-    OnBnClickedClose();
+    LogEvent("종료: WM_CLOSE (제목표시줄 닫기 · Alt+F4 · 시스템 메뉴)");
+    ShutdownAll();
 }
 
 void CMmCammonitoringDlg::OnDestroy()
@@ -1078,32 +1073,6 @@ void CMmCammonitoringDlg::OnDestroy()
     }
 
     CDialogEx::OnDestroy();
-}
-
-// ---------------------------------------------------------
-// 진단용 : 종료로 이어지는 WM_COMMAND가 어디서 왔는지 기록
-//   lParam == 0  이면 메뉴/단축키/코드에서 보낸 것
-//   lParam == 닫기버튼 HWND 이면 실제 버튼 알림
-//   그 밖의 HWND면 엉뚱한 컨트롤이 IDC_BTN_CLOSE로 통지한 것
-// ---------------------------------------------------------
-BOOL CMmCammonitoringDlg::OnCommand(WPARAM wParam, LPARAM lParam)
-{
-    const UINT id   = LOWORD(wParam);
-    const UINT code = HIWORD(wParam);
-
-    if (id == IDC_BTN_CLOSE)
-    {
-        char senderCls[64] = { 0 };
-        if (lParam) ::GetClassNameA((HWND)lParam, senderCls, sizeof(senderCls));
-
-        CString msg;
-        msg.Format("[진단] WM_COMMAND id=%u code=%u sender=%p(%s) 닫기버튼=%p 포커스=%p",
-            id, code, (void*)lParam, senderCls,
-            (void*)m_btnClose.GetSafeHwnd(), (void*)::GetFocus());
-        LogEvent(msg);
-    }
-
-    return CDialogEx::OnCommand(wParam, lParam);
 }
 
 // ---------------------------------------------------------
