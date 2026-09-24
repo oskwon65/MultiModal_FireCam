@@ -25,6 +25,18 @@ extern const char* GetAnacondaEnvPub();
 #define ID_LOG_EDIT    3003
 #define ID_PROGRESS    3004
 #define ID_BTN_BACK    3005
+#define ID_PNL_BUSY    3006
+#define ID_LBL_BUSY    3007
+#define ID_LBL_ELAPSED 3008
+
+// 가운데 판 크기
+#define BUSY_W  460
+#define BUSY_H  150
+
+// CProgressCtrl::SetMarquee 는 이 MFC 판에 없다. 메시지를 직접 보낸다.
+#ifndef PBM_SETMARQUEE
+#define PBM_SETMARQUEE  (WM_USER + 10)
+#endif
 
 // 운용 중인 세대만 검정, 나머지는 진회색. 목록에서 눈이 먼저 가야 하는 줄이
 // 하나뿐이기 때문이다.
@@ -130,7 +142,6 @@ BOOL CDlg_Retrain::OnInitDialog()
     const int btnW = 128, btnH = 32;
     const int btnWrun = 176;          // [재학습 실행] 은 글자가 길어 더 넓다
     const int headH = 84, stateH = 28;
-    const int progH = 14;
 
     m_lblHead.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
         CRect(M, M, rc.right - M, M + headH), this);
@@ -138,8 +149,7 @@ BOOL CDlg_Retrain::OnInitDialog()
     // 아래에서부터 쌓아 올린다. 서로 겹치지 않게 y 를 한 번씩만 계산한다.
     const int yBtnTop   = rc.bottom - M - btnH;
     const int yStateTop = yBtnTop - 6 - stateH;
-    const int yProgTop  = yStateTop - 6 - progH;
-    const int yLogBot   = yProgTop - 8;
+    const int yLogBot   = yStateTop - 8;
 
     m_edLog.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_HSCROLL
         | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
@@ -150,12 +160,29 @@ BOOL CDlg_Retrain::OnInitDialog()
     // 진회색 글자가 배경에 묻는다. 흰색으로 못 박는다.
     m_edLog.SetBackgroundColor(FALSE, RGB(255, 255, 255));
 
+    // 가운데 진행 판. 로그 위에 뜨므로 로그보다 뒤에 만든다 - 나중에 만든
+    // 자식이 z 순서에서 위로 온다.
+    //
     // 자식 컨트롤의 ID 는 서로 달라야 한다. 앞서 로그와 진행바에 모두 0 을
     // 줘서 진행바가 화면에 나오지 않았다.
-    m_progress.Create(WS_CHILD | PBS_SMOOTH,
-        CRect(M, yProgTop, rc.right - M, yProgTop + progH),
+    const int bx0 = (rc.Width() - BUSY_W) / 2;
+    const int by0 = (rc.Height() - BUSY_H) / 2;
+
+    m_pnlBusy.Create("", WS_CHILD | SS_WHITERECT | SS_SUNKEN,
+        CRect(bx0, by0, bx0 + BUSY_W, by0 + BUSY_H), this, ID_PNL_BUSY);
+
+    m_lblBusy.Create("", WS_CHILD | SS_CENTER,
+        CRect(bx0 + 16, by0 + 22, bx0 + BUSY_W - 16, by0 + 54),
+        this, ID_LBL_BUSY);
+
+    m_progress.Create(WS_CHILD | PBS_SMOOTH | PBS_MARQUEE,
+        CRect(bx0 + 32, by0 + 64, bx0 + BUSY_W - 32, by0 + 88),
         this, ID_PROGRESS);
     m_progress.SetRange32(0, 1000);
+
+    m_lblElapsed.Create("", WS_CHILD | SS_CENTER,
+        CRect(bx0 + 16, by0 + 98, bx0 + BUSY_W - 16, by0 + 130),
+        this, ID_LBL_ELAPSED);
 
     m_lblState.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
         CRect(M, yStateTop, rc.right - M, yStateTop + stateH),
@@ -389,40 +416,90 @@ void CDlg_Retrain::SetButtons()
 
 void CDlg_Retrain::ShowProgress(bool bShow)
 {
-    m_progress.ShowWindow(bShow ? SW_SHOW : SW_HIDE);
+    const int cmd = bShow ? SW_SHOW : SW_HIDE;
+    m_pnlBusy.ShowWindow(cmd);
+    m_lblBusy.ShowWindow(cmd);
+    m_progress.ShowWindow(cmd);
+    m_lblElapsed.ShowWindow(cmd);
+
     if (bShow)
     {
-        m_pos = m_target = 0;
-        m_progress.SetPos(0);
-        if (!m_timer) m_timer = SetTimer(1, 400, nullptr);
+        m_target = 0;
+        m_tickStart = GetTickCount64();
+        m_lastElapsed = "";
+
+        m_lblBusy.SetWindowTextA(m_busyWhat);
+        m_lblElapsed.SetWindowTextA("경과 0초");
+
+        // 판을 로그 위로 올린다. z 순서는 만든 차례를 따르지만, 실행을
+        // 거듭하면 어긋날 수 있어 띄울 때마다 못 박는다.
+        m_pnlBusy.SetWindowPos(&wndTop, 0, 0, 0, 0,
+                               SWP_NOMOVE | SWP_NOSIZE);
+        m_lblBusy.SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        m_progress.SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        m_lblElapsed.SetWindowPos(&wndTop, 0, 0, 0, 0,
+                                  SWP_NOMOVE | SWP_NOSIZE);
+
+        // 총량을 모르는 동안에는 흐르게 둔다. 단계를 읽으면 그때 눈금으로
+        // 바꾼다.
+        m_progress.ModifyStyle(0, PBS_MARQUEE);
+        m_progress.SendMessage(PBM_SETMARQUEE, TRUE, 30);
+
+        if (!m_timer) m_timer = SetTimer(1, 250, nullptr);
     }
     else if (m_timer)
     {
+        m_progress.SendMessage(PBM_SETMARQUEE, FALSE, 0);
         KillTimer(m_timer);
         m_timer = 0;
     }
 }
 
-// 단계가 바뀌면 상한을 올린다. 뒤로 가지는 않는다 - 되돌아가는 진행바는
+// 단계가 바뀌면 상한을 올린다. 뒤로 가지는 않는다 - 되돌아가는 진행은
 // 고장으로 보인다.
 void CDlg_Retrain::SetPhase(int permille)
 {
-    if (permille > m_target) m_target = permille;
+    if (permille <= m_target) return;
+    m_target = permille;
+
+    // 처음으로 단계를 읽었으면 흐름을 멈추고 눈금으로 바꾼다.
+    if (m_progress.GetStyle() & PBS_MARQUEE)
+    {
+        m_progress.SendMessage(PBM_SETMARQUEE, FALSE, 0);
+        m_progress.ModifyStyle(PBS_MARQUEE, 0);
+        m_progress.SetRange32(0, 1000);
+    }
+    m_progress.SetPos(m_target);
+}
+
+void CDlg_Retrain::UpdateElapsed()
+{
+    const ULONGLONG ms = GetTickCount64() - m_tickStart;
+    const unsigned sec = (unsigned)(ms / 1000);
+
+    CStringA t;
+    if (sec < 60) t.Format("경과 %u초", sec);
+    else          t.Format("경과 %u분 %u초", sec / 60, sec % 60);
+
+    // 단계를 읽었으면 얼마나 왔는지 함께 적는다.
+    if (m_target > 0)
+    {
+        CStringA pct;
+        pct.Format("  ·  %d%%", m_target / 10);
+        t += pct;
+    }
+
+    if (t != m_lastElapsed)
+    {
+        m_lastElapsed = t;
+        m_lblElapsed.SetWindowTextA(t);
+    }
 }
 
 void CDlg_Retrain::OnTimer(UINT_PTR nIDEvent)
 {
     if (nIDEvent == 1 && m_bRunning)
-    {
-        // 상한까지 남은 거리의 1/12 씩 좁힌다. 단계 안에서도 계속 움직여
-        // 멈춘 것처럼 보이지 않으면서, 상한을 넘지는 않는다.
-        if (m_pos < m_target)
-        {
-            m_pos += (m_target - m_pos) / 12 + 1;
-            if (m_pos > m_target) m_pos = m_target;
-            m_progress.SetPos(m_pos);
-        }
-    }
+        UpdateElapsed();
     CDialogEx::OnTimer(nIDEvent);
 }
 
@@ -598,7 +675,10 @@ void CDlg_Retrain::Run(RunKind kind)
     m_bRunning = true;
     if (dryRun) { m_bDryDone = false; m_bDryPassed = false; }
 
-    // 되돌리기는 파일 몇 개를 옮기고 끝난다. 진행바를 띄우면 차기도 전에
+    m_busyWhat = back   ? "되돌리는 중" :
+                 dryRun ? "예행연습 중" : "재학습 중";
+
+    // 되돌리기는 파일 몇 개를 옮기고 끝난다. 판을 띄우면 차기도 전에
     // 사라져 오히려 무엇이 일어났는지 알기 어렵다.
     if (!back) ShowProgress(true);
 
@@ -703,11 +783,11 @@ LRESULT CDlg_Retrain::OnRunDone(WPARAM wp, LPARAM lp)
     m_hThread = nullptr;
     if (wasDry) m_bDryDone = true;
 
-    // 끝났으면 끝까지 채운 채로 둔다. 감추면 무엇이 끝났는지 흔적이 없다.
-    // 타이머만 멈춘다.
-    if (m_timer) { KillTimer(m_timer); m_timer = 0; }
-    m_target = m_pos = 1000;
-    m_progress.SetPos(1000);
+    // 끝났으면 판을 내린다. 남겨 두면 로그를 가려 결과를 못 읽는다.
+    // 걸린 시간은 아래 상태줄에 적어 남긴다.
+    const ULONGLONG ms = m_tickStart ? (GetTickCount64() - m_tickStart) : 0;
+    const unsigned sec = (unsigned)(ms / 1000);
+    ShowProgress(false);
 
     CStringA st;
     if (wasDry)
@@ -736,6 +816,14 @@ LRESULT CDlg_Retrain::OnRunDone(WPARAM wp, LPARAM lp)
         m_bDryPassed = false;   // 한 번 적용한 뒤에는 다시 예행연습부터
         m_bDryDone = false;
     }
+    if (m_tickStart && sec > 0)
+    {
+        CStringA took;
+        if (sec < 60) took.Format("  (%u초)", sec);
+        else          took.Format("  (%u분 %u초)", sec / 60, sec % 60);
+        st += took;
+    }
+    m_tickStart = 0;
     m_lblState.SetWindowTextA(st);
 
     CStringA tail;

@@ -66,16 +66,26 @@ private:
     CStatic  m_lblHead, m_lblState;
     CFont    m_font, m_fontMono;
 
-    // 진행바.
+    // 진행 표식.
     //
     // 학습이 몇 분 걸리는데 화면이 가만히 있으면 멈춘 것으로 오해한다.
-    // 정확한 총량을 알 수는 없지만 출력에 단계가 드러나므로(재생버퍼 ->
-    // 학습 -> epoch N/400 -> 감도 시험 -> 판정) 그 지점마다 목표치를 올린다.
-    // 사이사이는 타이머가 조금씩 채워 멈춰 보이지 않게 한다.
+    //
+    // 처음에는 창 아래에 14px 띠를 두었는데 눈에 띄지 않았다. 그래서 창
+    // 가운데에 판을 띄우고 그 위에 경과 시간을 돌린다. 시간은 파이썬 출력을
+    // 읽지 않고도 늘 움직이므로, 표식이 살아 있는지가 출력 형식에 걸리지
+    // 않는다.
+    //
+    // 단계는 출력에서 읽어(재생버퍼 -> 학습 -> epoch N/400 -> 감도 시험)
+    // 백분율로 함께 적는다. 못 읽으면 시간만 나온다.
+    CStatic   m_pnlBusy;         // 흰 판 - 뒤의 로그를 가린다
+    CStatic   m_lblBusy;         // "예행연습 중"
+    CStatic   m_lblElapsed;      // "경과 2분 14초 · 34%"
     CProgressCtrl m_progress;
-    int       m_pos = 0;         // 지금 위치 (0~1000)
-    int       m_target = 0;      // 이번 단계의 상한
+    int       m_target = 0;      // 출력에서 읽은 진행 (0~1000)
     UINT_PTR  m_timer = 0;
+    ULONGLONG m_tickStart = 0;
+    CStringA  m_busyWhat;        // 판에 적을 말
+    CStringA  m_lastElapsed;     // 같은 글자를 다시 쓰지 않으려고
 
     HANDLE   m_hThread = nullptr;
     HANDLE   m_hProc = nullptr;
@@ -97,6 +107,7 @@ private:
     void Run(RunKind kind);
     void SetPhase(int permille);     // 단계가 바뀔 때 목표치를 올린다
     void ShowProgress(bool bShow);
+    void UpdateElapsed();
     void AppendLog(const char* text);
     void AppendLog(const char* text, COLORREF color);
     void SetButtons();
