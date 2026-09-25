@@ -853,9 +853,25 @@ def main():
 
     files = {n: os.path.join(tmp, n) for n in ARTIFACTS
              if os.path.exists(os.path.join(tmp, n))}
+    # 보고서 머리에 "무엇에서 출발해 무엇으로 배웠는지" 를 적는다.
+    #
+    # 점수만 보면 세대끼리 견줄 수 없다. 0.970 이 0.965 보다 나은지는 같은
+    # 자료로 배웠을 때 이야기고, 기간과 기여도가 다르면 다른 시험을 친
+    # 것이다. 나중에 되돌릴 세대를 고를 때 이 줄이 판단 근거가 된다.
+    #
+    # 형식을 바꿀 때는 Dlg_Retrain.cpp 의 ReadGenMeta() 도 같이 고쳐야 한다.
+    base_gen = ""
+    _cp = os.path.join(user_path, "current_generation.txt")
+    if os.path.exists(_cp):
+        base_gen = open(_cp, encoding="utf-8").read().strip()
+
+    _cbd = (config.get("CALC_BASE_DATE") or "").strip()
+
     header = (f"재학습 {datetime.now():%Y-%m-%d %H:%M:%S}  user={args.user_id}\n"
+              f"기준 세대 {base_gen or '없음'}  기여 {old_weight:.2f}  "
+              f"계산기준일 {_cbd or '없음'}\n"
               f"표본 {info['drawn']:,}건  기간 {info['period']}  "
-              f"칸 {info['cells']}개\n\n")
+              f"칸 {info['cells']}개  시간대 {info.get('hours', 0)}개\n\n")
     if args.dry_run:
         cur = ""
         cp = os.path.join(user_path, "current_generation.txt")

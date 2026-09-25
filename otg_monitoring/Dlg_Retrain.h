@@ -139,7 +139,25 @@ private:
     std::string UserPath() const;
     std::vector<std::string> ListGenerations() const;
     std::vector<std::string> ServedGenerations() const;   // 승격 기록 순서
+    // 세대 하나에 대해 보고서에서 읽어 오는 것들.
+    //
+    // 점수만으로는 세대끼리 견줄 수 없다. 0.970 이 0.965 보다 나은지는 같은
+    // 자료로 배웠을 때 이야기고, 기간과 기여도가 다르면 다른 시험을 친
+    // 것이다. 되돌릴 세대를 고를 때 이 값들이 판단 근거가 된다.
+    struct GenMeta
+    {
+        CStringA score;      // 학습 직후 정상 평균 점수
+        CStringA base;       // 무엇에서 출발했는가 (웜스타트의 기준 세대)
+        CStringA contrib;    // 기존 모델을 얼마나 물려받았는가
+        CStringA samples;    // 표본 수
+        CStringA period;     // 어느 기간에서 뽑았는가
+        CStringA cells;      // 칸 수
+        CStringA hours;      // 덮은 시간대 수
+        CStringA baseDate;   // 계산기준일
+    };
+    GenMeta  ReadGenMeta(const char* stamp) const;
     CStringA GenScore(const char* stamp) const;   // 그 세대의 정상 평균 점수
+    CStringA IncumbentAt(const char* stamp) const;   // 그때 운용 중이던 세대
     void ScanGenerations();           // m_curGen · m_backGen · m_backWhy 갱신
     void FillGenCombo();              // 고를 수 있는 세대를 목록에 채운다
     CStringA PickedGen() const;       // 목록에서 고른 세대 (없으면 빈 문자열)

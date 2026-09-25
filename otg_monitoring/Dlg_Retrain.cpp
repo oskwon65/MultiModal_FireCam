@@ -357,6 +357,106 @@ std::vector<std::string> CDlg_Retrain::ServedGenerations() const
     return out;
 }
 
+// 보고서 한 줄에서 "열쇠말 다음 값" 을 집는다. 값은 공백 둘에서 끊는다 -
+// 한 줄에 여러 항목이 공백 둘로 나뉘어 적혀 있다.
+static CStringA FieldAfter(const CStringA& line, const char* key)
+{
+    const int at = line.Find(key);
+    if (at < 0) return CStringA();
+
+    int i = at + (int)strlen(key);
+    while (line[i] == ' ') ++i;
+
+    int j = i;
+    while (line[j] != 0 && !(line[j] == ' ' && line[j + 1] == ' ')) ++j;
+
+    CStringA v = line.Mid(i, j - i);
+    v.Trim();
+    return v;
+}
+
+// 승격 기록에서 그 세대가 만들어질 무렵 운용 중이던 세대를 찾는다.
+//
+// 옛 보고서에는 기준 세대가 적혀 있지 않다. 기록의 시각과 견주면 알 수
+// 있다 - 그 세대 이름(YYYYMMDD_HHMMSS)보다 앞선 마지막 승격이 그것이다.
+CStringA CDlg_Retrain::IncumbentAt(const char* stamp) const
+{
+    CStdioFile f;
+    if (!f.Open((UserPath() + "generation_history.txt").c_str(),
+                CFile::modeRead | CFile::typeText))
+        return CStringA();
+
+    // 기록의 시각은 "YYYY-MM-DD HH:MM:SS" 다. 세대 이름 형식으로 바꿔 견준다.
+    CStringA best, line;
+    while (f.ReadString(line))
+    {
+        line.Trim();
+        if (line.IsEmpty() || line[0] == '#') continue;
+
+        int pos = 0;
+        CStringA when = line.Tokenize("\t", pos);
+        if (pos < 0) continue;
+        CStringA who = line.Tokenize("\t", pos);
+        when.Trim(); who.Trim();
+        if (when.GetLength() < 19 || !IsGenStamp(who)) continue;
+
+        CStringA key;
+        key.Format("%s%s%s_%s%s%s",
+                   (LPCSTR)when.Mid(0, 4), (LPCSTR)when.Mid(5, 2),
+                   (LPCSTR)when.Mid(8, 2), (LPCSTR)when.Mid(11, 2),
+                   (LPCSTR)when.Mid(14, 2), (LPCSTR)when.Mid(17, 2));
+
+        if (key.Compare(stamp) < 0) best = who;   // 그 세대보다 앞선 것
+        else break;                                // 기록은 시간 순이다
+    }
+    f.Close();
+    return best;
+}
+
+// 세대 하나의 보고서를 읽는다.
+CDlg_Retrain::GenMeta CDlg_Retrain::ReadGenMeta(const char* stamp) const
+{
+    GenMeta m;
+
+    const std::string path =
+        UserPath() + "model_generations\\" + stamp + "\\report.txt";
+
+    CStdioFile f;
+    if (f.Open(path.c_str(), CFile::modeRead | CFile::typeText))
+    {
+        CStringA line;
+        while (f.ReadString(line))
+        {
+            // report.txt 는 UTF-8 이고 이 빌드는 MBCS 다.
+            const CStringA t = Utf8ToAnsi(line);
+
+            const int at = t.Find("정상 평균 점수");
+            if (at >= 0 && m.score.IsEmpty())
+            {
+                int i = at;
+                while (t[i] != 0 && (t[i] < '0' || t[i] > '9')) ++i;
+                const double v = atof((LPCSTR)t + i);
+                if (v > 0.0) m.score.Format("%.3f", v);
+                continue;
+            }
+
+            if (m.base.IsEmpty())     m.base     = FieldAfter(t, "기준 세대");
+            if (m.contrib.IsEmpty())  m.contrib  = FieldAfter(t, "기여");
+            if (m.baseDate.IsEmpty()) m.baseDate = FieldAfter(t, "계산기준일");
+            if (m.samples.IsEmpty())  m.samples  = FieldAfter(t, "표본");
+            if (m.period.IsEmpty())   m.period   = FieldAfter(t, "기간");
+            if (m.cells.IsEmpty())    m.cells    = FieldAfter(t, "칸");
+            if (m.hours.IsEmpty())    m.hours    = FieldAfter(t, "시간대");
+        }
+        f.Close();
+    }
+
+    // 옛 보고서에는 기준 세대가 없다. 승격 기록에서 찾아 본다.
+    if (m.base.IsEmpty()) m.base = IncumbentAt(stamp);
+
+    return m;
+}
+
 // 그 세대가 학습 직후에 낸 정상 평균 점수. report.txt 에서 읽는다.
 //
 // 감도 회귀 시험표의 "정상 평균 점수" 줄에서 앞의 값(후보)을 쓴다. 뒤의
@@ -515,7 +615,8 @@ void CDlg_Retrain::ShowGenerations()
     m_edLog.SetWindowTextA("");
 
     CStringA head;
-    head.Format("[%s] 보관된 세대   (점수는 학습 직후 정상 평균)\r\n",
+    head.Format("[%s] 보관된 세대   점수는 학습 직후 정상 평균 · "
+                "기준은 출발한 세대 · 기여는 그 세대를 물려받은 정도\r\n",
                 gUserID.c_str());
     AppendLog(head);
 
@@ -526,7 +627,8 @@ void CDlg_Retrain::ShowGenerations()
         for (size_t k = 0; k < served.size(); ++k)
             if (served[k] == gens[i]) { wasServed = true; break; }
 
-        CStringA sc = GenScore(gens[i].c_str());
+        const GenMeta gm = ReadGenMeta(gens[i].c_str());
+        CStringA sc = gm.score;
         if (sc.IsEmpty()) sc = "  -  ";
 
         CStringA line;
@@ -534,6 +636,20 @@ void CDlg_Retrain::ShowGenerations()
                     live ? "운영중" :
                     (wasServed ? "운용된 적 있음" : "승격 안 됨"));
         AppendLog(line, live ? COLOR_LOG_NORMAL : COLOR_LOG_DIM);
+
+        // 둘째 줄에 무엇에서 출발해 무엇으로 배웠는지 적는다. 점수만으로는
+        // 세대끼리 견줄 수 없다 - 기간과 기여도가 다르면 다른 시험이다.
+        CStringA d;
+        d.Format("         기준 %s · 기여 %s · 표본 %s · 기간 %s · 칸 %s"
+                 " · 시간대 %s · 기준일 %s\r\n",
+                 gm.base.IsEmpty()     ? "-" : (LPCSTR)gm.base,
+                 gm.contrib.IsEmpty()  ? "-" : (LPCSTR)gm.contrib,
+                 gm.samples.IsEmpty()  ? "-" : (LPCSTR)gm.samples,
+                 gm.period.IsEmpty()   ? "-" : (LPCSTR)gm.period,
+                 gm.cells.IsEmpty()    ? "-" : (LPCSTR)gm.cells,
+                 gm.hours.IsEmpty()    ? "-" : (LPCSTR)gm.hours,
+                 gm.baseDate.IsEmpty() ? "-" : (LPCSTR)gm.baseDate);
+        AppendLog(d, COLOR_LOG_DIM);
     }
     if (gens.empty()) AppendLog("    (없음)\r\n", COLOR_LOG_DIM);
 
