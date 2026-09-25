@@ -1173,6 +1173,41 @@ static bool ArtifactsMismatch(const char* userId, CStringA& detail)
 }
 
 // ---------------------------------------------------------
+// 고른 현장의 산출물 짝이 어긋났으면 알린다
+//
+// [시작] 에서 한 번 걸러도, 그 뒤 콤보박스로 그 현장을 골라 보면 아무 말이
+// 없었다. 목록에는 "중지됨" 만 뜨고 왜인지는 안 나온다. 고른 그 자리에서
+// 말해 줘야 한다.
+//
+// 같은 현장에 대해 한 번만 띄운다. 타이머가 선택 변화를 다시 감지할 때마다
+// 창이 뜨면 아무것도 못 한다.
+// ---------------------------------------------------------
+void CMmCammonitoringDlg::WarnIfArtifactsMismatch(const CString& userId)
+{
+    if (userId.IsEmpty()) return;
+    if (userId == m_warnedUserId) return;      // 이미 알린 현장
+    m_warnedUserId = userId;
+
+    CStringA detail;
+    if (!ArtifactsMismatch((LPCSTR)userId, detail)) return;
+
+    CStringA msg;
+    msg.Format(
+        "%s 의 모델과 스케일러의 짝이 맞지 않습니다.\r\n\r\n"
+        "%s\r\n"
+        "스케일러는 입력을 어떤 크기로 바꿔 모델에 넣을지 정한 표입니다. "
+        "짝이 어긋나면 멀쩡한 모델도 엉뚱한 점수를 냅니다. 이 현장은 "
+        "[시작] 을 눌러도 뜨지 않습니다.\r\n\r\n"
+        "고치는 방법\r\n"
+        "    python retrain\\nightly_retrain.py %s --rollback <세대>\r\n\r\n"
+        "세대는 [재학습] 창에서 볼 수 있습니다.",
+        (LPCSTR)userId, (LPCSTR)detail, (LPCSTR)userId);
+
+    LogEvent(CString("[WARN] 현장 전환 - 산출물 짝 불일치 ") + userId);
+    MessageBox(msg, _T("산출물 짝이 맞지 않습니다"), MB_OK | MB_ICONWARNING);
+}
+
+// ---------------------------------------------------------
 // 점수 추이 창
 // ---------------------------------------------------------
 void CMmCammonitoringDlg::OnBnClickedAnalysis()
@@ -1784,6 +1819,7 @@ void CMmCammonitoringDlg::OnSelchangeComboId()
     LayoutProcessRows();
     gUserID = m_shownUserId.GetString();
     RefreshSettingPanel();
+    WarnIfArtifactsMismatch(m_shownUserId);
 }
 
 // ---------------------------------------------------------
@@ -2228,6 +2264,7 @@ void CMmCammonitoringDlg::OnTimer(UINT_PTR nIDEvent)
         // 콤보박스에 직접 입력한 경우에도 설정 영역이 따라오게 한다.
         // CBN_SELCHANGE 가 오지 않아 OnSelchangeComboId 를 거치지 않는다.
         RefreshSettingPanel();
+        WarnIfArtifactsMismatch(selectedID);
     }
 
     if (nIDEvent == TIMER_ID_SCAN_STATUS)

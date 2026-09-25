@@ -140,6 +140,7 @@ private:
 	int  m_expandedWndH;                   // 펼쳤을 때 창 전체 높이(px)
 	int  m_visibleRowCount;                // 보이는 행 수 (설정 영역 위치 계산용)
 	int  m_startPlanned = 0;               // 이번 기동에 실제로 띄울 스크립트 수
+	CString m_warnedUserId;                // 산출물 짝을 이미 알린 현장
 
 	CProgressCtrl m_progress;              // '시작' 진행바
 	int  m_startStep;                      // 지금까지 띄운 스크립트 수
@@ -171,6 +172,7 @@ private:
 	void Run_All_Processes(std::string sUserID);
 	void OnBnClickedKillAll();
 	void OnBnClickedAnalysis();
+	void WarnIfArtifactsMismatch(const CString& userId);
 	void ShutdownAll();       // 되묻고 정리한 뒤 프로그램을 내린다
 	void OnBnClickedCMD();
 	void OnBnClickedFolder();
