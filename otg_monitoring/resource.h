@@ -10,6 +10,7 @@
 #define IDD_DLG_CMD                     130
 #define IDD_DLG_CAMPOS                  131
 #define IDD_DLG_RETRAIN                 132
+#define IDD_DLG_ANALYSIS                133
 #define IDC_STATIC_0                    1004
 #define IDC_CAP_0                       1004
 #define IDC_COMBO_ID                    1005
@@ -23,7 +24,7 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        133
+#define _APS_NEXT_RESOURCE_VALUE        134
 #define _APS_NEXT_COMMAND_VALUE         32771
 #define _APS_NEXT_CONTROL_VALUE         1010
 #define _APS_NEXT_SYMED_VALUE           101

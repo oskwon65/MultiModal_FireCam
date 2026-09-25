@@ -94,7 +94,10 @@ public:
 protected:
 	HICON m_hIcon;
 
+	// m_btnKillAll 은 화면에 없다. 모든 현장을 한 번에 내리는 일은
+	// ShutdownAll() 과 자동 재시작이 코드에서 부른다.
 	CFancyButton m_btnStartAll, m_btnKillAll, m_btnCmd, m_btnFolder;
+	CFancyButton m_btnAnalysis;
 	CButton m_btnMinimize;
 	CFancyButton m_btnProcList;
 
@@ -166,6 +169,7 @@ private:
 	void OnBnClickedStartAll();
 	void Run_All_Processes(std::string sUserID);
 	void OnBnClickedKillAll();
+	void OnBnClickedAnalysis();
 	void ShutdownAll();       // 되묻고 정리한 뒤 프로그램을 내린다
 	void OnBnClickedCMD();
 	void OnBnClickedFolder();

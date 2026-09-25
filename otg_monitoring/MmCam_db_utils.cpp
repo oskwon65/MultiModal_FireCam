@@ -259,6 +259,51 @@ MYSQL* connect_db()
 }
 
 // =====================================
+// 히스토리 DB 연결
+//
+// connect_db() 는 센서 DB(DB_NAME_SENSOR)에 붙는다. 점수 추이는 날짜별
+// results_history_YYYYMMDD 테이블에 있어 다른 DB(DB_NAME_HISTORY)를 봐야
+// 한다.
+//
+// 설정 캐시(g_db_*)를 건드리지 않으려고 값을 그때그때 읽는다. 분석 창을
+// 열 때만 부르므로 몇 번 더 읽는 비용은 문제가 되지 않는다.
+//
+// 성공하면 dbNameOut 에 실제로 붙은 DB 이름을 담아 준다. SQL 에서 테이블을
+// 지목할 때 필요하다.
+// =====================================
+MYSQL* connect_history_db(std::string* dbNameOut)
+{
+    const std::string host = read_ini_string("DB_RUNTIME", "DB_HOST", "");
+    const std::string user = read_ini_string("DB_RUNTIME", "DB_USER", "");
+    const std::string pass = read_secret_string("DB_RUNTIME", "DB_PASSWORD", "");
+
+    std::string base = read_ini_string("DB_RUNTIME", "DB_NAME_HISTORY", "");
+    if (base.empty()) return nullptr;
+
+    // 파이썬 쪽과 같은 규칙 - 이미 현장 이름이 붙어 있으면 그대로 쓴다.
+    const std::string prefix = gUserID + "_";
+    const std::string dbName =
+        (base.find(prefix) == 0) ? base : prefix + base;
+
+    const std::string ini_path = make_ini_path();
+    const unsigned int port = static_cast<unsigned int>(
+        GetPrivateProfileIntA("DB_RUNTIME", "DB_PORT", 3306, ini_path.c_str()));
+
+    MYSQL* conn = mysql_init(nullptr);
+    if (!conn) return nullptr;
+
+    if (!mysql_real_connect(conn, host.c_str(), user.c_str(), pass.c_str(),
+                            dbName.c_str(), port, nullptr, 0))
+    {
+        mysql_close(conn);
+        return nullptr;
+    }
+
+    if (dbNameOut) *dbNameOut = dbName;
+    return conn;
+}
+
+// =====================================
 // current_value(id=1) 읽기
 //
 // 컬럼 순서:

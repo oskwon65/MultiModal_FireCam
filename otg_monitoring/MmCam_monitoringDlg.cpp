@@ -18,6 +18,7 @@
 #include <Wbemidl.h>
 #include <comdef.h>
 #include "Dlg_Set_MmCam_Env.h"
+#include "Dlg_Analysis.h"
 
 #pragma comment(lib, "wbemuuid.lib")
 
@@ -122,6 +123,7 @@ extern void            update_db_main_command(const char* new_code);
 #define IDC_BTN_STOP_LAST       5015
 #define IDC_BTN_START_ALL     1100
 #define IDC_BTN_KILL_ALL            1101
+#define IDC_BTN_ANALYSIS            1106
 #define IDC_BTN_CMD                1102
 #define IDC_BTN_FOLDER          1103
 #define IDC_BTN_PROC_LIST       1104
@@ -452,7 +454,7 @@ BEGIN_MESSAGE_MAP(CMmCammonitoringDlg, CDialogEx)
     ON_WM_QUERYDRAGICON()
     ON_COMMAND_RANGE(IDC_BTN_STOP_BASE, IDC_BTN_STOP_LAST, &CMmCammonitoringDlg::OnStopButton)
     ON_BN_CLICKED(IDC_BTN_START_ALL, &CMmCammonitoringDlg::OnBnClickedStartAll)
-    ON_BN_CLICKED(IDC_BTN_KILL_ALL, &CMmCammonitoringDlg::OnBnClickedKillAll)
+    ON_BN_CLICKED(IDC_BTN_ANALYSIS, &CMmCammonitoringDlg::OnBnClickedAnalysis)
     ON_BN_CLICKED(IDC_BTN_CMD, &CMmCammonitoringDlg::OnBnClickedCMD)
     ON_BN_CLICKED(IDC_BTN_FOLDER, &CMmCammonitoringDlg::OnBnClickedFolder)
     ON_BN_CLICKED(IDC_BTN_PROC_LIST, &CMmCammonitoringDlg::OnBnClickedProcList)
@@ -573,7 +575,10 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
     const DWORD fancyStyle = WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_OWNERDRAW;
 
     m_btnStartAll.Create("시작", fancyStyle, ButtonRect(0), this, IDC_BTN_START_ALL);
-    m_btnKillAll.Create("정지", fancyStyle, ButtonRect(1), this, IDC_BTN_KILL_ALL);
+    // 예전에는 여기가 [정지] 였다. 모든 현장을 한 번에 내리는 단추인데,
+    // 실수로 누르면 감시에 구멍이 난다. 하나씩 내리는 [정지] 는 "목록" 의
+    // 각 행에 있고, 전부 내리는 것은 프로그램을 닫으면 된다.
+    m_btnAnalysis.Create("분석", fancyStyle, ButtonRect(1), this, IDC_BTN_ANALYSIS);
     m_btnCmd.Create("설정", fancyStyle, ButtonRect(2), this, IDC_BTN_CMD);
     m_btnFolder.Create("폴더", fancyStyle, ButtonRect(3), this, IDC_BTN_FOLDER);
     m_btnProcList.Create("목록", fancyStyle, ButtonRect(4), this, IDC_BTN_PROC_LIST);
@@ -583,7 +588,7 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
 
     // 상단 버튼은 모두 연한 진회색 바탕에 흰 글자로 통일
     m_btnStartAll.SetAccent(FANCY_FACE_BUTTON, FANCY_TEXT_LIGHT);
-    m_btnKillAll.SetAccent(FANCY_FACE_BUTTON,  FANCY_TEXT_LIGHT);
+    m_btnAnalysis.SetAccent(FANCY_FACE_BUTTON, FANCY_TEXT_LIGHT);
     m_btnCmd.SetAccent(FANCY_FACE_BUTTON,      FANCY_TEXT_LIGHT);
     m_btnFolder.SetAccent(FANCY_FACE_BUTTON,   FANCY_TEXT_LIGHT);
     m_btnProcList.SetAccent(FANCY_FACE_BUTTON, FANCY_TEXT_LIGHT);
@@ -1081,6 +1086,21 @@ void CMmCammonitoringDlg::OnDestroy()
     }
 
     CDialogEx::OnDestroy();
+}
+
+// ---------------------------------------------------------
+// 점수 추이 창
+// ---------------------------------------------------------
+void CMmCammonitoringDlg::OnBnClickedAnalysis()
+{
+    if (gUserID.empty())
+    {
+        AfxMessageBox(_T("현장(user)이 선택되지 않았습니다."));
+        return;
+    }
+
+    CDlg_Analysis dlg(this);
+    dlg.DoModal();
 }
 
 // ---------------------------------------------------------
