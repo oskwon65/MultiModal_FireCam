@@ -88,14 +88,12 @@ private:
     // 백분율로 함께 적는다. 못 읽으면 시간만 나온다.
     CStatic   m_pnlBusy;         // 흰 판 - 뒤의 로그를 가린다
     CStatic   m_lblBusy;         // 눈금 위 - "예행연습 중 · 34% · epoch 143/400"
-    CStatic   m_lblElapsed;      // 눈금 아래 - "예행연습을 시작합니다..."
-
-    // 판 맨 아래. 무엇에서 출발해 무엇으로 배우는지.
+    // 눈금 아래 칸. 안내와 기준·구성을 함께 적는다.
     //
     // 로그에도 적히지만 실행 중에는 판이 그 위를 덮고 있어 보이지 않는다.
     // 기다리는 동안 볼 수 있어야 잘못된 기준에서 출발한 것을 그 자리에서
-    // 멈출 수 있다.
-    CStatic   m_lblRunInfo;
+    // 멈출 수 있다. 컨트롤을 따로 두지 않고 안내와 같은 칸에 이어 붙인다.
+    CStatic   m_lblElapsed;
     CFont     m_fontInfo;        // 판 안의 작은 글씨
     CStringA  m_infoBase;        // [기준] 줄
     CStringA  m_infoComp;        // [구성] 줄
@@ -179,6 +177,7 @@ private:
     void ShowProgress(bool bShow);
     void SetClientHeight(int cliH);
     void UpdateElapsed();
+    void UpdateNotice();         // 안내 + 기준 + 구성을 한 칸에 다시 쓴다
     void AnimateBusy();          // 눈금과 회전자를 한 칸 옮긴다
     void AppendLog(const char* text);
     void AppendLog(const char* text, COLORREF color);
