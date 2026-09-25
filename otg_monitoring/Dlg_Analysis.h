@@ -22,6 +22,16 @@
 // 프레임이 튀어도 그 시간대에 무슨 일이 있었다는 것이 선에 남는다.
 //
 // 산출되지 않은 프레임(mscore < 0)은 뺀다.
+//
+// [왜 점수와 온도를 한 칸에 겹치지 않는가]
+//
+// 점수는 0~1, 온도는 20~150도다. 한 칸에 그리면서 오른쪽에 눈금을 하나 더
+// 두면(축이 둘인 그림), 어느 선이 어느 눈금인지 읽을 때마다 되짚어야 하고
+// 두 선의 기울기를 견줄 수 없다. 축 하나를 어디에 놓느냐로 "같이 움직인다"
+// 는 인상을 만들어 낼 수도 있다.
+//
+// 위아래로 나누고 x 축만 함께 쓴다. 같은 시각이 같은 가로 위치에 오므로
+// 눈으로 바로 이어진다.
 
 class CDlg_Analysis : public CDialogEx
 {
@@ -53,6 +63,9 @@ private:
         std::string hour;    // YYYYMMDDHH
         double      avg;     // 그 시간의 평균 점수
         long        n;       // 센 프레임 수
+        double      tmax;    // 마스크 칸의 최고 온도
+        double      tavg;    // 마스크 칸의 평균 온도
+        bool        hasT;    // 온도를 읽었는가
     };
 
     CStatic   m_lblHead;
@@ -64,10 +77,13 @@ private:
     CBrush    m_brWhite;
 
     std::vector<Point> m_pts;
-    int  m_days = 7;
-    bool m_loading = false;
+    int    m_days = 7;
+    bool   m_loading = false;
+    double m_tempWarn = 0.0;    // 0단계 주의 임계값 (env.ini)
+    double m_tempTop = 100.0;   // 온도 칸의 위 끝
 
     void Load();                      // DB 에서 다시 읽는다
+    std::string MaskCellList() const; // 마스크 칸 번호를 SQL 용으로
     void SetState(const char* text);
     int  DaysFromCombo() const;
 };
