@@ -339,6 +339,60 @@ def load_dry_run(user_path, user_id):
     return d, meta
 
 
+def gen_score(user_path, stamp):
+    """세대의 학습 직후 정상 평균 점수. 보고서에서 읽는다. 없으면 None."""
+    if not stamp:
+        return None
+    p = os.path.join(gen_root(user_path), stamp, "report.txt")
+    if not os.path.exists(p):
+        return None
+    try:
+        for line in open(p, encoding="utf-8"):
+            if "정상 평균 점수" in line:
+                nums = re.findall(r"[0-9]+\.[0-9]+", line)
+                if nums:
+                    return float(nums[0])
+    except OSError:
+        pass
+    return None
+
+
+def print_base_info(user_path, config, args):
+    """
+    무엇에서 출발하는지 먼저 적는다.
+
+    보고서 끝에만 적어 두면, 몇 분을 기다린 뒤에야 "무엇과 견준 결과인지" 를
+    알게 된다. 시작할 때 보이면 잘못된 기준에서 출발하는 것을 바로 멈출 수
+    있다 - 되돌린 직후처럼 운용 세대가 예상과 다를 때가 있다.
+    """
+    cur = ""
+    cp = os.path.join(user_path, "current_generation.txt")
+    if os.path.exists(cp):
+        cur = open(cp, encoding="utf-8").read().strip()
+
+    served = served_generations(user_path)
+    when = ""
+    for w, stamp, _how in reversed(read_history(user_path)):
+        if stamp == cur:
+            when = w
+            break
+
+    sc = gen_score(user_path, cur)
+    hi, lo = bands(config)
+    cbd = (config.get("CALC_BASE_DATE") or "").strip()
+
+    print(f"[기준] 운용 중인 세대 {cur or '없음'}"
+          + (f"  ·  올린 때 {when}" if when else ""))
+    print(f"       학습 직후 점수 {sc:.3f}" if sc is not None
+          else "       학습 직후 점수 - (보고서 없음)")
+    print(f"       보관된 세대 {len(list_generations(user_path))}개 중 "
+          f"운용된 적 있는 것 {len(set(served))}개")
+    print(f"       계산기준일 {cbd or '없음'}  ·  "
+          f"기여 문턱 {hi:.2f} / {lo:.2f}")
+    if args.dry_run:
+        print("       예행연습입니다. 운용 모델은 바뀌지 않습니다.")
+
+
 def reset_baseline(user_path, why=""):
     """
     칸별 기준선을 치운다. 되돌리기와 함께 쓴다.
@@ -676,6 +730,8 @@ def main():
     print("=" * 62)
     print(f"야간 재학습  {args.user_id}   {datetime.now():%Y-%m-%d %H:%M:%S}")
     print("=" * 62)
+    print_base_info(user_path, config, args)
+    print()
 
     # 예행연습에서 본 그 모델을 그대로 올린다.
     #
@@ -780,6 +836,20 @@ def main():
 
     cut = int(len(X) * (1 - HOLDOUT_RATIO))
     X_train, X_hold = X[:cut], X[cut:]
+    # 무엇으로 배우는지 한 자리에 모아 적는다. 위에 흩어진 줄만으로는
+    # "이번 학습이 어떤 자료로 이뤄지는가" 를 한눈에 볼 수 없다.
+    print(f"[구성] 표본 {info['drawn']:,}건 / 목표 {TARGET_SAMPLES:,}건  ·  "
+          f"시간대 {info.get('hours', 0)}개 / 최소 {min_hours}개")
+    print(f"       기간 {info['period']}  ·  칸 {info['cells']}개  ·  "
+          f"기여 {old_weight:.2f}")
+    # split 은 재생버퍼가 앞쪽 2,000건의 중앙값으로 잡은 값이다. 마스크 칸의
+    # 최고 온도가 이 위면 "돌고 있다" 로 보고, 시간대x가동상태 48칸에 고르게
+    # 담는다. 옛/새 시기 비율이 아니다 - 그것은 위의 [재생버퍼] 줄에 있다.
+    if info.get("split"):
+        print(f"       가동 판정 온도 {info['split']:.1f}도 "
+              f"(마스크 칸 최고가 이 위면 가동 중으로 본다)")
+    print()
+
     print(f"[학습] {len(X_train):,}건 학습 / {len(X_hold):,}건 검증 "
           f"({info.get('hours', 0)}/{min_hours} 시간대)")
 
