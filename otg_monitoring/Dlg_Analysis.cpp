@@ -34,6 +34,14 @@ extern const char* GetMmCamStartPath();
 #define LINE_COLOR  RGB(0x2A, 0x9D, 0x8F)
 #define TMAX_COLOR  RGB(0xEB, 0x68, 0x34)   // 최고 온도
 #define TAVG_COLOR  RGB(0x2A, 0x78, 0xD6)   // 평균 온도
+#define CROSS_COLOR RGB(0x8F, 0x85, 0x7A)   // 십자선
+
+// 그리는 쪽과 집는 쪽이 같은 자리를 가리켜야 한다. 한 곳에서 정한다.
+#define CH_L   52
+#define CH_R   14
+#define CH_T   16
+#define CH_B   32
+#define CH_GAP 34
 #define BAND_COLOR  RGB(0xE4, 0x57, 0x2E)
 #define TEXT_COLOR  RGB(0x1A, 0x24, 0x35)
 #define MUTED_COLOR RGB(0x66, 0x70, 0x85)
@@ -59,6 +67,8 @@ BEGIN_MESSAGE_MAP(CDlg_Analysis, CDialogEx)
     ON_BN_CLICKED(ID_BTN_RELOAD, &CDlg_Analysis::OnBnClickedReload)
     ON_WM_DRAWITEM()
     ON_WM_CTLCOLOR()
+    ON_WM_MOUSEMOVE()
+    ON_WM_MOUSELEAVE()
 END_MESSAGE_MAP()
 
 //---------------------------------------------------------
@@ -206,6 +216,7 @@ void CDlg_Analysis::Load()
 
     m_days = DaysFromCombo();
     m_pts.clear();
+    m_hover = -1;
 
     SetState("읽는 중...");
 
@@ -350,6 +361,67 @@ void CDlg_Analysis::Load()
 
 //---------------------------------------------------------
 
+// 그림 위에서 몇 번째 시간 묶음을 가리키고 있는가. 밖이면 -1.
+//
+// 정적 컨트롤은 WM_NCHITTEST 에 HTTRANSPARENT 를 돌려주므로 마우스 메시지가
+// 부모로 넘어온다. 그래서 컨트롤을 따로 서브클래싱하지 않아도 된다.
+void CDlg_Analysis::OnMouseMove(UINT nFlags, CPoint point)
+{
+    int want = -1;
+
+    if (m_chart.GetSafeHwnd() && !m_pts.empty())
+    {
+        CRect rc;
+        m_chart.GetWindowRect(&rc);
+        ScreenToClient(&rc);
+
+        if (rc.PtInRect(point))
+        {
+            const int px = rc.left + CH_L;
+            const int pw = rc.Width() - CH_L - CH_R;
+            if (pw > 0 && point.x >= px - 4 && point.x <= px + pw + 4)
+            {
+                const size_t n = m_pts.size();
+                const double t = (n <= 1) ? 0.0
+                    : static_cast<double>(point.x - px) / pw * (n - 1);
+                int i = static_cast<int>(t + 0.5);
+                if (i < 0) i = 0;
+                if (i > static_cast<int>(n) - 1) i = static_cast<int>(n) - 1;
+                want = i;
+            }
+        }
+    }
+
+    // 창 밖으로 나가면 지워야 한다. 안 걸어 두면 선이 남는다.
+    if (!m_tracking)
+    {
+        TRACKMOUSEEVENT tme = {};
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = TME_LEAVE;
+        tme.hwndTrack = GetSafeHwnd();
+        if (TrackMouseEvent(&tme)) m_tracking = true;
+    }
+
+    if (want != m_hover)
+    {
+        m_hover = want;
+        m_chart.Invalidate(FALSE);
+    }
+
+    CDialogEx::OnMouseMove(nFlags, point);
+}
+
+void CDlg_Analysis::OnMouseLeave()
+{
+    m_tracking = false;
+    if (m_hover != -1)
+    {
+        m_hover = -1;
+        m_chart.Invalidate(FALSE);
+    }
+    CDialogEx::OnMouseLeave();
+}
+
 HBRUSH CDlg_Analysis::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
 {
     if (nCtlColor == CTLCOLOR_STATIC && pWnd)
@@ -401,8 +473,8 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
     CFont* pOldFont = mem.SelectObject(&m_fontSmall);
 
     // 두 칸이 x 축을 함께 쓴다. 날짜 눈금은 아래 칸에만 적는다.
-    const int L = 52, R = 14, T = 16, B = 32;
-    const int GAP = 34;                       // 두 칸 사이 (칸 이름 자리)
+    const int L = CH_L, R = CH_R, T = CH_T, B = CH_B;
+    const int GAP = CH_GAP;                   // 두 칸 사이 (칸 이름 자리)
     const int px = L;
     const int pw = w - L - R;
     const int ph = (h - T - B - GAP) / 2;     // 칸 하나의 높이
@@ -624,6 +696,76 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
             mem.DrawTextA(e.t, &rcT, DT_LEFT | DT_SINGLELINE);
             lx += 66;
         }
+    }
+
+    // ---- 십자선 ----
+    //
+    // 두 칸을 함께 지난다. 한 칸에서 가리킨 시각이 다른 칸에서도 같은
+    // 자리라는 것을 선 하나가 말해 준다.
+    if (m_hover >= 0 && m_hover < static_cast<int>(n))
+    {
+        const Point& p = m_pts[m_hover];
+        const int x = XAt(m_hover);
+
+        CPen pen(PS_SOLID, 1, CROSS_COLOR);
+        CPen* pOld = mem.SelectObject(&pen);
+        mem.MoveTo(x, topY);          mem.LineTo(x, topY + ph);
+        mem.MoveTo(x, botY);          mem.LineTo(x, botY + ph);
+        mem.SelectObject(pOld);
+
+        // 짚은 자리를 점으로 키워 어느 값인지 못 박는다.
+        {
+            CPen penNone(PS_NULL, 0, (COLORREF)0);
+            CPen* pp = mem.SelectObject(&penNone);
+            struct { COLORREF c; int y; bool on; } marks[] = {
+                { LINE_COLOR, YScore(p.avg), true },
+                { TMAX_COLOR, YTemp(p.tmax), p.hasT },
+                { TAVG_COLOR, YTemp(p.tavg), p.hasT } };
+            for (const auto& m2 : marks)
+            {
+                if (!m2.on) continue;
+                CBrush br(m2.c);
+                CBrush* pb = mem.SelectObject(&br);
+                mem.Ellipse(x - 5, m2.y - 5, x + 5, m2.y + 5);
+                mem.SelectObject(pb);
+            }
+            mem.SelectObject(pp);
+        }
+
+        // 값 상자
+        CStringA l1, l2, l3;
+        l1.Format("%c%c-%c%c %c%c시",
+                  p.hour[4], p.hour[5], p.hour[6], p.hour[7],
+                  p.hour[8], p.hour[9]);
+        l2.Format("점수 %.3f   (%ld건)", p.avg, p.n);
+        if (p.hasT) l3.Format("최고 %.1f도   평균 %.1f도", p.tmax, p.tavg);
+        else        l3 = "온도 없음";
+
+        const int bw = 168, bh = 58;
+        int bx = x + 12;
+        if (bx + bw > px + pw) bx = x - 12 - bw;    // 오른쪽 끝이면 왼쪽으로
+        if (bx < px) bx = px;
+        const int by = topY + 6;
+
+        mem.FillSolidRect(bx, by, bw, bh, PANEL_BG);
+        {
+            CPen penB(PS_SOLID, 1, AXIS_COLOR);
+            CBrush* pNoBr = (CBrush*)mem.SelectStockObject(NULL_BRUSH);
+            CPen* pOldB = mem.SelectObject(&penB);
+            mem.Rectangle(bx, by, bx + bw, by + bh);
+            mem.SelectObject(pOldB);
+            mem.SelectObject(pNoBr);
+        }
+
+        mem.SetTextColor(TEXT_COLOR);
+        CRect r1(bx + 8, by + 5, bx + bw - 8, by + 21);
+        mem.DrawTextA(l1, &r1, DT_LEFT | DT_SINGLELINE);
+        mem.SetTextColor(LINE_COLOR);
+        CRect r2(bx + 8, by + 21, bx + bw - 8, by + 37);
+        mem.DrawTextA(l2, &r2, DT_LEFT | DT_SINGLELINE);
+        mem.SetTextColor(p.hasT ? TMAX_COLOR : MUTED_COLOR);
+        CRect r3(bx + 8, by + 37, bx + bw - 8, by + 53);
+        mem.DrawTextA(l3, &r3, DT_LEFT | DT_SINGLELINE);
     }
 
     pDC->BitBlt(lpDIS->rcItem.left, lpDIS->rcItem.top, w, h, &mem, 0, 0,

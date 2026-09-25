@@ -55,6 +55,8 @@ public:
     afx_msg void OnBnClickedReload();
     afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS);
     afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
+    afx_msg void OnMouseMove(UINT nFlags, CPoint point);
+    afx_msg void OnMouseLeave();
 
 private:
     // 한 시간 묶음 하나
@@ -81,6 +83,14 @@ private:
     bool   m_loading = false;
     double m_tempWarn = 0.0;    // 0단계 주의 임계값 (env.ini)
     double m_tempTop = 100.0;   // 온도 칸의 위 끝
+
+    // 십자선.
+    //
+    // 두 칸이 x 축을 함께 쓰므로, 한 칸에서 가리킨 시각이 다른 칸에서도
+    // 같은 자리다. 선 하나를 두 칸에 걸쳐 그으면 "이 시각의 점수와 온도" 를
+    // 눈으로 잇지 않아도 된다.
+    int  m_hover = -1;          // 가리키는 시간 묶음 (-1 이면 없음)
+    bool m_tracking = false;    // WM_MOUSELEAVE 를 받으려고 걸어 둔 상태
 
     void Load();                      // DB 에서 다시 읽는다
     std::string MaskCellList() const; // 마스크 칸 번호를 SQL 용으로
