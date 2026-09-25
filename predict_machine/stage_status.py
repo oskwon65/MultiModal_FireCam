@@ -275,3 +275,23 @@ def write(path, baseline, model_ready, user_path,
     except Exception as e:
         print(f"[WARN] 단계 현황을 쓰지 못했습니다: {e}")
         return False
+
+
+def write_error(path, message):
+    """
+    시작하지 못한 이유를 남긴다.
+
+    감시 화면은 이 파일을 읽어 상태를 보인다. 프로세스가 그냥 죽으면
+    "안 떠 있다" 만 보이고 왜인지 알 수 없다. 이유를 적어 두면 화면이
+    그대로 보여 줄 수 있다.
+    """
+    import datetime
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("; 이 파일은 predict_machine 이 자동으로 만듭니다. "
+                    "직접 고치지 마십시오.\n")
+            f.write("[STATUS]\n")
+            f.write(f"UPDATED_AT = {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n")
+            f.write(f"FATAL = {message}\n")
+    except OSError as e:
+        print(f"[stage_status] 오류를 적지 못했습니다: {e}")

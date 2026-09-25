@@ -139,6 +139,7 @@ private:
 	int  m_baseWndH;                       // 접었을 때 창 전체 높이(px)
 	int  m_expandedWndH;                   // 펼쳤을 때 창 전체 높이(px)
 	int  m_visibleRowCount;                // 보이는 행 수 (설정 영역 위치 계산용)
+	int  m_startPlanned = 0;               // 이번 기동에 실제로 띄울 스크립트 수
 
 	CProgressCtrl m_progress;              // '시작' 진행바
 	int  m_startStep;                      // 지금까지 띄운 스크립트 수

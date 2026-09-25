@@ -76,6 +76,7 @@ from predict_machine import AutoEncoder, load_scaler
 import replay_buffer
 import model_contribution
 import sensitivity_gate
+import artifact_guard
 
 # --- 학습 설정 ----------------------------------------------------------
 TARGET_SAMPLES = 60000
@@ -359,6 +360,25 @@ def activate(user_path, stamp, how="승격"):
               "w", encoding="utf-8") as f:
         f.write(stamp + "\n")
 
+    # 올린 것이 정말 올라갔는지 그 자리에서 확인한다.
+    #
+    # 2026-09-25 cj_busan_1 은 스케일러만 세대 것이고 모델은 엿새 전
+    # 파일이었다. 어떻게 그렇게 됐는지는 끝내 알 수 없었다 - 복사가 조용히
+    # 실패했거나 누가 덮어썼거나. 원인을 모르면 막을 수 없으니, 적어도
+    # 어긋난 채로 끝나지는 않게 한다.
+    #
+    # 여기서 막지 않으면 감시가 틀린 점수를 내며 돈다. 화면에는 숫자가 떠
+    # 있어 아무도 눈치채지 못한다.
+    state, msg, rows = artifact_guard.check(user_path)
+    if state == artifact_guard.MISMATCH:
+        print(f"[ERROR] 올린 뒤 대조에 실패했습니다: {msg}")
+        for name, a, b in rows:
+            if a != b:
+                print(f"        {name}  운용 {a}  세대 {b}")
+        print("        다시 시도하거나, 다른 프로그램이 이 파일을 쥐고 "
+              "있지 않은지 확인하십시오.")
+        raise RuntimeError(f"activate 실패: {msg}")
+
     append_history(user_path, stamp, how)
 
 
@@ -633,10 +653,24 @@ def main():
     # ---------------- 감도 회귀 시험 ----------------
     cand = sensitivity_gate.evaluate(model, scaler, X_hold, mask, device)
 
+    # 짝이 어긋난 모델은 감도 비교의 기준이 될 수 없다.
+    #
+    # 그런 모델은 모든 것을 낮게 주므로 합성 이상을 넣어도 값이 움직이지
+    # 않는다. 그걸 "감도가 좋다" 로 읽으면 멀쩡한 후보가 "둔해졌다" 로
+    # 막힌다. 2026-09-25 cj_busan_1 의 예행연습이 그렇게 보류됐다.
+    guard_state, guard_msg, _rows = artifact_guard.check(user_path)
+    if guard_state == artifact_guard.MISMATCH:
+        print(f"[경고] {guard_msg}")
+        print("       현재 모델을 감도 비교 기준으로 쓰지 않습니다. "
+              "절대 기준만 적용합니다.")
+        print("       운용 모델을 먼저 바로잡으십시오 - "
+              "--rollback <세대> 로 세대 폴더의 것을 올립니다.")
+
     incumbent = None
     mp = os.path.join(user_path, "autoencoder_final.pth")
     sp = os.path.join(user_path, "scaler.pkl")
-    if os.path.exists(mp) and os.path.exists(sp):
+    if guard_state != artifact_guard.MISMATCH \
+            and os.path.exists(mp) and os.path.exists(sp):
         try:
             old = AutoEncoder(n_cells, latent_dim, n_cells).to(device)
             old.load_state_dict(torch.load(mp, map_location=device))

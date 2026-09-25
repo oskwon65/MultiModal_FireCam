@@ -1089,6 +1089,90 @@ void CMmCammonitoringDlg::OnDestroy()
 }
 
 // ---------------------------------------------------------
+// 운용 산출물이 세대 폴더의 것과 같은가
+//
+// 모델(autoencoder_final.pth)과 스케일러(scaler.pkl)는 한 벌이다. 스케일러는
+// 입력을 어떤 크기로 바꿔 모델에 넣을지 정한 표이고, 모델은 자기가 배울 때
+// 쓰던 표를 전제로 답을 낸다. 다른 표를 끼우면 멀쩡한 모델도 엉뚱한 값을
+// 낸다.
+//
+// 2026-09-25 cj_busan_1 이 그 상태로 이틀을 돌았다. 화면에는 점수 0.00 만
+// 보여서, 설비 문제인지 모델 문제인지 가릴 길이 없었다. 틀린 점수를 내는
+// 것은 점수를 못 내는 것보다 나쁘다.
+//
+// 해시를 따로 두지 않고 파일을 그대로 견준다. 27KB 짜리라 금방이고, 지문
+// 파일을 두면 그것이 또 어긋났을 때 무엇을 믿을지 정할 수 없다.
+// ---------------------------------------------------------
+static bool ReadWholeFile(const std::string& path, std::vector<char>& out)
+{
+    HANDLE h = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+
+    LARGE_INTEGER sz = {};
+    if (!GetFileSizeEx(h, &sz) || sz.QuadPart > (64 << 20))
+    {
+        CloseHandle(h);
+        return false;
+    }
+    out.resize(static_cast<size_t>(sz.QuadPart));
+    DWORD got = 0;
+    const BOOL ok = out.empty() ? TRUE
+        : ReadFile(h, &out[0], static_cast<DWORD>(out.size()), &got, nullptr);
+    CloseHandle(h);
+    return ok && got == out.size();
+}
+
+static bool SameFile(const std::string& a, const std::string& b)
+{
+    std::vector<char> va, vb;
+    if (!ReadWholeFile(a, va) || !ReadWholeFile(b, vb)) return false;
+    return va == vb;
+}
+
+// 어긋난 파일 이름을 detail 에 담고 true 를 돌려준다.
+static bool ArtifactsMismatch(const char* userId, CStringA& detail)
+{
+    const std::string up =
+        std::string(GetMmCamStartPath()) + "users\\" + userId + "\\";
+
+    CStdioFile f;
+    CStringA cur;
+    if (!f.Open((up + "current_generation.txt").c_str(),
+                CFile::modeRead | CFile::typeText))
+        return false;                      // 아직 승격된 세대가 없다
+    if (f.ReadString(cur)) cur.Trim();
+    f.Close();
+    if (cur.IsEmpty()) return false;
+
+    const std::string gen = up + "model_generations\\" + (LPCSTR)cur + "\\";
+    if (GetFileAttributesA(gen.c_str()) == INVALID_FILE_ATTRIBUTES)
+        return false;                      // 세대 폴더가 정리되었다
+
+    static const char* NAMES[] = { "autoencoder_final.pth", "scaler.pkl",
+                                   "scaler.npz" };
+    CStringA bad;
+    for (const char* n : NAMES)
+    {
+        const std::string ref = gen + n;
+        if (GetFileAttributesA(ref.c_str()) == INVALID_FILE_ATTRIBUTES)
+            continue;                      // 세대에 없는 것은 따지지 않는다
+        if (!SameFile(up + n, ref))
+        {
+            if (!bad.IsEmpty()) bad += ", ";
+            bad += n;
+        }
+    }
+    if (bad.IsEmpty()) return false;
+
+    CStringA d;
+    d.Format("    %s  (세대 %s)\r\n        다른 파일 : %s\r\n",
+             userId, (LPCSTR)cur, (LPCSTR)bad);
+    detail += d;
+    return true;
+}
+
+// ---------------------------------------------------------
 // 점수 추이 창
 // ---------------------------------------------------------
 void CMmCammonitoringDlg::OnBnClickedAnalysis()
@@ -1115,6 +1199,45 @@ void CMmCammonitoringDlg::OnBnClickedStartAll()
         return;
     }
 
+    // 산출물 짝이 어긋난 현장은 띄우지 않는다. 그대로 돌리면 화면에는
+    // 숫자가 떠 있는데 값이 틀려서, 아무도 눈치채지 못한 채 진짜 이상을
+    // 놓친다.
+    std::vector<std::string> skip;
+    {
+        CStringA detail;
+        for (const char* userId : START_USER_IDS)
+            if (ArtifactsMismatch(userId, detail))
+                skip.push_back(userId);
+
+        if (!skip.empty())
+        {
+            CStringA msg;
+            msg.Format(
+                "모델과 스케일러의 짝이 맞지 않는 현장이 있습니다.\r\n\r\n"
+                "%s\r\n"
+                "스케일러는 입력을 어떤 크기로 바꿔 모델에 넣을지 정한 "
+                "표입니다. 짝이 어긋나면 멀쩡한 모델도 엉뚱한 점수를 냅니다. "
+                "정상 화면을 이상이라고 부르므로, 그대로 두면 진짜 이상을 "
+                "놓칩니다.\r\n\r\n"
+                "고치는 방법\r\n"
+                "    python retrain\\nightly_retrain.py <현장> "
+                "--rollback <세대>\r\n\r\n"
+                "이 현장을 빼고 나머지만 시작할까요?\r\n"
+                "    예   - 나머지 현장만 시작합니다\r\n"
+                "    아니오 - 아무것도 시작하지 않습니다",
+                (LPCSTR)detail);
+
+            LogEvent("[WARN] 산출물 짝 불일치 - " + CString(detail));
+
+            if (MessageBox(msg, _T("산출물 짝이 맞지 않습니다"),
+                           MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+            {
+                LogEvent("기동 취소 (사용자가 아니오 선택)");
+                return;
+            }
+        }
+    }
+
     m_bStarting = true;
     LogEvent("기동 시작 (OnBnClickedStartAll)");
 
@@ -1124,8 +1247,20 @@ void CMmCammonitoringDlg::OnBnClickedStartAll()
 
     ShowStartProgress(true);
 
+    // 진행바는 실제로 띄울 현장 수로 나눈다. 건너뛴 현장까지 세면
+    // 진행바가 85% 에 닿지 못한다.
+    m_startPlanned = (USER_COUNT - static_cast<int>(skip.size())) * SCRIPT_COUNT;
+    if (m_startPlanned <= 0) m_startPlanned = SCRIPT_COUNT;
+
     for (const char* userId : START_USER_IDS)
+    {
+        if (std::find(skip.begin(), skip.end(), std::string(userId)) != skip.end())
+        {
+            LogEvent(CString("[건너뜀] ") + userId + " - 산출물 짝 불일치");
+            continue;
+        }
         Run_All_Processes(userId);
+    }
 
     // 스크립트를 다 띄워도 뷰어가 바로 뜨지는 않는다. 파이썬이 torch 와
     // 모델을 읽는 동안 몇 초가 더 걸린다. 그 시간까지 진행바로 덮어야
@@ -1178,18 +1313,19 @@ void CMmCammonitoringDlg::Run_All_Processes(std::string sUserID)
         "call \"%sScripts\\activate.bat\" %s && cd /d \"%s\" && python source/server_to_db.py \"%s\"",
         anacondaRoot, anacondaEnv, MmCamStartPath, sUserID.c_str());
     // 진행바는 스크립트 6개(2현장 × 3개)를 0~85% 로 나눠 채운다.
+    const int planned = (m_startPlanned > 0) ? m_startPlanned
+                                             : USER_COUNT * SCRIPT_COUNT;
     auto StepBand = [&](const char* name) {
         CStringA t;
-        t.Format("%s  기동 중  (%d/%d)", name, m_startStep + 1,
-                 USER_COUNT * SCRIPT_COUNT);
-        SetStartProgress(m_startStep * 85 / (USER_COUNT * SCRIPT_COUNT), t);
+        t.Format("%s  기동 중  (%d/%d)", name, m_startStep + 1, planned);
+        SetStartProgress(m_startStep * 85 / planned, t);
     };
 
     StepBand("server_to_db");
     pid = RunCmdHidden("server_to_db", cmd);
     if (pid) m_startedPids.push_back(pid);
-    PumpWait(3000, m_startStep * 85 / (USER_COUNT * SCRIPT_COUNT),
-                   (m_startStep + 1) * 85 / (USER_COUNT * SCRIPT_COUNT));
+    PumpWait(3000, m_startStep * 85 / planned,
+                   (m_startStep + 1) * 85 / planned);
     ++m_startStep;
 
     sprintf_s(cmd, sizeof(cmd),
@@ -1198,8 +1334,8 @@ void CMmCammonitoringDlg::Run_All_Processes(std::string sUserID)
     StepBand("predict_machine");
     pid = RunCmdHidden("predict_machine", cmd);
     if (pid) m_startedPids.push_back(pid);
-    PumpWait(3000, m_startStep * 85 / (USER_COUNT * SCRIPT_COUNT),
-                   (m_startStep + 1) * 85 / (USER_COUNT * SCRIPT_COUNT));
+    PumpWait(3000, m_startStep * 85 / planned,
+                   (m_startStep + 1) * 85 / planned);
     ++m_startStep;
 
     sprintf_s(cmd, sizeof(cmd),
@@ -1214,8 +1350,8 @@ void CMmCammonitoringDlg::Run_All_Processes(std::string sUserID)
     StepBand("fall_detection");
     pid = RunCmdHidden("fall_detection", cmd);
     if (pid) m_startedPids.push_back(pid);
-    PumpWait(3000, m_startStep * 85 / (USER_COUNT * SCRIPT_COUNT),
-                   (m_startStep + 1) * 85 / (USER_COUNT * SCRIPT_COUNT));
+    PumpWait(3000, m_startStep * 85 / planned,
+                   (m_startStep + 1) * 85 / planned);
     ++m_startStep;
 }
 

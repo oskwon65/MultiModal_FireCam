@@ -102,6 +102,7 @@ from online_baseline import OnlineBaseline, SCENE_SHIFT_MIN
 import stage_status
 import thermal_shift
 import model_contribution
+import artifact_guard
 
 
 # ==============================================
@@ -486,6 +487,18 @@ def main_loop(config, sensor_db_config):
 
     MODEL_PATH  = os.path.join(config["LOCAL_USER_PATH"], "autoencoder_final.pth")
     SCALER_PATH = os.path.join(config["LOCAL_USER_PATH"], "scaler.pkl")
+
+    # 모델과 스케일러의 짝이 어긋났으면 시작하지 않는다.
+    #
+    # 틀린 점수를 내는 것은 점수를 못 내는 것보다 나쁘다. 화면에는 숫자가
+    # 떠 있으니 아무도 이상을 눈치채지 못한 채 진짜 이상을 놓친다.
+    # 2026-09-25 cj_busan_1 이 그렇게 이틀을 보냈다.
+    if artifact_guard.report(config["LOCAL_USER_PATH"]):
+        stage_status.write_error(
+            os.path.join(config["LOCAL_USER_PATH"], "stage_status.ini"),
+            "모델과 스케일러의 짝이 맞지 않아 시작하지 않았습니다. "
+            "세대 폴더의 것으로 되돌리십시오.")
+        sys.exit(2)
 
     history_db_config = Get_HistoryDB_Config(config)
 
