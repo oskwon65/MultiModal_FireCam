@@ -34,7 +34,7 @@ extern const char* GetAnacondaEnvPub();
 
 // 가운데 판 크기
 #define BUSY_W  460
-#define BUSY_H  336          // 기준·구성 두 줄을 넣느라 늘렸다
+#define BUSY_H  248
 
 // 눈금 애니메이션은 직접 돌린다.
 //
@@ -176,12 +176,10 @@ BOOL CDlg_Retrain::OnInitDialog()
 
     // 진행 판은 로그 칸 안에 가운데로 놓는다. 로그 아래로 내리면 창이
     // 그만큼 길어져 표식이 너무 멀어진다.
-    // 판이 로그보다 길어졌다. 로그 안에 가운데로 넣으면 창 밖으로 넘치므로,
-    // 로그 맨 위에 붙이고 판을 띄우는 동안만 창을 늘린다.
-    const int yBusyTop = yLogTop + 4;
+    int yBusyTop = yLogTop + (logH - BUSY_H) / 2;
+    if (yBusyTop < yLogTop + 4) yBusyTop = yLogTop + 4;
 
     m_cliCompact = yLogBot + M;
-    m_cliBusy    = yBusyTop + BUSY_H + M;
 
     // WS_CLIPSIBLINGS 가 없으면, 줄이 들어와 다시 칠할 때마다 위에 떠 있는
     // 진행 판과 그 글자까지 덮는다.
@@ -230,14 +228,8 @@ BOOL CDlg_Retrain::OnInitDialog()
 
     // 눈금 아래 줄은 시작할 때 적은 안내를 그대로 둔다. 몇 분 걸리는
     // 일이라, 기다려도 되는지를 판에서 바로 알 수 있어야 한다.
-    // 안내와 기준·구성을 한 칸에 적는다. 줄이 길어 접히므로 SS_LEFT 다 -
-    // 낱말 단위로 접힌다.
-    m_fontInfo.CreateFont(UI_FONT_SIZE - 5, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
-
-    m_lblElapsed.Create("", WS_CHILD | WS_CLIPSIBLINGS | SS_LEFT,
-        CRect(bx0 + 16, by0 + 206, bx0 + BUSY_W - 16, by0 + BUSY_H - 8),
+    m_lblElapsed.Create("", WS_CHILD | WS_CLIPSIBLINGS | SS_CENTER,
+        CRect(bx0 + 16, by0 + 210, bx0 + BUSY_W - 16, by0 + 238),
         this, ID_LBL_ELAPSED);
 
     m_brPanel.CreateSolidBrush(PANEL_BG);
@@ -276,7 +268,6 @@ BOOL CDlg_Retrain::OnInitDialog()
     SetFont(&m_font);
     SendMessageToDescendants(WM_SETFONT, (WPARAM)m_font.GetSafeHandle(), TRUE);
     m_edLog.SetFont(&m_fontMono);
-    m_lblElapsed.SetFont(&m_fontInfo);
 
     // [재학습 실행] 이 왜 꺼져 있는지 화면에 적어 둔다. 눌리지 않는 버튼을 두고
     // 설명이 없으면 고장으로 오해한다.
@@ -704,9 +695,6 @@ void CDlg_Retrain::SetClientHeight(int cliH)
 
 void CDlg_Retrain::ShowProgress(bool bShow)
 {
-    // 판이 로그보다 길다. 띄우는 동안만 창을 늘리고 끝나면 되돌린다.
-    SetClientHeight(bShow ? m_cliBusy : m_cliCompact);
-
     const int cmd = bShow ? SW_SHOW : SW_HIDE;
     m_pnlBusy.ShowWindow(cmd);
     m_lblBusy.ShowWindow(cmd);
@@ -737,9 +725,8 @@ void CDlg_Retrain::ShowProgress(bool bShow)
 
         // 안내는 z 순서를 정리한 뒤에 쓴다. 먼저 쓰면 판이 올라오면서
         // 덮어 버린다. 실행 내내 그대로 두고 타이머가 건드리지 않는다.
-        m_infoBase = "";
-        m_infoComp = "";
-        UpdateNotice();
+        m_lblElapsed.SetWindowTextA(m_notice);
+        m_lblElapsed.Invalidate(FALSE);
 
         // 첫 프레임을 바로 그린다. 안 그리면 판이 잠깐 비어 보인다.
         AnimateBusy();
@@ -793,36 +780,14 @@ void CDlg_Retrain::AnimateBusy()
     // 링이 도는데 옆에서 또 돌면 어수선하다.
     if (m_ring.GetSafeHwnd()) m_ring.Invalidate(FALSE);
 
-    // 안내 칸은 자주 바뀌지 않으므로 무엇에 지워지면 돌아오지 않는다.
-    // 1초에 한 번 다시 그린다. 글자는 컨트롤이 들고 있어 Invalidate 면 된다.
+    // 안내 줄은 한 번만 쓰므로 무엇에 지워지면 돌아오지 않는다. 1초에
+    // 한 번 다시 그린다. 글자는 컨트롤이 들고 있어 Invalidate 면 된다.
     if ((m_frame % 8) == 0 && m_lblElapsed.GetSafeHwnd())
         m_lblElapsed.Invalidate(FALSE);
 }
 
 // 눈금 위 줄. 경과 시간은 링 가운데에 있으므로 여기에는 무엇을 하는
 // 중인지와 얼마나 왔는지를 적는다.
-// 안내와 기준·구성을 한 칸에 다시 쓴다.
-//
-// 세 줄이 같은 칸에 있어야 하나로 읽힌다. 컨트롤을 따로 두면 실행 중에
-// 어느 것이 이번 실행 이야기인지 흐려진다.
-void CDlg_Retrain::UpdateNotice()
-{
-    CStringA t = m_notice;
-
-    if (m_infoBase.IsEmpty() && m_infoComp.IsEmpty())
-    {
-        t += "\r\n\r\n기준과 구성을 읽는 중...";
-    }
-    else
-    {
-        if (!m_infoBase.IsEmpty()) { t += "\r\n\r\n"; t += m_infoBase; }
-        if (!m_infoComp.IsEmpty()) { t += "\r\n";     t += m_infoComp; }
-    }
-
-    m_lblElapsed.SetWindowTextA(t);
-    m_lblElapsed.Invalidate(FALSE);
-}
-
 void CDlg_Retrain::UpdateElapsed()
 {
     CStringA t = m_busyWhat;
@@ -876,8 +841,7 @@ HBRUSH CDlg_Retrain::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
     {
         const int id = pWnd->GetDlgCtrlID();
         if (id == ID_LBL_BUSY || id == ID_LBL_ELAPSED ||
-            id == ID_PNL_BUSY || id == ID_RING ||
-            id == ID_LBL_ELAPSED)
+            id == ID_PNL_BUSY || id == ID_RING)
         {
             pDC->SetBkMode(TRANSPARENT);
             pDC->SetTextColor(RGB(0x1A, 0x24, 0x35));
@@ -1141,10 +1105,7 @@ void CDlg_Retrain::Run(RunKind kind)
     CStringA cmd;
     cmd.Format("cmd.exe /c call \"%sScripts\\activate.bat\" %s "
                "&& cd /d \"%s\" && set PYTHONIOENCODING=utf-8 "
-               // -u 는 버퍼를 끄는 것이다. 없으면 파이썬이 파이프로 내보낼 때
-               // 출력을 쌓아 두었다가 끝날 때 한꺼번에 쏟는다. 그러면 진행
-               // 단계도, 기준·구성도 돌아가는 동안에는 한 줄도 안 온다.
-               "&& python -u retrain\\nightly_retrain.py \"%s\"%s",
+               "&& python retrain\\nightly_retrain.py \"%s\"%s",
                GetAnacondaRootPub(), GetAnacondaEnvPub(),
                GetMmCamStartPath(), gUserID.c_str(),
                (LPCSTR)extra);
@@ -1264,20 +1225,6 @@ LRESULT CDlg_Retrain::OnLogLine(WPARAM, LPARAM lp)
     if (s)
     {
         AppendLog(*s);
-
-        // 기준과 구성은 판에도 옮긴다. 실행 중에는 판이 로그를 덮고 있어
-        // 로그에만 적으면 기다리는 동안 볼 수 없다.
-        if (s->Find("[기준]") >= 0 || s->Find("[구성]") >= 0)
-        {
-            CStringA v = *s;
-            v.Replace("\r", "");
-            v.Replace("\n", "");
-            v.Trim();
-            if (v.Find("[기준]") >= 0) m_infoBase = v;
-            else                       m_infoComp = v;
-
-            UpdateNotice();
-        }
 
         // 예행연습 결과를 읽어 [재학습 실행] 을 열지 말지 정한다.
         if (s->Find("판정: 승격") >= 0) m_bDryPassed = true;
