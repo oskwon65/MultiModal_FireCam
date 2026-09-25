@@ -82,6 +82,11 @@ private:
     CComboBox m_cboRange;
     CButton   m_btnReload, m_btnClose;
     CFont     m_font, m_fontSmall;
+
+    // 십자선 값 상자 전용. 축 눈금(m_fontSmall)보다 25% 크다 - 눈금은
+    // 그림을 읽는 보조지만 이 상자는 지금 짚은 값 그 자체라서, 같은 크기로
+    // 두면 읽으려고 눈을 모아야 한다.
+    CFont     m_fontTip;
     CBrush    m_brWhite;
 
     std::vector<Point> m_pts;

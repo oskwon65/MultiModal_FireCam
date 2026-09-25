@@ -60,6 +60,7 @@ static COLORREF HeatOf(double v)
 #define CH_GAP 34
 #define BAND_COLOR  RGB(0xE4, 0x57, 0x2E)
 #define TEXT_COLOR  RGB(0x1A, 0x24, 0x35)
+#define TIP_TEXT    RGB(0x00, 0x00, 0x00)   // 값 상자는 순검정
 #define MUTED_COLOR RGB(0x66, 0x70, 0x85)
 
 IMPLEMENT_DYNAMIC(CDlg_Analysis, CDialogEx)
@@ -101,6 +102,12 @@ BOOL CDlg_Analysis::OnInitDialog()
     m_fontSmall.CreateFont(UI_FONT_SIZE - 4, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
+
+    // 값 상자는 눈금보다 25% 크게.
+    m_fontTip.CreateFont((UI_FONT_SIZE - 4) * 125 / 100, 0, 0, 0, FW_NORMAL,
+        FALSE, FALSE, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+        CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+        _T(UI_FONT_NAME));
 
     m_brWhite.CreateSolidBrush(PANEL_BG);
 
@@ -823,7 +830,10 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
         const int cell = 13;
         const int gside = cell * 8;
 
-        const int bw = 188, bh = hasG ? (58 + gside + 26) : 58;
+        // 글꼴이 커진 만큼 줄 높이와 상자를 키운다.
+        const int LH = 24;                 // 한 줄
+        const int th = 10 + LH * 3;        // 글자 세 줄
+        const int bw = 232, bh = hasG ? (th + gside + 28) : th;
         int bx = x + 12;
         if (bx + bw > px + pw) bx = x - 12 - bw;    // 오른쪽 끝이면 왼쪽으로
         if (bx < px) bx = px;
@@ -853,12 +863,15 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
             mem.SelectObject(pp);
         };
 
-        mem.SetTextColor(TEXT_COLOR);
-        CRect r1(bx + 9, by + 5, bx + bw - 8, by + 21);
+        CFont* pTipOld = mem.SelectObject(&m_fontTip);
+        mem.SetTextColor(TIP_TEXT);
+
+        const int y0 = by + 5;
+        CRect r1(bx + 9, y0, bx + bw - 8, y0 + LH);
         mem.DrawTextA(l1, &r1, DT_LEFT | DT_SINGLELINE);
 
-        Dot(bx + 14, by + 29, LINE_COLOR);
-        CRect r2(bx + 23, by + 21, bx + bw - 8, by + 37);
+        Dot(bx + 15, y0 + LH + LH / 2, LINE_COLOR);
+        CRect r2(bx + 25, y0 + LH, bx + bw - 8, y0 + LH * 2);
         mem.DrawTextA(l2, &r2, DT_LEFT | DT_SINGLELINE);
 
         if (p.hasT)
@@ -867,28 +880,26 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
             t1.Format("최고 %.1f도", p.tmax);
             t2.Format("평균 %.1f도", p.tavg);
 
-            Dot(bx + 14, by + 45, TMAX_COLOR);
-            CRect ra(bx + 23, by + 37, bx + bw - 8, by + 53);
+            Dot(bx + 15, y0 + LH * 2 + LH / 2, TMAX_COLOR);
+            CRect ra(bx + 25, y0 + LH * 2, bx + bw - 8, y0 + LH * 3);
             mem.DrawTextA(t1, &ra, DT_LEFT | DT_SINGLELINE);
 
             const CSize sz = mem.GetTextExtent(t1);
-            const int x2 = bx + 23 + sz.cx + 14;
-            Dot(x2 - 9, by + 45, TAVG_COLOR);
-            CRect rb(x2, by + 37, bx + bw - 6, by + 53);
+            const int x2 = bx + 25 + sz.cx + 16;
+            Dot(x2 - 10, y0 + LH * 2 + LH / 2, TAVG_COLOR);
+            CRect rb(x2, y0 + LH * 2, bx + bw - 6, y0 + LH * 3);
             mem.DrawTextA(t2, &rb, DT_LEFT | DT_SINGLELINE);
         }
         else
         {
-            mem.SetTextColor(MUTED_COLOR);
-            CRect r3(bx + 23, by + 37, bx + bw - 8, by + 53);
+            CRect r3(bx + 25, y0 + LH * 2, bx + bw - 8, y0 + LH * 3);
             mem.DrawTextA("온도 없음", &r3, DT_LEFT | DT_SINGLELINE);
-            mem.SetTextColor(TEXT_COLOR);
         }
 
         if (hasG)
         {
             const int gx = bx + (bw - gside) / 2;
-            const int gy = by + 58;
+            const int gy = by + th;
 
             CPen penNone(PS_NULL, 0, (COLORREF)0);
             CPen* pOldP = mem.SelectObject(&penNone);
@@ -923,11 +934,13 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
                 mem.SelectObject(pNoBr);
             }
 
-            mem.SetTextColor(TEXT_COLOR);
-            CRect rg(bx + 8, gy + gside + 4, bx + bw - 8, gy + gside + 20);
+            mem.SetTextColor(TIP_TEXT);
+            CRect rg(bx + 8, gy + gside + 5, bx + bw - 8, gy + gside + 26);
             mem.DrawTextA("테두리 = 점수가 보는 칸", &rg,
                           DT_CENTER | DT_SINGLELINE);
         }
+
+        mem.SelectObject(pTipOld);          // 눈금 글꼴로 되돌린다
     }
 
     pDC->BitBlt(lpDIS->rcItem.left, lpDIS->rcItem.top, w, h, &mem, 0, 0,
