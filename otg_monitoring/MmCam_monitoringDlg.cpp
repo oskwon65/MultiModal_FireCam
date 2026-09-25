@@ -1786,8 +1786,10 @@ void CMmCammonitoringDlg::ShowProcessRows(bool bShow)
 {
     m_bRowsVisible = bShow;
 
-    // 버튼 문구로 현재 상태를 알린다
-    m_btnProcList.SetWindowText(bShow ? "접기" : "목록");
+    // 문구는 "목록" 으로 둔다. 펼친 상태는 SetChecked 가 그림으로 보여
+    // 주므로, 글자까지 바꾸면 무슨 버튼이었는지 알아보기 어려워진다.
+    // [설정] 버튼도 같은 이유로 문구를 고정했다.
+    m_btnProcList.SetChecked(bShow);
 
     ApplyRowVisibility();
 }
