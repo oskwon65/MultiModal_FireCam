@@ -66,3 +66,7 @@ users/*/thermal_ref.npy
 
 # DB·학습 상태 백업 (지우기 전에 뜬 것). 용량이 크고 현장마다 다르다.
 users/*/db_backup/
+
+# 예행연습 결과를 잠깐 두는 곳. 저장소에 담을 것이 아니다.
+users/*/.dryrun/
+users/*/.candidate/

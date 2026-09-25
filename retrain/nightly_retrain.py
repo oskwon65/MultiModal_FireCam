@@ -42,6 +42,7 @@ sensitivity_gate 의 설명을 참고할 것. 요약하면, 정상 데이터에 
 
 import argparse
 import os
+import json
 import re
 import shutil
 import sys
@@ -109,6 +110,16 @@ ARTIFACTS = ("autoencoder_final.pth", "scaler.pkl", "scaler.npz")
 # 칸별 기준선. 세대 산출물이 아니라 운용 중에 쌓이는 상태다.
 BASELINE_NAME = "online_baseline.npz"
 RETIRED_DIR_NAME = "_retired_baseline"
+
+# 예행연습 결과를 잠깐 두는 곳.
+#
+# 세대 폴더가 아니다. 목록에 나오지 않고 되돌릴 대상도 아니다. [재학습 실행]
+# 이 곧바로 집어 갈 자리일 뿐이다.
+DRYRUN_DIR_NAME = ".dryrun"
+
+# 이만큼 지난 예행연습 결과는 다시 쓰지 않는다. 그 사이 새 프레임이 쌓여
+# 자료가 달라졌을 수 있다.
+DRYRUN_MAX_AGE_H = 6
 
 # 승격 기록.
 #
@@ -230,6 +241,102 @@ def save_generation(user_path, files, report):
         shutil.rmtree(os.path.join(gen_root(user_path), old), ignore_errors=True)
 
     return stamp
+
+
+def dryrun_dir(user_path):
+    return os.path.join(user_path, DRYRUN_DIR_NAME)
+
+
+def save_dry_run(user_path, user_id, files, report, passed, incumbent):
+    """
+    예행연습 결과를 잠깐 둔다.
+
+    [왜 두는가]
+
+    학습에는 시드가 없다. DataLoader 의 shuffle 도, 웜스타트가 아닐 때의
+    초기화도 매번 다르다. 그래서 같은 자료로 두 번 돌리면 다른 모델이
+    나온다.
+
+    예행연습에서 본 보고서와 [재학습 실행] 이 올리는 모델이 서로 다른
+    모델이라는 뜻이다. 판정을 읽고 눌렀는데 다른 것이 올라간다. 본 것을
+    그대로 올리는 편이 맞다.
+
+    세대 폴더에는 두지 않는다. 승격되지 않은 후보로 목록이 차면 정작
+    되돌릴 대상을 가린다.
+    """
+    d = dryrun_dir(user_path)
+    shutil.rmtree(d, ignore_errors=True)
+    os.makedirs(d, exist_ok=True)
+
+    for name, path in files.items():
+        shutil.copy2(path, os.path.join(d, name))
+
+    with open(os.path.join(d, "report.txt"), "w", encoding="utf-8") as f:
+        f.write(report + "\n")
+
+    meta = {
+        "user": user_id,
+        "created": f"{datetime.now():%Y-%m-%d %H:%M:%S}",
+        "passed": bool(passed),
+        "incumbent": incumbent,
+    }
+    with open(os.path.join(d, "meta.json"), "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=1)
+
+    return d
+
+
+def clear_dry_run(user_path):
+    shutil.rmtree(dryrun_dir(user_path), ignore_errors=True)
+
+
+def load_dry_run(user_path, user_id):
+    """
+    다시 쓸 만한 예행연습 결과가 있으면 (폴더, meta) 를, 없으면 (None, 사유).
+
+    까다롭게 본다. 조건이 하나라도 어긋나면 새로 학습하는 편이 안전하다.
+    """
+    d = dryrun_dir(user_path)
+    mp = os.path.join(d, "meta.json")
+    if not os.path.exists(mp):
+        return None, "예행연습 결과가 없습니다"
+
+    try:
+        with open(mp, encoding="utf-8") as f:
+            meta = json.load(f)
+    except (OSError, ValueError) as e:
+        return None, f"예행연습 기록을 읽지 못했습니다 ({e})"
+
+    if meta.get("user") != user_id:
+        return None, "다른 현장의 예행연습 결과입니다"
+
+    if not meta.get("passed"):
+        return None, "그 예행연습은 승격 판정이 아니었습니다"
+
+    for name in ARTIFACTS:
+        if not os.path.exists(os.path.join(d, name)):
+            return None, f"예행연습 결과에 {name} 이 없습니다"
+
+    cur = ""
+    cp = os.path.join(user_path, "current_generation.txt")
+    if os.path.exists(cp):
+        cur = open(cp, encoding="utf-8").read().strip()
+    if meta.get("incumbent", "") != cur:
+        return None, (f"그 사이 운용 모델이 바뀌었습니다 "
+                      f"({meta.get('incumbent') or '없음'} -> {cur or '없음'})")
+
+    try:
+        made = datetime.strptime(meta["created"], "%Y-%m-%d %H:%M:%S")
+    except (KeyError, ValueError):
+        return None, "예행연습 시각을 읽지 못했습니다"
+
+    age_h = (datetime.now() - made).total_seconds() / 3600.0
+    if age_h > DRYRUN_MAX_AGE_H:
+        return None, (f"예행연습이 {age_h:.1f}시간 전이라 너무 오래됐습니다 "
+                      f"(기준 {DRYRUN_MAX_AGE_H}시간)")
+
+    meta["age_h"] = age_h
+    return d, meta
 
 
 def reset_baseline(user_path, why=""):
@@ -472,6 +579,8 @@ def main():
     ap.add_argument("--rollback", nargs="?", const="__prev__",
                     help="지정 세대(없으면 운용 중인 것의 직전)로 되돌린다")
     ap.add_argument("--list", action="store_true", help="세대 목록")
+    ap.add_argument("--fresh", action="store_true",
+                    help="예행연습 결과를 다시 쓰지 않고 새로 학습한다")
     ap.add_argument("--keep-baseline", action="store_true",
                     help="되돌릴 때 칸별 기준선을 그대로 둔다 "
                          "(기본은 치우고 다시 쌓게 한다)")
@@ -567,6 +676,41 @@ def main():
     print("=" * 62)
     print(f"야간 재학습  {args.user_id}   {datetime.now():%Y-%m-%d %H:%M:%S}")
     print("=" * 62)
+
+    # 예행연습에서 본 그 모델을 그대로 올린다.
+    #
+    # 학습에는 시드가 없어 같은 자료로 다시 돌리면 다른 모델이 나온다.
+    # 판정을 읽고 [재학습 실행] 을 눌렀는데 다른 것이 올라가면 무엇을 보고
+    # 결정한 것인지 알 수 없다. 본 것을 올린다.
+    if not args.dry_run and not args.fresh:
+        d, info = load_dry_run(user_path, args.user_id)
+        if d:
+            print(f"[예행연습] {info['created']} 결과를 그대로 올립니다 "
+                  f"({info['age_h']*60:.0f}분 전).")
+            print("           같은 자료로 다시 학습하면 다른 모델이 나옵니다. "
+                  "보신 그 모델을 올립니다.")
+            print("           새로 학습하려면 --fresh 를 붙이십시오.")
+
+            files = {n: os.path.join(d, n) for n in ARTIFACTS
+                     if os.path.exists(os.path.join(d, n))}
+            report = ""
+            rp = os.path.join(d, "report.txt")
+            if os.path.exists(rp):
+                report = open(rp, encoding="utf-8").read().rstrip("\n")
+            print()
+            print(report)
+            print()
+
+            stamp = save_generation(user_path, files, report)
+            print(f"[보관] {GEN_DIR_NAME}/{stamp}")
+
+            activate(user_path, stamp)
+            clear_dry_run(user_path)
+            print(f"[승격] {stamp} 을 운용 모델로 배치했습니다.")
+            print("       predict_machine 을 재시작해야 반영됩니다.")
+            return 0
+
+        print(f"[예행연습] 다시 쓸 결과가 없어 새로 학습합니다 - {info}")
 
     mask = load_mask(user_path, n_cells)
 
@@ -695,18 +839,13 @@ def main():
 
     # ---------------- 보관 및 승격 ----------------
     #
-    # 예행연습은 아무것도 남기지 않는다. 결과는 위 보고서로 다 나왔고, 그
-    # 모델을 나중에 쓸 일이 없다. 남기면 세대 폴더가 쓸 수 없는 후보로 차서
-    # 정작 되돌릴 대상을 가린다. cj_busan_1 이 세대 10개 중 9개가 예행연습인
-    # 상태였다.
+    # 예행연습은 세대 폴더에 아무것도 남기지 않는다. 승격되지 않은 후보로
+    # 목록이 차면 정작 되돌릴 대상을 가린다. cj_busan_1 이 세대 10개 중
+    # 9개가 예행연습인 상태였다.
     #
-    # 학습한 가중치를 버리는 것이 아깝게 보이지만, 같은 자료로 다시 돌리면
-    # 같은 것이 나온다. 몇 분이 아까워 목록을 못 쓰게 만들 이유가 없다.
-    if args.dry_run:
-        print("[중단] --dry-run 이므로 모델을 저장하지 않았습니다. "
-              "운용 모델도 그대로입니다.")
-        return 0
-
+    # 대신 .dryrun 에 잠깐 둔다. 목록에 나오지 않고 되돌릴 대상도 아니지만,
+    # [재학습 실행] 이 곧바로 집어 갈 수 있다. 학습에 시드가 없어 다시
+    # 돌리면 다른 모델이 나오기 때문이다 - 본 것을 올려야 한다.
     tmp = os.path.join(user_path, ".candidate")
     os.makedirs(tmp, exist_ok=True)
     torch.save(model.state_dict(), os.path.join(tmp, "autoencoder_final.pth"))
@@ -717,8 +856,27 @@ def main():
     header = (f"재학습 {datetime.now():%Y-%m-%d %H:%M:%S}  user={args.user_id}\n"
               f"표본 {info['drawn']:,}건  기간 {info['period']}  "
               f"칸 {info['cells']}개\n\n")
+    if args.dry_run:
+        cur = ""
+        cp = os.path.join(user_path, "current_generation.txt")
+        if os.path.exists(cp):
+            cur = open(cp, encoding="utf-8").read().strip()
+
+        d = save_dry_run(user_path, args.user_id, files, header + report,
+                         passed, cur)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+        print(f"[중단] --dry-run 이므로 운용 모델을 바꾸지 않았습니다.")
+        if passed:
+            print(f"       이 결과를 {DRYRUN_MAX_AGE_H}시간 안에 [재학습 실행] "
+                  f"하면 보신 그 모델이 그대로 올라갑니다.")
+        else:
+            print("       판정이 승격이 아니라 다시 쓰지 않습니다.")
+        return 0
+
     stamp = save_generation(user_path, files, header + report)
     shutil.rmtree(tmp, ignore_errors=True)
+    clear_dry_run(user_path)
 
     print(f"[보관] {GEN_DIR_NAME}/{stamp}")
 
