@@ -1141,7 +1141,10 @@ void CDlg_Retrain::Run(RunKind kind)
     CStringA cmd;
     cmd.Format("cmd.exe /c call \"%sScripts\\activate.bat\" %s "
                "&& cd /d \"%s\" && set PYTHONIOENCODING=utf-8 "
-               "&& python retrain\\nightly_retrain.py \"%s\"%s",
+               // -u 는 버퍼를 끄는 것이다. 없으면 파이썬이 파이프로 내보낼 때
+               // 출력을 쌓아 두었다가 끝날 때 한꺼번에 쏟는다. 그러면 진행
+               // 단계도, 기준·구성도 돌아가는 동안에는 한 줄도 안 온다.
+               "&& python -u retrain\\nightly_retrain.py \"%s\"%s",
                GetAnacondaRootPub(), GetAnacondaEnvPub(),
                GetMmCamStartPath(), gUserID.c_str(),
                (LPCSTR)extra);
