@@ -12,6 +12,7 @@ extern "C" {
 #include <mysql.h>
 }
 
+#include <map>
 #include <string>
 #include <vector>
 #include <cstdlib>
@@ -35,6 +36,21 @@ extern const char* GetMmCamStartPath();
 #define TMAX_COLOR  RGB(0xEB, 0x68, 0x34)   // 최고 온도
 #define TAVG_COLOR  RGB(0x2A, 0x78, 0xD6)   // 평균 온도
 #define CROSS_COLOR RGB(0x8F, 0x85, 0x7A)   // 십자선
+
+// 격자 색. 한 가지 색조, 옅음에서 짙음으로. 무지개는 크기를 읽을 수 없다.
+// 구간은 이 현장의 실제 분포에 맞춘 것이다 (20~145도).
+static const double HEAT_BINS[] = { 25, 32, 40, 50, 62, 75, 100 };
+static const COLORREF HEAT[] = {
+    RGB(0xFD, 0xF1, 0xE6), RGB(0xFB, 0xDC, 0xC0), RGB(0xF8, 0xC1, 0x96),
+    RGB(0xF3, 0xA0, 0x6C), RGB(0xEA, 0x7A, 0x44), RGB(0xD1, 0x5A, 0x25),
+    RGB(0xA5, 0x3F, 0x14), RGB(0x6D, 0x27, 0x0C) };
+
+static COLORREF HeatOf(double v)
+{
+    int i = 0;
+    while (i < _countof(HEAT_BINS) && v >= HEAT_BINS[i]) ++i;
+    return HEAT[i];
+}
 
 // 그리는 쪽과 집는 쪽이 같은 자리를 가리켜야 한다. 한 곳에서 정한다.
 #define CH_L   52
@@ -183,6 +199,32 @@ std::string CDlg_Analysis::MaskCellList() const
     return out;
 }
 
+// 마스크를 64칸 배열로. 격자에서 "점수가 보는 칸" 을 테두리로 표시한다.
+void CDlg_Analysis::LoadMask()
+{
+    m_mask.assign(64, false);
+
+    const std::string path = std::string(GetMmCamStartPath()) + "users\\"
+                           + gUserID + "\\hotlist_mask_local.ini";
+    CStdioFile f;
+    if (!f.Open(path.c_str(), CFile::modeRead | CFile::typeText)) return;
+
+    int idx = 0;
+    CStringA line;
+    while (f.ReadString(line))
+    {
+        int pos = 0;
+        CStringA tok = line.Tokenize(" @T@", pos);
+        while (!tok.IsEmpty())
+        {
+            if (idx < 64) m_mask[idx] = (atoi(tok) == 1);
+            ++idx;
+            tok = line.Tokenize(" @T@", pos);
+        }
+    }
+    f.Close();
+}
+
 int CDlg_Analysis::DaysFromCombo() const
 {
     switch (m_cboRange.GetCurSel())
@@ -275,6 +317,10 @@ void CDlg_Analysis::Load()
     }
 
     const std::string maskIn = MaskCellList();
+    LoadMask();
+
+    // 시각 -> m_pts 자리. 격자를 두 번째 질의로 받아 이어 붙일 때 쓴다.
+    std::map<std::string, size_t> at;
 
     // 목록은 오름차순이다. 그래프도 왼쪽이 옛것이라 그대로 훑는다.
     long total = 0;
@@ -312,10 +358,43 @@ void CDlg_Analysis::Load()
             pt.hasT = (row[3] != nullptr && row[4] != nullptr);
             pt.tmax = pt.hasT ? atof(row[3]) : 0.0;
             pt.tavg = pt.hasT ? atof(row[4]) : 0.0;
+            at[pt.hour] = m_pts.size();
             m_pts.push_back(pt);
             total += pt.n;
         }
         mysql_free_result(res);
+
+        // 칸별 평균. 마스크로 거르지 않는다 - 격자는 64칸을 다 보여야
+        // 어디가 식고 어디가 달아올랐는지 알 수 있다.
+        char sql2[1100];
+        sprintf_s(sql2, sizeof(sql2),
+            "SELECT DATE_FORMAT(t.`time`,'%%Y%%m%%d%%H') AS h, j.idx, AVG(j.v) "
+            "FROM `%s`.`%s` t, "
+            "JSON_TABLE(t.hot_list,'$[*]' "
+            "COLUMNS(idx FOR ORDINALITY, v DOUBLE PATH '$')) j "
+            "WHERE t.mscore >= 0 GROUP BY h, j.idx ORDER BY h, j.idx",
+            dbName.c_str(), tables[i].c_str());
+
+        if (mysql_query(conn, sql2) == 0)
+        {
+            if (MYSQL_RES* r2 = mysql_store_result(conn))
+            {
+                while (MYSQL_ROW row = mysql_fetch_row(r2))
+                {
+                    if (!row[0] || !row[1] || !row[2]) continue;
+                    auto it = at.find(row[0]);
+                    if (it == at.end()) continue;
+
+                    const int idx = atoi(row[1]) - 1;      // 1부터 세므로
+                    if (idx < 0 || idx >= 64) continue;
+
+                    Point& q = m_pts[it->second];
+                    if (q.grid.empty()) q.grid.assign(64, 0.0f);
+                    q.grid[idx] = static_cast<float>(atof(row[2]));
+                }
+                mysql_free_result(r2);
+            }
+        }
     }
 
     mysql_close(conn);
@@ -741,11 +820,18 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
         if (p.hasT) l3.Format("최고 %.1f도   평균 %.1f도", p.tmax, p.tavg);
         else        l3 = "온도 없음";
 
-        const int bw = 168, bh = 58;
+        // 격자를 함께 그린다. 선 두 개로는 "어디가" 를 알 수 없다.
+        const bool hasG = (p.grid.size() == 64);
+        const int cell = 13;
+        const int gside = cell * 8;
+
+        const int bw = 168, bh = hasG ? (58 + gside + 26) : 58;
         int bx = x + 12;
         if (bx + bw > px + pw) bx = x - 12 - bw;    // 오른쪽 끝이면 왼쪽으로
         if (bx < px) bx = px;
-        const int by = topY + 6;
+        int by = topY + 6;
+        if (by + bh > botY + ph) by = botY + ph - bh;   // 아래로 넘치면 올린다
+        if (by < topY) by = topY;
 
         mem.FillSolidRect(bx, by, bw, bh, PANEL_BG);
         {
@@ -766,6 +852,50 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
         mem.SetTextColor(p.hasT ? TMAX_COLOR : MUTED_COLOR);
         CRect r3(bx + 8, by + 37, bx + bw - 8, by + 53);
         mem.DrawTextA(l3, &r3, DT_LEFT | DT_SINGLELINE);
+
+        if (hasG)
+        {
+            const int gx = bx + (bw - gside) / 2;
+            const int gy = by + 58;
+
+            CPen penNone(PS_NULL, 0, (COLORREF)0);
+            CPen* pOldP = mem.SelectObject(&penNone);
+            for (int r = 0; r < 8; ++r)
+            {
+                for (int c = 0; c < 8; ++c)
+                {
+                    CBrush br(HeatOf(p.grid[r * 8 + c]));
+                    CBrush* pb = mem.SelectObject(&br);
+                    mem.Rectangle(gx + c * cell, gy + r * cell,
+                                  gx + (c + 1) * cell + 1,
+                                  gy + (r + 1) * cell + 1);
+                    mem.SelectObject(pb);
+                }
+            }
+            mem.SelectObject(pOldP);
+
+            // 점수가 보는 칸에 테두리를 두른다. 어느 칸이 점수를 만드는지
+            // 알아야 격자와 선이 이어진다.
+            if (m_mask.size() == 64)
+            {
+                CPen penM(PS_SOLID, 1, RGB(0x1A, 0x24, 0x35));
+                CBrush* pNoBr = (CBrush*)mem.SelectStockObject(NULL_BRUSH);
+                CPen* pOldM = mem.SelectObject(&penM);
+                for (int r = 0; r < 8; ++r)
+                    for (int c = 0; c < 8; ++c)
+                        if (m_mask[r * 8 + c])
+                            mem.Rectangle(gx + c * cell, gy + r * cell,
+                                          gx + (c + 1) * cell + 1,
+                                          gy + (r + 1) * cell + 1);
+                mem.SelectObject(pOldM);
+                mem.SelectObject(pNoBr);
+            }
+
+            mem.SetTextColor(MUTED_COLOR);
+            CRect rg(bx + 8, gy + gside + 4, bx + bw - 8, gy + gside + 20);
+            mem.DrawTextA("테두리 = 점수가 보는 칸", &rg,
+                          DT_CENTER | DT_SINGLELINE);
+        }
     }
 
     pDC->BitBlt(lpDIS->rcItem.left, lpDIS->rcItem.top, w, h, &mem, 0, 0,
