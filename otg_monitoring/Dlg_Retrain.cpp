@@ -276,7 +276,7 @@ BOOL CDlg_Retrain::OnInitDialog()
                 "[재학습 실행] 은 예행연습이 \"판정: 승격\" 을 낸 경우에만 "
                 "켜집니다. 보류로 끝나면 사유가 아래에 남으며 실행할 수 없습니다.\r\n"
                 "[되돌리기] 는 옆에서 고른 세대로 돌리고, 칸별 기준선도 함께 "
-                "치웁니다. 운용에 올라간 적이 있는 세대만 고를 수 있습니다.",
+                "치웁니다. 보관된 세대는 모두 고를 수 있습니다.",
                 gUserID.c_str());
     m_lblHead.SetWindowTextA(head);
 
@@ -461,10 +461,14 @@ void CDlg_Retrain::FillGenCombo()
 
     m_cboGen.ResetContent();
     m_cboStamps.clear();
+    m_cboServed.clear();
 
     const std::vector<std::string> gens = ListGenerations();
     const std::vector<std::string> served = ServedGenerations();
 
+    // 폴더에 있는 것은 모두 담는다. 승격된 적 없는 것도 고를 수 있어야
+    // 한다 - 손으로 옛 산출물을 되돌려 놓는 복구가 실제로 필요했다.
+    // 잘못 올려도 다시 되돌리면 되고, 감시는 시작 전에 짝을 대조한다.
     for (int i = (int)gens.size() - 1; i >= 0; --i)
     {
         if (m_curGen.Compare(gens[i].c_str()) == 0) continue;   // 지금 것
@@ -472,16 +476,19 @@ void CDlg_Retrain::FillGenCombo()
         bool wasServed = false;
         for (size_t k = 0; k < served.size(); ++k)
             if (served[k] == gens[i]) { wasServed = true; break; }
-        if (!wasServed) continue;
 
         CStringA sc = GenScore(gens[i].c_str());
         if (sc.IsEmpty()) sc = "  -  ";
 
+        const char* tag =
+            (m_backGen.Compare(gens[i].c_str()) == 0) ? "   (직전)" :
+            (wasServed ? "" : "   승격 안 됨");
+
         CStringA line;
-        line.Format("%s   %s%s", gens[i].c_str(), (LPCSTR)sc,
-                    (m_backGen.Compare(gens[i].c_str()) == 0) ? "   (직전)" : "");
+        line.Format("%s   %s%s", gens[i].c_str(), (LPCSTR)sc, tag);
         m_cboGen.AddString(line);
         m_cboStamps.push_back(gens[i]);
+        m_cboServed.push_back(wasServed);
     }
 
     // 직전 세대를 기본으로 고른다.
@@ -504,44 +511,34 @@ void CDlg_Retrain::ShowGenerations()
     const std::vector<std::string> gens = ListGenerations();
     const std::vector<std::string> served = ServedGenerations();
 
-    // 기록에는 같은 세대가 여러 번 나올 수 있다(올렸다 내렸다 다시 올림).
-    // 폴더가 남아 있는 것만 한 번씩 이름 순으로 모은다.
-    std::vector<std::string> shown;
-    for (size_t i = 0; i < gens.size(); ++i)
-    {
-        for (size_t k = 0; k < served.size(); ++k)
-            if (served[k] == gens[i]) { shown.push_back(gens[i]); break; }
-    }
-
     // 줄마다 색이 달라 한 덩어리로 넣을 수 없다. 한 줄씩 넣고 물들인다.
     m_edLog.SetWindowTextA("");
 
     CStringA head;
-    head.Format("[%s] 운용에 올라간 세대   (점수는 학습 직후 정상 평균)\r\n",
+    head.Format("[%s] 보관된 세대   (점수는 학습 직후 정상 평균)\r\n",
                 gUserID.c_str());
     AppendLog(head);
 
-    for (size_t i = 0; i < shown.size(); ++i)
+    for (size_t i = 0; i < gens.size(); ++i)
     {
-        const bool live = (m_curGen.Compare(shown[i].c_str()) == 0);
-        CStringA sc = GenScore(shown[i].c_str());
+        const bool live = (m_curGen.Compare(gens[i].c_str()) == 0);
+        bool wasServed = false;
+        for (size_t k = 0; k < served.size(); ++k)
+            if (served[k] == gens[i]) { wasServed = true; break; }
+
+        CStringA sc = GenScore(gens[i].c_str());
         if (sc.IsEmpty()) sc = "  -  ";
 
         CStringA line;
-        line.Format("    %s   %s   %s\r\n", shown[i].c_str(), (LPCSTR)sc,
-                    live ? "운영중" : "운용된 적 있음");
+        line.Format("    %s   %s   %s\r\n", gens[i].c_str(), (LPCSTR)sc,
+                    live ? "운영중" :
+                    (wasServed ? "운용된 적 있음" : "승격 안 됨"));
         AppendLog(line, live ? COLOR_LOG_NORMAL : COLOR_LOG_DIM);
     }
-    if (shown.empty()) AppendLog("    (없음)\r\n", COLOR_LOG_DIM);
+    if (gens.empty()) AppendLog("    (없음)\r\n", COLOR_LOG_DIM);
 
-    const size_t hidden = gens.size() - shown.size();
-    if (hidden > 0)
-    {
-        CStringA h;
-        h.Format("\r\n승격되지 않은 후보 %u개는 숨겼습니다. 되돌릴 대상이 "
-                 "아닙니다.\r\n", (unsigned)hidden);
-        AppendLog(h, COLOR_LOG_DIM);
-    }
+    AppendLog("\r\n모두 되돌릴 수 있습니다. \"승격 안 됨\" 은 감도 시험을 "
+              "거치지 않았거나 손으로 넣은 것입니다.\r\n", COLOR_LOG_DIM);
 
     // 되돌릴 수 있을 때는 따로 적지 않는다. 위 목록과 단추 옆 목록이
     // 이미 말해 준다. 못 할 때만 이유를 적는다.
@@ -1069,6 +1066,22 @@ void CDlg_Retrain::OnBnClickedRollback()
     }
     m_backGen = picked;
 
+    // 승격된 적 없는 세대는 감도 시험을 거치지 않았다. 고를 수는 있지만
+    // 그 사실을 알고 눌러야 한다.
+    bool pickedServed = true;
+    for (size_t i = 0; i < m_cboStamps.size(); ++i)
+        if (picked.Compare(m_cboStamps[i].c_str()) == 0)
+        {
+            pickedServed = (i < m_cboServed.size()) ? m_cboServed[i] : true;
+            break;
+        }
+
+    CStringA warn;
+    if (!pickedServed)
+        warn = "이 세대는 운용에 올라간 적이 없습니다. 감도 시험을 거치지 "
+               "않았거나 손으로 넣은 것입니다. 올린 뒤 점수를 확인하십시오."
+               "\r\n\r\n";
+
     CStringA q;
     q.Format("고른 세대로 되돌립니다.\r\n\r\n"
              "    지금  %s\r\n"
@@ -1079,8 +1092,9 @@ void CDlg_Retrain::OnBnClickedRollback()
              "치운 기준선은 지우지 않고 보관하므로 되돌릴 수 있습니다. "
              "다시 쌓는 동안에는 칸별 임계치가 나오지 않고 절대 온도 "
              "임계치만 작동합니다.\r\n\r\n"
+             "%s"
              "되돌린 뒤 감시를 다시 시작해야 반영됩니다. 진행할까요?",
-             (LPCSTR)m_curGen, (LPCSTR)m_backGen);
+             (LPCSTR)m_curGen, (LPCSTR)m_backGen, (LPCSTR)warn);
 
     if (AfxMessageBox(q, MB_YESNO | MB_ICONWARNING) != IDYES)
         return;

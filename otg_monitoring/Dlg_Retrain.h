@@ -71,6 +71,7 @@ private:
     CButton  m_btnDry, m_btnApply, m_btnBack, m_btnClose;
     CComboBox m_cboGen;                    // 되돌릴 세대
     std::vector<std::string> m_cboStamps;  // 목록 순서대로의 세대 이름
+    std::vector<bool> m_cboServed;         // 그 세대가 운용된 적 있는가
     CStatic  m_lblHead, m_lblState;
     CFont    m_font, m_fontMono;
 
