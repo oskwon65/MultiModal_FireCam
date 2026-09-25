@@ -34,7 +34,8 @@ extern const char* GetAnacondaEnvPub();
 
 // 가운데 판 크기
 #define BUSY_W  460
-#define BUSY_H  248
+#define BUSY_H  336          // 기준·구성 두 줄을 넣느라 늘렸다
+#define ID_LBL_RUNINFO 3012
 
 // 눈금 애니메이션은 직접 돌린다.
 //
@@ -176,10 +177,12 @@ BOOL CDlg_Retrain::OnInitDialog()
 
     // 진행 판은 로그 칸 안에 가운데로 놓는다. 로그 아래로 내리면 창이
     // 그만큼 길어져 표식이 너무 멀어진다.
-    int yBusyTop = yLogTop + (logH - BUSY_H) / 2;
-    if (yBusyTop < yLogTop + 4) yBusyTop = yLogTop + 4;
+    // 판이 로그보다 길어졌다. 로그 안에 가운데로 넣으면 창 밖으로 넘치므로,
+    // 로그 맨 위에 붙이고 판을 띄우는 동안만 창을 늘린다.
+    const int yBusyTop = yLogTop + 4;
 
     m_cliCompact = yLogBot + M;
+    m_cliBusy    = yBusyTop + BUSY_H + M;
 
     // WS_CLIPSIBLINGS 가 없으면, 줄이 들어와 다시 칠할 때마다 위에 떠 있는
     // 진행 판과 그 글자까지 덮는다.
@@ -232,6 +235,15 @@ BOOL CDlg_Retrain::OnInitDialog()
         CRect(bx0 + 16, by0 + 210, bx0 + BUSY_W - 16, by0 + 238),
         this, ID_LBL_ELAPSED);
 
+    // 판 맨 아래. 줄이 길어 두 줄씩 접힌다 - SS_LEFT 는 낱말 단위로 접는다.
+    m_fontInfo.CreateFont(UI_FONT_SIZE - 6, 0, 0, 0, FW_NORMAL, FALSE, FALSE, 0,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T(UI_FONT_NAME));
+
+    m_lblRunInfo.Create("", WS_CHILD | WS_CLIPSIBLINGS | SS_LEFT,
+        CRect(bx0 + 16, by0 + 242, bx0 + BUSY_W - 16, by0 + BUSY_H - 8),
+        this, ID_LBL_RUNINFO);
+
     m_brPanel.CreateSolidBrush(PANEL_BG);
 
     // 링 가운데 시간은 더 크고 굵게 - 이 판에서 제일 먼저 눈에 와야 한다.
@@ -268,6 +280,7 @@ BOOL CDlg_Retrain::OnInitDialog()
     SetFont(&m_font);
     SendMessageToDescendants(WM_SETFONT, (WPARAM)m_font.GetSafeHandle(), TRUE);
     m_edLog.SetFont(&m_fontMono);
+    m_lblRunInfo.SetFont(&m_fontInfo);
 
     // [재학습 실행] 이 왜 꺼져 있는지 화면에 적어 둔다. 눌리지 않는 버튼을 두고
     // 설명이 없으면 고장으로 오해한다.
@@ -695,12 +708,16 @@ void CDlg_Retrain::SetClientHeight(int cliH)
 
 void CDlg_Retrain::ShowProgress(bool bShow)
 {
+    // 판이 로그보다 길다. 띄우는 동안만 창을 늘리고 끝나면 되돌린다.
+    SetClientHeight(bShow ? m_cliBusy : m_cliCompact);
+
     const int cmd = bShow ? SW_SHOW : SW_HIDE;
     m_pnlBusy.ShowWindow(cmd);
     m_lblBusy.ShowWindow(cmd);
     m_progress.ShowWindow(cmd);
     m_ring.ShowWindow(cmd);
     m_lblElapsed.ShowWindow(cmd);
+    m_lblRunInfo.ShowWindow(cmd);
 
     if (bShow)
     {
@@ -722,11 +739,17 @@ void CDlg_Retrain::ShowProgress(bool bShow)
         m_ring.SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         m_lblElapsed.SetWindowPos(&wndTop, 0, 0, 0, 0,
                                   SWP_NOMOVE | SWP_NOSIZE);
+        m_lblRunInfo.SetWindowPos(&wndTop, 0, 0, 0, 0,
+                                  SWP_NOMOVE | SWP_NOSIZE);
 
         // 안내는 z 순서를 정리한 뒤에 쓴다. 먼저 쓰면 판이 올라오면서
         // 덮어 버린다. 실행 내내 그대로 두고 타이머가 건드리지 않는다.
         m_lblElapsed.SetWindowTextA(m_notice);
         m_lblElapsed.Invalidate(FALSE);
+
+        m_infoBase = "";
+        m_infoComp = "";
+        m_lblRunInfo.SetWindowTextA("기준과 구성을 읽는 중...");
 
         // 첫 프레임을 바로 그린다. 안 그리면 판이 잠깐 비어 보인다.
         AnimateBusy();
@@ -841,7 +864,8 @@ HBRUSH CDlg_Retrain::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
     {
         const int id = pWnd->GetDlgCtrlID();
         if (id == ID_LBL_BUSY || id == ID_LBL_ELAPSED ||
-            id == ID_PNL_BUSY || id == ID_RING)
+            id == ID_PNL_BUSY || id == ID_RING ||
+            id == ID_LBL_RUNINFO)
         {
             pDC->SetBkMode(TRANSPARENT);
             pDC->SetTextColor(RGB(0x1A, 0x24, 0x35));
@@ -1225,6 +1249,27 @@ LRESULT CDlg_Retrain::OnLogLine(WPARAM, LPARAM lp)
     if (s)
     {
         AppendLog(*s);
+
+        // 기준과 구성은 판에도 옮긴다. 실행 중에는 판이 로그를 덮고 있어
+        // 로그에만 적으면 기다리는 동안 볼 수 없다.
+        if (s->Find("[기준]") >= 0 || s->Find("[구성]") >= 0)
+        {
+            CStringA v = *s;
+            v.Replace("\r", "");
+            v.Replace("\n", "");
+            v.Trim();
+            if (v.Find("[기준]") >= 0) m_infoBase = v;
+            else                       m_infoComp = v;
+
+            CStringA t = m_infoBase;
+            if (!m_infoComp.IsEmpty())
+            {
+                if (!t.IsEmpty()) t += "\r\n";
+                t += m_infoComp;
+            }
+            m_lblRunInfo.SetWindowTextA(t);
+            m_lblRunInfo.Invalidate(FALSE);
+        }
 
         // 예행연습 결과를 읽어 [재학습 실행] 을 열지 말지 정한다.
         if (s->Find("판정: 승격") >= 0) m_bDryPassed = true;

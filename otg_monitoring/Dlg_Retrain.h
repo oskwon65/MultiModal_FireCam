@@ -90,6 +90,16 @@ private:
     CStatic   m_lblBusy;         // 눈금 위 - "예행연습 중 · 34% · epoch 143/400"
     CStatic   m_lblElapsed;      // 눈금 아래 - "예행연습을 시작합니다..."
 
+    // 판 맨 아래. 무엇에서 출발해 무엇으로 배우는지.
+    //
+    // 로그에도 적히지만 실행 중에는 판이 그 위를 덮고 있어 보이지 않는다.
+    // 기다리는 동안 볼 수 있어야 잘못된 기준에서 출발한 것을 그 자리에서
+    // 멈출 수 있다.
+    CStatic   m_lblRunInfo;
+    CFont     m_fontInfo;        // 판 안의 작은 글씨
+    CStringA  m_infoBase;        // [기준] 줄
+    CStringA  m_infoComp;        // [구성] 줄
+
     // 진행 링. 점 24개를 둘레에 놓고, 가운데에 경과 시간을 적는다.
     //
     // 유니코드 시계 문자(U+23F1 등)는 CP949 에 없어 MBCS 빌드에서 깨진다.
@@ -111,7 +121,8 @@ private:
     // 겹치되, 로그에 WS_CLIPSIBLINGS 를 주어 로그가 판 위를 덮지 못하게
     // 한다. 실행 중에 가려지는 것은 로그뿐이고, 끝나면 판이 사라져 다시
     // 다 보인다.
-    int       m_cliCompact = 0;   // 속창 높이 (실행 중에도 그대로)
+    int       m_cliCompact = 0;   // 판을 감췄을 때의 속창 높이
+    int       m_cliBusy = 0;      // 판을 띄웠을 때 (판이 로그보다 길다)
     CProgressCtrl m_progress;
     int       m_target = 0;      // 출력에서 읽은 진행 (0~1000)
     int       m_pos = 0;         // 눈금이 실제로 가 있는 곳

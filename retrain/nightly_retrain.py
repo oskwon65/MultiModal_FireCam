@@ -381,16 +381,19 @@ def print_base_info(user_path, config, args):
     hi, lo = bands(config)
     cbd = (config.get("CALC_BASE_DATE") or "").strip()
 
-    print(f"[기준] 운용 중인 세대 {cur or '없음'}"
-          + (f"  ·  올린 때 {when}" if when else ""))
-    print(f"       학습 직후 점수 {sc:.3f}" if sc is not None
-          else "       학습 직후 점수 - (보고서 없음)")
-    print(f"       보관된 세대 {len(list_generations(user_path))}개 중 "
-          f"운용된 적 있는 것 {len(set(served))}개")
-    print(f"       계산기준일 {cbd or '없음'}  ·  "
-          f"기여 문턱 {hi:.2f} / {lo:.2f}")
-    if args.dry_run:
-        print("       예행연습입니다. 운용 모델은 바뀌지 않습니다.")
+    # 한 줄로 적는다.
+    #
+    # 여러 줄로 적었더니 재학습 창에서 안 보였다. 로그가 30줄 넘게 이어지면서
+    # 맨 위가 밀려 올라가기 때문이다. 한 줄로 줄이고, 끝에 한 번 더 찍는다.
+    line = (f"[기준] 세대 {cur or '없음'}"
+          + (f" · 올린 때 {when[:16]}" if when else "")
+          + (f" · 점수 {sc:.3f}" if sc is not None else " · 점수 -")
+          + f" · 세대 {len(list_generations(user_path))}개"
+          + f" · 기준일 {cbd or '없음'}"
+          + f" · 문턱 {hi:.2f}/{lo:.2f}"
+            + (" · 예행연습" if args.dry_run else ""))
+    print(line)
+    return line
 
 
 def reset_baseline(user_path, why=""):
@@ -730,7 +733,8 @@ def main():
     print("=" * 62)
     print(f"야간 재학습  {args.user_id}   {datetime.now():%Y-%m-%d %H:%M:%S}")
     print("=" * 62)
-    print_base_info(user_path, config, args)
+    base_line = print_base_info(user_path, config, args)
+    comp_line = ""
     print()
 
     # 예행연습에서 본 그 모델을 그대로 올린다.
@@ -838,16 +842,19 @@ def main():
     X_train, X_hold = X[:cut], X[cut:]
     # 무엇으로 배우는지 한 자리에 모아 적는다. 위에 흩어진 줄만으로는
     # "이번 학습이 어떤 자료로 이뤄지는가" 를 한눈에 볼 수 없다.
-    print(f"[구성] 표본 {info['drawn']:,}건 / 목표 {TARGET_SAMPLES:,}건  ·  "
-          f"시간대 {info.get('hours', 0)}개 / 최소 {min_hours}개")
-    print(f"       기간 {info['period']}  ·  칸 {info['cells']}개  ·  "
-          f"기여 {old_weight:.2f}")
-    # split 은 재생버퍼가 앞쪽 2,000건의 중앙값으로 잡은 값이다. 마스크 칸의
-    # 최고 온도가 이 위면 "돌고 있다" 로 보고, 시간대x가동상태 48칸에 고르게
-    # 담는다. 옛/새 시기 비율이 아니다 - 그것은 위의 [재생버퍼] 줄에 있다.
-    if info.get("split"):
-        print(f"       가동 판정 온도 {info['split']:.1f}도 "
-              f"(마스크 칸 최고가 이 위면 가동 중으로 본다)")
+    # 이것도 한 줄이다. 창이 집어 고정된 자리에 보인다.
+    #
+    # split 은 재생버퍼가 앞쪽 2,000건의 중앙값으로 잡은 가동 판정 온도다.
+    # 마스크 칸 최고가 이 위면 "돌고 있다" 로 보고 시간대x가동상태 48칸에
+    # 고르게 담는다. 옛/새 시기 비율이 아니다.
+    comp_line = (f"[구성] 표본 {info['drawn']:,}/{TARGET_SAMPLES:,}"
+                 f" · 시간대 {info.get('hours', 0)}/{min_hours}"
+                 f" · 기간 {info['period']}"
+                 f" · 칸 {info['cells']}"
+                 f" · 기여 {old_weight:.2f}"
+                 + (f" · 가동판정 {info['split']:.0f}도"
+                    if info.get("split") else ""))
+    print(comp_line)
     print()
 
     print(f"[학습] {len(X_train):,}건 학습 / {len(X_hold):,}건 검증 "
@@ -905,6 +912,13 @@ def main():
     report = sensitivity_gate.format_report(cand, incumbent, passed, reasons)
     print()
     print(report)
+    print()
+
+    # 창의 로그 칸은 열 몇 줄이다. 30줄 넘는 출력이 지나가면 맨 위가 밀려
+    # 사라지므로, 무엇에서 출발해 무엇으로 배웠는지 끝에 한 번 더 적는다.
+    # 판정 바로 아래라 결과와 함께 눈에 들어온다.
+    print(base_line)
+    print(comp_line)
     print()
 
     # ---------------- 보관 및 승격 ----------------
