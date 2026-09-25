@@ -812,20 +812,18 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
         }
 
         // 값 상자
-        CStringA l1, l2, l3;
+        CStringA l1, l2;
         l1.Format("%c%c-%c%c %c%c시",
                   p.hour[4], p.hour[5], p.hour[6], p.hour[7],
                   p.hour[8], p.hour[9]);
         l2.Format("점수 %.3f   (%ld건)", p.avg, p.n);
-        if (p.hasT) l3.Format("최고 %.1f도   평균 %.1f도", p.tmax, p.tavg);
-        else        l3 = "온도 없음";
 
         // 격자를 함께 그린다. 선 두 개로는 "어디가" 를 알 수 없다.
         const bool hasG = (p.grid.size() == 64);
         const int cell = 13;
         const int gside = cell * 8;
 
-        const int bw = 168, bh = hasG ? (58 + gside + 26) : 58;
+        const int bw = 188, bh = hasG ? (58 + gside + 26) : 58;
         int bx = x + 12;
         if (bx + bw > px + pw) bx = x - 12 - bw;    // 오른쪽 끝이면 왼쪽으로
         if (bx < px) bx = px;
@@ -843,15 +841,49 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
             mem.SelectObject(pNoBr);
         }
 
+        // 글자는 잉크 색으로 둔다. 계열 색(청록·주황)을 글자에 쓰면 흰
+        // 바탕에서 흐려 읽기 어렵다. 어느 선의 값인지는 옆의 점이 맡는다.
+        auto Dot = [&](int cx, int cy, COLORREF clr) {
+            CPen penNone(PS_NULL, 0, (COLORREF)0);
+            CBrush br(clr);
+            CPen* pp = mem.SelectObject(&penNone);
+            CBrush* pb = mem.SelectObject(&br);
+            mem.Ellipse(cx - 4, cy - 4, cx + 4, cy + 4);
+            mem.SelectObject(pb);
+            mem.SelectObject(pp);
+        };
+
         mem.SetTextColor(TEXT_COLOR);
-        CRect r1(bx + 8, by + 5, bx + bw - 8, by + 21);
+        CRect r1(bx + 9, by + 5, bx + bw - 8, by + 21);
         mem.DrawTextA(l1, &r1, DT_LEFT | DT_SINGLELINE);
-        mem.SetTextColor(LINE_COLOR);
-        CRect r2(bx + 8, by + 21, bx + bw - 8, by + 37);
+
+        Dot(bx + 14, by + 29, LINE_COLOR);
+        CRect r2(bx + 23, by + 21, bx + bw - 8, by + 37);
         mem.DrawTextA(l2, &r2, DT_LEFT | DT_SINGLELINE);
-        mem.SetTextColor(p.hasT ? TMAX_COLOR : MUTED_COLOR);
-        CRect r3(bx + 8, by + 37, bx + bw - 8, by + 53);
-        mem.DrawTextA(l3, &r3, DT_LEFT | DT_SINGLELINE);
+
+        if (p.hasT)
+        {
+            CStringA t1, t2;
+            t1.Format("최고 %.1f도", p.tmax);
+            t2.Format("평균 %.1f도", p.tavg);
+
+            Dot(bx + 14, by + 45, TMAX_COLOR);
+            CRect ra(bx + 23, by + 37, bx + bw - 8, by + 53);
+            mem.DrawTextA(t1, &ra, DT_LEFT | DT_SINGLELINE);
+
+            const CSize sz = mem.GetTextExtent(t1);
+            const int x2 = bx + 23 + sz.cx + 14;
+            Dot(x2 - 9, by + 45, TAVG_COLOR);
+            CRect rb(x2, by + 37, bx + bw - 6, by + 53);
+            mem.DrawTextA(t2, &rb, DT_LEFT | DT_SINGLELINE);
+        }
+        else
+        {
+            mem.SetTextColor(MUTED_COLOR);
+            CRect r3(bx + 23, by + 37, bx + bw - 8, by + 53);
+            mem.DrawTextA("온도 없음", &r3, DT_LEFT | DT_SINGLELINE);
+            mem.SetTextColor(TEXT_COLOR);
+        }
 
         if (hasG)
         {
@@ -891,7 +923,7 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
                 mem.SelectObject(pNoBr);
             }
 
-            mem.SetTextColor(MUTED_COLOR);
+            mem.SetTextColor(TEXT_COLOR);
             CRect rg(bx + 8, gy + gside + 4, bx + bw - 8, gy + gside + 20);
             mem.DrawTextA("테두리 = 점수가 보는 칸", &rg,
                           DT_CENTER | DT_SINGLELINE);
