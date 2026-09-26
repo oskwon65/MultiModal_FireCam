@@ -357,20 +357,23 @@ def gen_score(user_path, stamp):
     return None
 
 
-def print_base_info(user_path, config, args):
+def print_base_info(user_path):
     """
     무엇에서 출발하는지 먼저 적는다.
 
     보고서 끝에만 적어 두면, 몇 분을 기다린 뒤에야 "무엇과 견준 결과인지" 를
     알게 된다. 시작할 때 보이면 잘못된 기준에서 출발하는 것을 바로 멈출 수
     있다 - 되돌린 직후처럼 운용 세대가 예상과 다를 때가 있다.
+
+    한 줄에 세 가지만 적는다. 세대 수 · 기준일 · 문턱까지 붙였더니 줄이 길어
+    정작 중요한 앞부분이 묻혔다. 기준일과 문턱은 실제로 작용할 때 따로
+    적힌다 - 재생버퍼 경고와 기여도 줄에서.
     """
     cur = ""
     cp = os.path.join(user_path, "current_generation.txt")
     if os.path.exists(cp):
         cur = open(cp, encoding="utf-8").read().strip()
 
-    served = served_generations(user_path)
     when = ""
     for w, stamp, _how in reversed(read_history(user_path)):
         if stamp == cur:
@@ -378,20 +381,10 @@ def print_base_info(user_path, config, args):
             break
 
     sc = gen_score(user_path, cur)
-    hi, lo = bands(config)
-    cbd = (config.get("CALC_BASE_DATE") or "").strip()
 
-    # 한 줄로 적는다.
-    #
-    # 여러 줄로 적었더니 재학습 창에서 안 보였다. 로그가 30줄 넘게 이어지면서
-    # 맨 위가 밀려 올라가기 때문이다. 한 줄로 줄이고, 끝에 한 번 더 찍는다.
     line = (f"[기준] 세대 {cur or '없음'}"
-          + (f" · 올린 때 {when[:16]}" if when else "")
-          + (f" · 점수 {sc:.3f}" if sc is not None else " · 점수 -")
-          + f" · 세대 {len(list_generations(user_path))}개"
-          + f" · 기준일 {cbd or '없음'}"
-          + f" · 문턱 {hi:.2f}/{lo:.2f}"
-            + (" · 예행연습" if args.dry_run else ""))
+            + (f" · 올린 때 {when[:16]}" if when else "")
+            + (f" · 점수 {sc:.3f}" if sc is not None else " · 점수 -"))
     print(line)
     return line
 
@@ -733,7 +726,7 @@ def main():
     print("=" * 62)
     print(f"야간 재학습  {args.user_id}   {datetime.now():%Y-%m-%d %H:%M:%S}")
     print("=" * 62)
-    base_line = print_base_info(user_path, config, args)
+    base_line = print_base_info(user_path)
     comp_line = ""
     print()
 
