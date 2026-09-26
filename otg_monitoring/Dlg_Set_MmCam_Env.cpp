@@ -407,16 +407,20 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 간격을 62 -> 54 로 줄였다.
 	long ny = stage_top + 26;
 	CStatic* stg[4] = { &m_lblStage0, &m_lblStage1, &m_lblStage2, &m_lblStage3 };
+	// 칸마다 줄 수가 다르다. 한 값으로 두면 긴 칸의 마지막 줄이 잘린다.
+	//
+	//   0 절대임계값   제목 · 온도/상승률                  2줄
+	//   1 셀별기준선   제목 · 표본/시간대                  2줄
+	//   2 오토인코더   제목 · 세대 · 모델 파일 시각        3줄
+	//   3 연속학습     제목 · 재학습 가능 · 점수 · 기여    4줄
+	static const long STAGE_H[4] = { 52, 52, 78, 108 };
+	const long STAGE_GAP = 8;
+
 	for (int i = 0; i < 4; ++i)
 	{
-		// 연속학습 칸만 세 줄이다 — 제목 · 재학습 가능 건수 · 판단 점수와 기여도.
-		// 나머지와 같은 46 으로 두면 마지막 줄이 잘려 보이지 않는다.
-		// 맨 아래 항목이라 아래로 늘려도 다른 것을 가리지 않는다.
-		// 연속학습 칸만 네 줄이다 - 제목 · 재학습 가능 · 판단 점수 · 기여도.
-		const long h = (i == 3) ? 108 : 52;
 		stg[i]->Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
-			CRect(col2_x, ny, col2_x + col2_w, ny + h), this);
-		ny += 60;
+			CRect(col2_x, ny, col2_x + col2_w, ny + STAGE_H[i]), this);
+		ny += STAGE_H[i] + STAGE_GAP;
 	}
 
 	LoadStageSettings();
@@ -642,21 +646,28 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 		s1 ? "사용 중" : "누적 중", samples, min_smp, hours, min_hr);
 	m_lblStage1.SetWindowTextA(t);
 
-	// 둘째 줄에는 지금 적재된 모델 파일의 시각을 적는다.
+	// 지금 쓰고 있는 세대와 모델 파일의 시각을 적는다.
 	//
-	// 예전에는 "오토인코더 적재됨" 이라고 적었는데, 첫 줄에 이름이 들어가면서
-	// 같은 말을 두 번 하게 됐다. 그보다 모델이 언제 것인지 보여주는 편이
-	// 쓸모 있다. 모델은 기동할 때 한 번만 읽으므로, 새 파일로 바꿔 놓고
-	// 재시작하지 않으면 여기 날짜가 그대로다 — 그것만으로 바로 알아챈다.
+	// 세대 이름은 되돌리기나 재학습에서 그대로 쓰는 이름이다. 설정 창에서
+	// 바로 읽을 수 있어야 "지금 무엇이 돌고 있는가" 를 묻지 않아도 된다.
+	//
+	// 파일 시각을 함께 두는 이유가 있다. 세대 이름은 승격할 때 적어 둔 것이고
+	// 파일 시각은 실제로 적재된 파일의 것이라, 둘이 어긋나면 산출물이 뒤바뀐
+	// 것이다. 2026-09-25 cj_busan_1 이 그 상태로 이틀을 돌았다.
+	//
+	// 모델은 기동할 때 한 번만 읽는다. 새 파일로 바꿔 놓고 재시작하지 않으면
+	// 여기 값이 그대로다 - 그것만으로 바로 알아챈다.
 	if (s2)
 	{
+		const std::string gen = ini_read_utf8(st, "STATUS", "GENERATION", "");
 		const std::string mat = ini_read_utf8(st, "STATUS", "MODEL_AT", "");
-		t.Format("2단계 오토인코더   사용 중\r\n    %s",
-			mat.empty() ? "모델 적재됨" : ("모델 " + mat).c_str());
+		t.Format("2단계 오토인코더   사용 중\r\n    세대 %s\r\n    모델 %s",
+			gen.empty() ? "-" : gen.c_str(),
+			mat.empty() ? "-" : mat.c_str());
 	}
 	else
 	{
-		t.Format("2단계 오토인코더   없음\r\n    모델 파일이 아직 없습니다");
+		t.Format("2단계 오토인코더   없음\r\n    모델 파일이 아직 없습니다\r\n");
 	}
 	m_lblStage2.SetWindowTextA(t);
 

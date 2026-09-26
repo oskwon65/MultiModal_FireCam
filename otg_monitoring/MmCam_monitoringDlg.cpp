@@ -216,7 +216,7 @@ static_assert(PROC_ROW_COUNT <= (IDC_BTN_STOP_LAST - IDC_BTN_STOP_BASE + 1),
 // 그쪽 배치를 바꾸면 이 값도 같이 맞춰야 한다.
 // 연속학습 조건에 '2단계 최소 시간대' 가 들어가 한 행(27px) 늘었다.
 // 410 으로 두면 아래 구분선까지 6px 밖에 안 남아 빠듯하다.
-#define SETTING_AREA_H      446
+#define SETTING_AREA_H      463
 // 목록과 설정 영역 사이 간격
 #define AREA_GAP            8
 
