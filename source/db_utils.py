@@ -11,7 +11,7 @@ import mysql.connector
 import datetime
 from pathlib import Path
 
-from constants import ENV_FILE_NAME, SECRET_FILE_NAME, ERR_CODE, SVR_RGB_IMG_JPG, SVR_IR_IMG_CSV
+from constants import ENV_FILE_NAME, LEARN_FILE_NAME, SECRET_FILE_NAME, ERR_CODE, SVR_RGB_IMG_JPG, SVR_IR_IMG_CSV
 from constants import PEOPLE_ANALYSIS_FOLDER, PEOPLE_SRCIMG_FOLDER, BASE_IMG_FOLDER
 from constants import FIRE_ANALYSIS_FOLDER, FIRE_SRCIMG_FOLDER
 
@@ -708,16 +708,36 @@ def Set_Env_Config(user_ID):
     )
     config.read(env_path, encoding="utf-8")
 
+    # 연속학습 설정은 같은 폴더의 continual_learning.ini 에 둔다.
+    #
+    # env.ini 는 설치할 때 한 번 정하는 값(카메라 해상도, DB 이름, 경로)이고
+    # continual_learning.ini 는 운영하며 계속 만지는 값(임계값, 단계 전환,
+    # 기여도, 학습 표본)이다. 성격이 다른 둘이 한 파일에 있으면 현장에서
+    # 무엇을 만져도 되는지 알기 어렵다.
+    #
+    # env.ini 뒤에 읽으므로 같은 열쇠가 양쪽에 있으면 이 파일이 이긴다.
+    # 아직 옮기지 않은 현장은 env.ini 의 값으로 그대로 돈다.
+    learn_path = os.path.join(user_path, LEARN_FILE_NAME)
+    if os.path.isfile(learn_path):
+        config.read(learn_path, encoding="utf-8")
+
     # DB 비밀번호는 저장소(git)에 올라가지 않도록 env.ini 에서 분리해
-    # 같은 폴더의 secrets.ini 에 둔다. 이어서 읽으면 하나의 config 로 합쳐진다.
+    # 같은 폴더의 db_secrets.ini 에 둔다. 이어서 읽으면 하나의 config 로 합쳐진다.
     secret_path = os.path.join(user_path, SECRET_FILE_NAME)
     if not os.path.isfile(secret_path):
         print(f"[ERROR ] SECRET_FILE_NAME not found: {secret_path}")
-        print(f"[ERROR ] users/secrets.ini.sample 을 복사해 비밀번호를 채우세요.")
+        print(f"[ERROR ] users/db_secrets.ini.sample 을 복사해 비밀번호를 채우세요.")
         sys.exit(1)
 
     config.read(secret_path, encoding="utf-8")
-    print(f"[SECRET_FILE] = {secret_path}")
+
+    # 읽었다는 사실은 적지 않는다.
+    #
+    # 알려 주는 것이 없다. db_secrets.ini 는 늘 env.ini 와 같은 폴더에
+    # 있어 바로 위 [ENV_FILE] 줄과 같은 말이 되고, 예행연습 창처럼
+    # 파이썬 출력을 그대로 보여 주는 화면에서는 본론을 밀어낸다.
+    #
+    # 없을 때는 위에서 [ERROR] 로 알리고 멈추므로 놓칠 일이 없다.
 
     local_config = {}
 
@@ -764,20 +784,47 @@ def Set_Env_Config(user_ID):
                    "ABS_RISE_WARN", "ABS_RISE_ALARM",
                    # 기여 가중치를 가르는 점수 문턱. 없으면 None 을 넘겨
                    # model_contribution 의 기본값을 쓰게 한다.
-                   "CONTRIB_BAND_HIGH", "CONTRIB_BAND_LOW"):
-            local_config[_k] = (config.getfloat("CONSTANTS", _k)
-                                if config.has_option("CONSTANTS", _k)
-                                else None)
+                   "CONTRIB_BAND_HIGH", "CONTRIB_BAND_LOW",
+                   # 학습 표본. RETRAIN_RUN_TEMP 는 비워 두면 재생버퍼가
+                   # 자료에서 스스로 잡는다.
+                   "RETRAIN_NORMAL_MIN_SCORE", "RETRAIN_RUN_TEMP"):
+            # 빈칸도 '없음' 으로 본다.
+            #
+            # getfloat 은 '' 을 만나면 ValueError 로 죽는다. [설정] 창은
+            # 절대 임계값 네 칸을 모두 비우는 것을 허용하고(0단계 끄기),
+            # 가동 판정 온도도 비우면 자동이라 빈칸이 정상적으로 생긴다.
+            _v = config.get("CONSTANTS", _k, fallback="").strip()
+            try:
+                local_config[_k] = float(_v) if _v else None
+            except ValueError:
+                print(f"[WARN] {_k} 값을 숫자로 읽지 못했습니다: {_v!r}")
+                local_config[_k] = None
 
         # 연속 학습 단계 전환 조건. 모니터링 프로그램의 [설정] 창에서 바꾼다.
         # 현장마다 수집 주기가 달라(kict1 5초 / cj_busan_1 30초) 같은 표본 수를
         # 모으는 시간이 크게 차이나므로 코드에 박지 않는다. 없으면 None 을 넘겨
         # 파이썬 쪽 기본값(online_baseline.MIN_SAMPLES 등)을 쓰게 한다.
+        # 기여도 판단 기준도 같이 읽는다. [설정] 창에서 바꾼다.
+        #
+        #   CONTRIB_WINDOW_TABLES  판단에 쓸 날짜 테이블 수
+        #   CONTRIB_MIN_FRAMES     이 밑이면 판단 보류(기여 1.00)
+        #   CONTRIB_MAX_SAMPLES    다시 매길 프레임 수의 상한
+        # 학습 표본 구성도 같이 읽는다.
+        #
+        #   RETRAIN_TARGET_SAMPLES  목표 표본 수
+        #   RETRAIN_ERA_BALANCE     시기를 나누어 담을지 (0/1)
         for _k in ("BASELINE_MIN_SAMPLES", "BASELINE_MIN_HOURS",
-                   "RETRAIN_MIN_SAMPLES", "RETRAIN_MIN_HOURS"):
-            local_config[_k] = (config.getint("CONSTANTS", _k)
-                                if config.has_option("CONSTANTS", _k)
-                                else None)
+                   "RETRAIN_MIN_SAMPLES", "RETRAIN_MIN_HOURS",
+                   "CONTRIB_WINDOW_TABLES", "CONTRIB_MIN_FRAMES",
+                   "CONTRIB_MAX_SAMPLES",
+                   "RETRAIN_TARGET_SAMPLES", "RETRAIN_ERA_BALANCE"):
+            # 위 실수 항목과 같은 이유로 빈칸을 '없음' 으로 본다.
+            _v = config.get("CONSTANTS", _k, fallback="").strip()
+            try:
+                local_config[_k] = int(_v) if _v else None
+            except ValueError:
+                print(f"[WARN] {_k} 값을 정수로 읽지 못했습니다: {_v!r}")
+                local_config[_k] = None
 
         # 계산 기준일 (YYYY-MM-DD). 이 날짜 이전 데이터는 기준선 누적과
         # 재학습 표집에서 모두 제외한다. 카메라를 옮기거나 설비를 바꾼 뒤

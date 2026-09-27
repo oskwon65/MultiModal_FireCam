@@ -21,6 +21,9 @@ extern std::string gUserID;
 extern MYSQL* connect_history_db(std::string* dbNameOut);
 extern std::string read_ini_string(const char* section, const char* key,
                                   const char* default_value);
+// 연속학습 설정은 continual_learning.ini 에 있다. 없으면 env.ini 를 본다.
+extern std::string read_learn_string(const char* section, const char* key,
+                                     const char* default_value);
 extern const char* GetMmCamStartPath();
 
 #define ID_CHART        3101
@@ -273,7 +276,7 @@ void CDlg_Analysis::Load()
     MYSQL* conn = connect_history_db(&dbName);
     if (conn == nullptr)
     {
-        SetState("히스토리 DB 에 접속할 수 없습니다. env.ini 와 secrets.ini 를 "
+        SetState("히스토리 DB 에 접속할 수 없습니다. env.ini 와 db_secrets.ini 를 "
                  "확인하십시오.");
         m_chart.Invalidate();
         m_loading = false;
@@ -426,7 +429,7 @@ void CDlg_Analysis::Load()
 
     // 온도 칸의 위 끝. 주의 임계값이 화면 밖에 있으면 얼마나 여유가 있는지
     // 알 수 없으므로, 임계값은 언제나 들어오게 잡는다.
-    m_tempWarn = atof(read_ini_string("CONSTANTS", "ABS_TEMP_WARN", "0").c_str());
+    m_tempWarn = atof(read_learn_string("CONSTANTS", "ABS_TEMP_WARN", "0").c_str());
     double top = (tpeak > m_tempWarn) ? tpeak : m_tempWarn;
     if (top < 60.0) top = 60.0;
     m_tempTop = ceil(top * 1.08 / 20.0) * 20.0;
@@ -623,7 +626,7 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
     // 위 칸 : 재학습이 기존 모델을 그대로 물려받는 점수
     {
         const double band = atof(
-            read_ini_string("CONSTANTS", "CONTRIB_BAND_HIGH", "0.85").c_str());
+            read_learn_string("CONSTANTS", "CONTRIB_BAND_HIGH", "0.85").c_str());
         if (band > 0.0 && band < 1.0)
         {
             CPen pen(PS_DOT, 1, BAND_COLOR);

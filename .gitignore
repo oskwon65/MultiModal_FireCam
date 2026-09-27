@@ -51,7 +51,12 @@ output.jpg
 #           fall_detection/fall_detection.py 에 있다(직접 작성한 파일).
 falldetection_openpifpaf/
 
-# --- DB 비밀번호 : 절대 추적하지 않는다 (users/secrets.ini.sample 로 형식만 공유) ---
+# --- DB 비밀번호 : 절대 추적하지 않는다 (users/db_secrets.ini.sample 로 형식만 공유) ---
+#
+# 옛 이름(secrets.ini)도 함께 막아 둔다. 현장 PC 에는 아직 그 이름으로 남아
+# 있을 수 있고, 이름을 바꾸는 사이에 한 번이라도 추적되면 비밀번호가 그대로
+# 저장소에 올라간다. 두 줄을 남겨 두는 값은 거의 없고 잃는 것은 크다.
+users/*/db_secrets.ini
 users/*/secrets.ini
 
 # 연속 학습 산출물 (현장 PC 로컬, 저장소에 넣지 않는다)

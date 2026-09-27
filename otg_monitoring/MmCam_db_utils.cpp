@@ -151,9 +151,40 @@ std::string read_ini_string(const char* section, const char* key, const char* de
 }
 
 // =====================================
-// secrets.ini 경로 생성
+// continual_learning.ini 문자열 읽기
+//
+// 연속학습 설정은 env.ini 에서 떼어 같은 폴더의 continual_learning.ini 에
+// 둔다.
+// 설치할 때 한 번 정하는 값과 운영하며 만지는 값을 가르기 위해서다.
+//
+// 없으면 env.ini 에서 찾는다. 현장 PC 가 아직 옮기기 전일 수 있고, 그때
+// 기본값으로 떨어지면 임계값이 통째로 달라진다.
+// =====================================
+std::string read_learn_string(const char* section, const char* key,
+                              const char* default_value)
+{
+    if (gUserID.empty()) {
+        AfxMessageBox("gUserID is empty.");
+        std::exit(EXIT_FAILURE);
+    }
+    const std::string learn_path = std::string(GetMmCamRootPath())
+        + "users\\" + gUserID + "\\continual_learning.ini";
+
+    if (file_exists(learn_path.c_str())) {
+        // 있는지 없는지를 가리려고 아무도 쓰지 않을 값을 기본으로 넣는다.
+        const char* MISSING = "\x01";
+        char buffer[256] = { 0 };
+        GetPrivateProfileStringA(section, key, MISSING, buffer,
+            static_cast<DWORD>(sizeof(buffer)), learn_path.c_str());
+        if (std::string(buffer) != MISSING) return std::string(buffer);
+    }
+    return read_ini_string(section, key, default_value);
+}
+
+// =====================================
+// db_secrets.ini 경로 생성
 //   DB 비밀번호는 저장소(git)에 올라가지 않도록 env.ini 에서 분리해
-//   같은 폴더의 secrets.ini 에 둔다.
+//   같은 폴더의 db_secrets.ini 에 둔다.
 // =====================================
 static std::string make_secret_path()
 {
@@ -161,11 +192,11 @@ static std::string make_secret_path()
         AfxMessageBox("gUserID is empty.");
         std::exit(EXIT_FAILURE);
     }
-    return std::string(GetMmCamRootPath()) + "users\\" + gUserID + "\\secrets.ini";
+    return std::string(GetMmCamRootPath()) + "users\\" + gUserID + "\\db_secrets.ini";
 }
 
 // =====================================
-// secrets.ini 문자열 읽기
+// db_secrets.ini 문자열 읽기
 // =====================================
 std::string read_secret_string(const char* section, const char* key, const char* default_value)
 {
@@ -173,7 +204,7 @@ std::string read_secret_string(const char* section, const char* key, const char*
 
     if (!file_exists(secret_path.c_str())) {
         std::string msg = "(read_secret_string) File Not Found: " + secret_path
-            + "\n\nusers\\secrets.ini.sample 을 복사해 비밀번호를 채우세요.";
+            + "\n\nusers\\db_secrets.ini.sample 을 복사해 비밀번호를 채우세요.";
         AfxMessageBox(msg.c_str());
         std::exit(EXIT_FAILURE);
     }
