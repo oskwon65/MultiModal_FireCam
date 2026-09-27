@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-야간 재학습 (연속 학습)
+재학습 (연속 학습)
+
+밤에 저절로 돌지 않는다. 작업 스케줄러에 등록된 것이 없고, 시각을 보고 스스로
+도는 코드도 없다. [재학습] 창에서 [예행연습] 이나 [재학습 실행] 을 눌러야 돈다.
+파일 이름의 nightly 는 처음에 밤마다 돌릴 생각으로 붙인 흔적이다.
 
   python retrain/nightly_retrain.py kict1
   python retrain/nightly_retrain.py kict1 --dry-run     시험만, 교체 안 함
@@ -608,6 +612,31 @@ def save_scaler(scaler, pkl_path):
     )
 
 
+def load_live_model(user_path, n_cells, latent_dim, device):
+    """
+    지금 운용 중인 모델과 스케일러를 읽는다. 못 읽으면 (None, None).
+
+    두 곳에서 쓴다 - 기여도를 구할 때 프레임을 다시 매기는 데, 그리고 감도
+    회귀 시험에서 새 후보와 견주는 데. 같은 파일을 두 번 읽을 일이 없다.
+    """
+    mp = os.path.join(user_path, "autoencoder_final.pth")
+    sp = os.path.join(user_path, "scaler.pkl")
+    if not (os.path.exists(mp) and os.path.exists(sp)):
+        return None, None
+    try:
+        m = AutoEncoder(n_cells, latent_dim, n_cells).to(device)
+        m.load_state_dict(torch.load(mp, map_location=device))
+        sc = load_scaler(sp)
+        if getattr(sc, "n_features_in_", None) != n_cells:
+            print(f"[경고] 현재 scaler 의 차원이 {n_cells} 와 다릅니다 "
+                  f"({getattr(sc, 'n_features_in_', None)}).")
+            return None, None
+        return m, sc
+    except Exception as e:
+        print(f"[경고] 운용 모델을 읽지 못했습니다: {type(e).__name__} {e}")
+        return None, None
+
+
 def load_mask(user_path, n_cells):
     p = os.path.join(user_path, "hotlist_mask_local.ini")
     if not os.path.exists(p):
@@ -724,7 +753,7 @@ def main():
 
     # ---------------- 재학습 ----------------
     print("=" * 62)
-    print(f"야간 재학습  {args.user_id}   {datetime.now():%Y-%m-%d %H:%M:%S}")
+    print(f"재학습  {args.user_id}   {datetime.now():%Y-%m-%d %H:%M:%S}")
     print("=" * 62)
     base_line = print_base_info(user_path)
     comp_line = ""
@@ -766,6 +795,8 @@ def main():
         print(f"[예행연습] 다시 쓸 결과가 없어 새로 학습합니다 - {info}")
 
     mask = load_mask(user_path, n_cells)
+    live_model, live_scaler = load_live_model(user_path, n_cells,
+                                             latent_dim, device)
 
     history_db = Get_HistoryDB_Config(config)
     conn = Connect_History_DB(history_db)
@@ -775,9 +806,21 @@ def main():
         # 카메라가 밀렸는지가 아니라 '지금 몇 점을 내고 있는지' 로 정한다.
         # 실측에서 칸 수는 모델 손상을 예측하지 못했다 - 3칸을 밀어도 0.890
         # 이었고, kict1 은 1.3칸에 0.088 이었다.
+        # DB 에 적힌 점수는 그때 돌던 모델의 것이다. 세대를 갈아 끼운 날이면
+        # 여러 모델의 점수가 섞여 지금 모델의 성적이 아니다. 표본을 뽑아
+        # 지금 모델로 다시 매긴다.
+        rescore = None
+        if live_model is not None:
+            rescore = model_contribution.batch_scorer(
+                live_model, live_scaler, mask, device)
+        else:
+            print("[기여도] 운용 모델을 읽지 못해 DB 에 적힌 점수로 판단합니다.")
+
+        n_tab, min_fr, max_sm = model_contribution.limits(config)
         dec_score, dec_info = model_contribution.decision_score(
             conn, history_db["database"], n_cells, mask=mask,
-            temp_warn=config.get("ABS_TEMP_WARN"))
+            temp_warn=config.get("ABS_TEMP_WARN"), score_fn=rescore,
+            n_tables=n_tab, min_frames=min_fr, max_samples=max_sm)
         old_weight = model_contribution.weight_for(dec_score, bands(config))
         print(f"[기여도] {model_contribution.describe(dec_score, old_weight)}")
         print()
@@ -792,10 +835,31 @@ def main():
         # 모델을 못 믿기로 했으면 그 판단으로 표본을 걸러서도 안 된다.
         # 대신 0단계 절대 임계값으로 거른다. 학습과 무관하게 늘 동작하는
         # 유일한 판단이고, 이상 프레임을 학습에 넣지 않는다는 목적도 지킨다.
+        # 표본을 거르는 점수도 다시 매긴다.
+        #
+        # 기여도만 고쳐 놓으면 앞뒤가 맞지 않는다. "지금 모델을 믿는다"(기여
+        # 1.00)고 판단해 놓고, 정작 표본은 그때그때 다른 모델이 매긴 점수로
+        # 거르게 된다. 09-25~26 이 그래서 3,000건 중 102건만 들어왔다.
+        # 학습 표본 구성 규칙. [설정] 창에서 바꾼다.
+        target = int(config.get("RETRAIN_TARGET_SAMPLES") or TARGET_SAMPLES)
+        normal_min = config.get("RETRAIN_NORMAL_MIN_SCORE")
+        normal_min = (replay_buffer.NORMAL_MIN_SCORE if normal_min in (None, "")
+                      else float(normal_min))
+        run_temp = config.get("RETRAIN_RUN_TEMP")
+        run_temp = None if run_temp in (None, "") else float(run_temp)
+        era_balance = bool(int(config.get("RETRAIN_ERA_BALANCE") or 0))
+
+        replay_score = None
         if old_weight >= 1.0:
-            min_score = replay_buffer.NORMAL_MIN_SCORE
+            min_score = normal_min
             temp_warn = None
-            print(f"[재생버퍼] 정상 판정 기준 : 모델 점수 >= {min_score}")
+            replay_score = rescore
+            if replay_score is not None:
+                print(f"[재생버퍼] 정상 판정 기준 : 모델 점수 >= {min_score} "
+                      f"(지금 모델로 다시 매기고, 그 시절 판단도 함께 본다)")
+            else:
+                print(f"[재생버퍼] 정상 판정 기준 : 모델 점수 >= {min_score} "
+                      f"(운용 모델을 읽지 못해 적힌 점수를 쓴다)")
         else:
             min_score = 0.0
             temp_warn = config.get("ABS_TEMP_WARN")
@@ -808,9 +872,10 @@ def main():
                       f"(모델 점수는 믿지 않음)")
 
         X, info = replay_buffer.collect(
-            conn, history_db["database"], n_cells, TARGET_SAMPLES, mask=mask,
+            conn, history_db["database"], n_cells, target, mask=mask,
             base_date=config.get("CALC_BASE_DATE"), old_weight=old_weight,
-            min_score=min_score, temp_warn=temp_warn)
+            min_score=min_score, temp_warn=temp_warn, score_fn=replay_score,
+            run_temp=run_temp, era_balance=era_balance)
     finally:
         conn.close()
 
@@ -840,11 +905,12 @@ def main():
     # split 은 재생버퍼가 앞쪽 2,000건의 중앙값으로 잡은 가동 판정 온도다.
     # 마스크 칸 최고가 이 위면 "돌고 있다" 로 보고 시간대x가동상태 48칸에
     # 고르게 담는다. 옛/새 시기 비율이 아니다.
-    comp_line = (f"[구성] 표본 {info['drawn']:,}/{TARGET_SAMPLES:,}"
+    comp_line = (f"[구성] 표본 {info['drawn']:,}/{target:,}"
                  f" · 시간대 {info.get('hours', 0)}/{min_hours}"
                  f" · 기간 {info['period']}"
                  f" · 칸 {info['cells']}"
-                 f" · 기여 {old_weight:.2f}"
+                 + (f" · 시기 {info['eras']}" if info.get("eras", 1) > 1 else "")
+                 + f" · 기여 {old_weight:.2f}"
                  + (f" · 가동판정 {info['split']:.0f}도"
                     if info.get("split") else ""))
     print(comp_line)
@@ -881,20 +947,10 @@ def main():
               "--rollback <세대> 로 세대 폴더의 것을 올립니다.")
 
     incumbent = None
-    mp = os.path.join(user_path, "autoencoder_final.pth")
-    sp = os.path.join(user_path, "scaler.pkl")
-    if guard_state != artifact_guard.MISMATCH \
-            and os.path.exists(mp) and os.path.exists(sp):
+    if guard_state != artifact_guard.MISMATCH and live_model is not None:
         try:
-            old = AutoEncoder(n_cells, latent_dim, n_cells).to(device)
-            old.load_state_dict(torch.load(mp, map_location=device))
-            old_scaler = load_scaler(sp)
-            if getattr(old_scaler, "n_features_in_", None) == n_cells:
-                incumbent = sensitivity_gate.evaluate(
-                    old, old_scaler, X_hold, mask, device)
-            else:
-                print(f"[경고] 현재 scaler 의 차원이 {n_cells} 와 달라 비교를 "
-                      f"건너뜁니다. 절대 기준만 적용합니다.")
+            incumbent = sensitivity_gate.evaluate(
+                live_model, live_scaler, X_hold, mask, device)
         except Exception as e:
             # 비교가 빠지면 '세대마다 조금씩 둔해지는 것' 을 못 잡는다.
             # 조용히 넘기지 말고 경고로 남긴다.

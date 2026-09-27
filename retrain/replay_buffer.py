@@ -32,6 +32,7 @@ hot_list(64셀 값)를 이미 기록하고 있다.
 없는 것은 정상으로 취급하지 않는다.
 """
 
+import datetime as dt
 import json
 import random
 from collections import defaultdict
@@ -44,6 +45,64 @@ NORMAL_MIN_SCORE = 0.5
 # 시간대(24) × 가동상태(2) = 48칸. 칸마다 이만큼씩 모아 둔 뒤 최종 표집한다.
 # 목표 개수보다 넉넉히 잡아야 칸별 균형을 맞출 여지가 생긴다.
 OVERSAMPLE = 2.0
+
+# 시기를 가르는 공백. 자료가 이만큼 끊기면 다른 시기로 본다.
+#
+# 날짜를 코드나 설정에 적지 않으려고 이렇게 잡았다. 현장마다 언제 멈췄는지
+# 다르고, 그 날짜를 사람이 적어 넣게 하면 반드시 낡는다. 끊긴 자리는 자료가
+# 스스로 알려 준다.
+#
+# 7일로 둔 이유는 하루 이틀 빠진 것까지 다른 시기로 보면 시기가 잘게 쪼개져
+# 칸마다 자료가 바닥나기 때문이다. 설비를 고치거나 카메라를 옮겨 한동안 멈춘
+# 경우만 갈라진다.
+ERA_GAP_DAYS = 7
+
+# 시기 수의 상한. 넘으면 오래된 것끼리 하나로 묶는다.
+#
+# 칸 수가 24 x 2 x 시기 라, 시기가 늘수록 칸마다 자료가 얇아진다. 여섯을
+# 넘기면 나누는 이득보다 얇아지는 손해가 크다.
+ERA_MAX = 6
+
+# 다시 매길 때 한 번에 넘기는 프레임 수.
+#
+# 한 건씩 부르면 4만 건에 몇 분이 걸린다. 묶어 넘기면 0.05초다. 4,096 x 64 는
+# 2 MB 라 메모리도 부담이 없다.
+RESCORE_BATCH = 4096
+
+
+def split_eras(tables, gap_days=ERA_GAP_DAYS, era_max=ERA_MAX):
+    """
+    테이블 이름을 보고 시기를 나눈다. {테이블: 시기번호}, 시기 수를 돌려준다.
+
+    끊긴 적이 없으면 시기가 하나다. 그때는 시기 축을 넣어도 칸이 그대로라
+    아무 일도 일어나지 않는다 - 그것이 이 방식의 이점이다. 현장을 가리지
+    않고 같은 규칙을 쓸 수 있다.
+    """
+    if not tables:
+        return {}, 0
+
+    era = {}
+    k = 0
+    prev = None
+    for t in tables:
+        d = t[-8:]
+        try:
+            cur_d = dt.date(int(d[:4]), int(d[4:6]), int(d[6:]))
+        except ValueError:
+            era[t] = k                # 이름이 날짜가 아니면 앞 시기에 붙인다
+            continue
+        if prev is not None and (cur_d - prev).days >= gap_days:
+            k += 1
+        era[t] = k
+        prev = cur_d
+
+    n = k + 1
+    if n > era_max:
+        # 오래된 쪽을 하나로 묶는다. 최근 시기를 쪼개 두는 편이 쓸모 있다.
+        merge = n - era_max
+        era = {t: max(0, v - merge) for t, v in era.items()}
+        n = era_max
+    return era, n
 
 
 def list_history_tables(cur, db_name):
@@ -123,7 +182,8 @@ class StratifiedReservoir:
 
 def collect(conn, db_name, n_cells, target, mask=None,
             min_score=NORMAL_MIN_SCORE, seed=None, verbose=True,
-            base_date=None, old_weight=None, temp_warn=None):
+            base_date=None, old_weight=None, temp_warn=None,
+            score_fn=None, run_temp=None, era_balance=False):
     """
     히스토리 DB 를 훑어 학습용 표본을 만든다.
 
@@ -196,9 +256,11 @@ def collect(conn, db_name, n_cells, target, mask=None,
                   f"새 시기 {len(tables)}개에서 {n_new:,}건 "
                   f"(기여 가중치 {float(old_weight):.2f})")
         X_old, info_old = _collect_from(cur, db_name, old_tables, n_cells, n_old,
-                                        mask, min_score, seed, verbose, temp_warn)
+                                        mask, min_score, seed, verbose, temp_warn,
+                                        score_fn, run_temp, era_balance)
         X_new, info_new = _collect_from(cur, db_name, tables, n_cells, n_new,
-                                        mask, min_score, seed, verbose, temp_warn)
+                                        mask, min_score, seed, verbose, temp_warn,
+                                        score_fn, run_temp, era_balance)
         cur.close()
         X = np.concatenate([a for a in (X_old, X_new) if len(a)]) \
             if (len(X_old) or len(X_new)) else np.empty((0, n_cells))
@@ -222,32 +284,85 @@ def collect(conn, db_name, n_cells, target, mask=None,
         return X, info
 
     X, info = _collect_from(cur, db_name, tables, n_cells, target,
-                            mask, min_score, seed, verbose, temp_warn)
+                            mask, min_score, seed, verbose, temp_warn, score_fn,
+                            run_temp, era_balance)
     cur.close()
     info["old_weight"] = 1.0 if old_weight is None else float(old_weight)
     return X, info
 
 
 def _collect_from(cur, db_name, tables, n_cells, target, mask,
-                  min_score, seed, verbose, temp_warn=None):
+                  min_score, seed, verbose, temp_warn=None, score_fn=None,
+                  run_temp=None, era_balance=False):
     """
     테이블 묶음 하나에서 target 건을 고르게 뽑는다.
 
     temp_warn 이 주어지면 마스크 칸 최고 온도가 그 값 이상인 프레임을 뺀다.
     모델 점수를 믿을 수 없을 때(min_score 를 낮췄을 때) 정상 여부를 가리는
     유일한 근거다.
+
+    [score_fn - 지금 모델로 다시 매긴다]
+
+    DB 의 mscore 는 그 프레임이 지나갈 때 돌던 모델이 매긴 값이다. 세대를
+    갈아 끼운 날이면 한 구간 안에 여러 모델의 판단이 섞이고, 그 중에 망가진
+    모델이 있으면 멀쩡한 프레임이 통째로 빠진다.
+
+    2026-09-26 cj_busan_1 실측. 짝이 어긋난 산출물로 이틀을 돈 구간이다.
+
+        09-25   1,713건 중 정상 49건 (2.9%)
+        09-26   1,287건 중 정상 53건 (4.1%)
+
+    그 바람에 학습 표본의 79%가 두 달 전 7월 것이 됐다.
+
+    [적힌 점수와 다시 매긴 점수 중 하나만 넘으면 받는다]
+
+    다시 매긴 것만 쓰지 않는 이유가 있다. 그러면 지금 모델이 자기가 배울
+    것을 스스로 고르게 된다. 못 보던 상태에 낮은 점수를 주는 모델은 바로 그
+    상태를 표본에서 빼 버리고, 다음 세대도 똑같이 못 보게 된다.
+
+    적힌 점수 쪽은 그 시절 모델이 남긴 판단이라 지금 모델의 사각을 메운다.
+    어느 쪽으로 들어오든 절대 임계값은 그대로 걸리므로, 진짜 이상 프레임이
+    섞여 들어올 길은 막혀 있다.
+
+    [run_temp - 가동 판정 온도]
+
+    주지 않으면 앞쪽 2,000건 최고 온도의 중앙값으로 잡는다. 그 방식은 앞쪽
+    2,000건이 어느 시간대인지에 끌려가고, 그 2,000건 자체는 판정선이 아직
+    없어 전부 정지로 들어간다. 값을 주면 처음부터 같은 선으로 가른다.
+
+    [era_balance - 시기를 나누어 담기]
+
+    켜면 칸이 (시각 x 가동상태) 에서 (시각 x 가동상태 x 시기) 로 늘어난다.
+    끄면 자료가 많은 시기가 그만큼 많이 뽑힌다 - 칸 안에서는 모두 같은
+    확률이라 비율이 그대로 보존되기 때문이다.
+
+    시기는 날짜가 아니라 자료가 끊긴 자리로 나눈다(split_eras 참고).
     """
     if not tables or target <= 0:
         return np.empty((0, n_cells)), {"tables": 0, "rows": 0, "kept": 0}
 
-    n_keys_est = 24 * 2
+    era_of, n_eras = split_eras(tables)
+    if not era_balance:
+        n_eras = 1
+
+    n_keys_est = 24 * 2 * n_eras
     per_cell = int(OVERSAMPLE * target / n_keys_est) + 1
     res = StratifiedReservoir(per_cell, seed=seed)
 
-    # 가동/정지를 가르는 기준. 마스크 셀 최고 온도의 중앙값을 쓰는데,
-    # 한 번 훑는 동안은 알 수 없으므로 앞쪽 표본으로 잡고 간다.
+    if era_balance and verbose:
+        if n_eras > 1:
+            print(f"[재생버퍼] 시기 {n_eras}개로 나누어 담습니다 "
+                  f"(자료가 {ERA_GAP_DAYS}일 이상 끊긴 자리가 경계)")
+        else:
+            print(f"[재생버퍼] 자료가 끊긴 자리가 없어 시기가 하나입니다")
+
+    # 가동/정지를 가르는 기준. 값을 주면 그대로 쓰고, 없으면 마스크 셀 최고
+    # 온도의 중앙값으로 잡는다 - 한 번 훑는 동안은 알 수 없으므로 앞쪽
+    # 표본으로 잡고 간다.
     warmup_peaks = []
-    split = None
+    split = None if run_temp is None else float(run_temp)
+    if split is not None and verbose:
+        print(f"[재생버퍼] 가동 판정 온도 {split:.0f}도 (지정값)")
 
     rows_seen = 0
     kept = 0
@@ -259,12 +374,55 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
     # 없었다.
     hours_seen = 0
 
+    # 다시 매긴 것으로 들어왔는지, 적힌 점수로 들어왔는지 센다.
+    n_by_now = n_by_old = 0
+    pending = []            # (시각, 적힌 점수, 값, 가동여부, 시기)
+
+    def cell_key(hour, running, era):
+        return (hour, running, era) if era_balance else (hour, running)
+
+    def flush():
+        """모아 둔 프레임을 한 번에 매기고 받을 것만 담는다."""
+        nonlocal kept, hours_seen, n_by_now, n_by_old
+        if not pending:
+            return
+        try:
+            now = np.asarray(
+                score_fn(np.asarray([q[2] for q in pending], dtype=np.float64)),
+                dtype=np.float64)
+        except Exception as e:
+            # 못 매기면 적힌 점수만으로 간다. 표본을 통째로 잃는 것보다 낫다.
+            print(f"[경고] 재생버퍼를 다시 매기지 못해 적힌 점수를 씁니다: "
+                  f"{type(e).__name__} {e}")
+            now = np.full(len(pending), -1.0)
+
+        for (hour, stored, v, running, era), sc_now in zip(pending, now):
+            ok_now = bool(sc_now >= min_score)
+            ok_old = stored is not None and float(stored) >= min_score
+            if not (ok_now or ok_old):
+                continue
+            if ok_now:
+                n_by_now += 1
+            else:
+                n_by_old += 1
+            res.offer(cell_key(hour, running, era), v)
+            hours_seen |= (1 << int(hour))
+            kept += 1
+        pending.clear()
+
     for t in tables:
-        cur.execute(
-            f"SELECT time, mscore, hot_list FROM `{db_name}`.`{t}` "
-            f"WHERE mscore >= %s",
-            (min_score,),
-        )
+        era = era_of.get(t, 0)
+        if score_fn is None:
+            cur.execute(
+                f"SELECT time, mscore, hot_list FROM `{db_name}`.`{t}` "
+                f"WHERE mscore >= %s",
+                (min_score,),
+            )
+        else:
+            # 여기서 걸러 버리면 다시 매길 기회조차 없어진다. 다 가져온다.
+            cur.execute(
+                f"SELECT time, mscore, hot_list FROM `{db_name}`.`{t}`"
+            )
         for when, score, raw in cur:
             rows_seen += 1
             try:
@@ -288,10 +446,16 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
             else:
                 running = 1 if peak >= split else 0
 
-            res.offer((when.hour, running), v)
-            hours_seen |= (1 << int(when.hour))
-            kept += 1
+            if score_fn is None:
+                res.offer(cell_key(when.hour, running, era), v)
+                hours_seen |= (1 << int(when.hour))
+                kept += 1
+            else:
+                pending.append((when.hour, score, v, running, era))
+                if len(pending) >= RESCORE_BATCH:
+                    flush()
 
+    flush()
     cur.close()
 
     X, seen = res.balanced_draw(target)
@@ -305,10 +469,16 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
         "drawn": int(X.shape[0]),
         "hours": bin(hours_seen).count("1"),
         "split": split,
+        "by_now": n_by_now,
+        "by_old": n_by_old,
+        "eras": n_eras,
     }
 
     if verbose:
         print(f"[재생버퍼] 테이블 {info['tables']}개 ({info['period']})")
+        if score_fn is not None:
+            print(f"           본 {rows_seen:,}건 중 정상 {kept:,}건 "
+                  f"(지금 모델로 {n_by_now:,} · 적힌 점수로만 {n_by_old:,})")
         print(f"           정상 프레임 {kept:,}건 중 {info['drawn']:,}건 표집, "
               f"{info['cells']}개 칸(시간대x가동상태) · {info['hours']}개 시간대")
         if info["drawn"] < target:

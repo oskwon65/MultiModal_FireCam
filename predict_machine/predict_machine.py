@@ -886,16 +886,23 @@ def main_loop(config, sensor_db_config):
                             print(f"[WARN] 히스토리 건수 집계 실패: {e}")
 
                         # 재학습이 기존 모델을 얼마나 물려받을지. 실제로 정하는
-                        # 곳은 야간 재학습이고, 여기서는 [설정] 화면에 미리
+                        # 곳은 재학습이고, 여기서는 [설정] 화면에 미리
                         # 보여 주기 위해 같은 함수로 구한다.
                         try:
                             _c = Connect_History_DB(history_db_config)
                             try:
+                                _rs = None
+                                if model is not None and scaler is not None:
+                                    _rs = model_contribution.batch_scorer(
+                                        model, scaler, hotlist_mask, device)
+                                _nt, _mf, _ms = model_contribution.limits(config)
                                 _sc, _ = model_contribution.decision_score(
                                     _c, history_db_config["database"],
                                     LENGTH_HOTLIST, mask=hotlist_mask,
                                     temp_warn=config.get("ABS_TEMP_WARN"),
-                                    verbose=False)
+                                    verbose=False, score_fn=_rs,
+                                    n_tables=_nt, min_frames=_mf,
+                                    max_samples=_ms)
                             finally:
                                 _c.close()
                             contrib = (_sc, model_contribution.weight_for(_sc))
