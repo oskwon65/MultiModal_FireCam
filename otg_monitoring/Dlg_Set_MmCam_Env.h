@@ -45,6 +45,19 @@ public:
     CStatic m_capAbs, m_lblAbsTemp, m_lblAbsRise;
     CEdit   m_edAbsTempWarn, m_edAbsTempAlarm, m_edAbsRiseWarn, m_edAbsRiseAlarm;
 
+    // 기여도 판단 기준. 재학습이 기존 모델을 얼마나 물려받을지 정하는 방법이다.
+    // 학습 표본을 뽑는 기준(위 연속학습 조건)과는 다른 것이라 따로 묶는다.
+    CStatic m_capContrib, m_lblCtWindow, m_lblCtFrames, m_lblCtBand;
+    CEdit   m_edCtWindow, m_edCtMinFrames, m_edCtMaxSamples;
+    // 문턱은 0.85 같은 소수라 ES_NUMBER 를 걸 수 없다. 점을 못 찍는다.
+    CEdit   m_edCtBandLow, m_edCtBandHigh;
+
+    // 학습 표본 구성. 무엇을 배울지 정한다. 위 기여도 판단(지금 모델을
+    // 얼마나 믿을지)과는 다른 것이라 따로 묶는다.
+    CStatic m_capSample, m_lblSpTarget, m_lblSpScore, m_lblSpRunTemp, m_lblSpHint;
+    CEdit   m_edSpTarget, m_edSpScore, m_edSpRunTemp;
+    CButton m_chkSpEra;
+
     // 현재 진행 상황 (predict_machine 이 남긴 stage_status.ini 를 읽는다)
     CStatic m_capNow, m_lblStage0, m_lblStage1, m_lblStage2, m_lblStage3;
 
@@ -66,8 +79,14 @@ public:
 
 private:
     std::string StageIniPath() const;
+    // 연속학습 설정은 env.ini 에서 떼어 continual_learning.ini 에 둔다.
+    std::string LearnIniPath() const;
+    std::string LearnRead(const char* key, const char* def) const;
+    int         LearnReadInt(const char* key, int def) const;
     void        LoadHeader();
     void        LoadStageSettings();
     void        LoadStageStatus();
     void        LoadAbsSettings();
+    void        LoadContribSettings();
+    void        LoadSampleSettings();
 };
