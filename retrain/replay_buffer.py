@@ -314,15 +314,19 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
 
     그 바람에 학습 표본의 79%가 두 달 전 7월 것이 됐다.
 
-    [적힌 점수와 다시 매긴 점수 중 하나만 넘으면 받는다]
+    [지금 모델 하나로 가른다]
 
-    다시 매긴 것만 쓰지 않는 이유가 있다. 그러면 지금 모델이 자기가 배울
-    것을 스스로 고르게 된다. 못 보던 상태에 낮은 점수를 주는 모델은 바로 그
-    상태를 표본에서 빼 버리고, 다음 세대도 똑같이 못 보게 된다.
+    한동안 '적힌 점수와 다시 매긴 점수 중 하나만 넘으면 받는' 식으로 두었다.
+    지금 모델이 못 보던 상태를 스스로 빼 버리는 것을 막으려 했는데, 그 경우
+    적힌 점수도 같은 망가진 모델이 매긴 것이라 함께 버려진다. 실제로 적힌
+    점수로만 들어온 것은 43,687건 중 19건뿐이었다.
 
-    적힌 점수 쪽은 그 시절 모델이 남긴 판단이라 지금 모델의 사각을 메운다.
-    어느 쪽으로 들어오든 절대 임계값은 그대로 걸리므로, 진짜 이상 프레임이
-    섞여 들어올 길은 막혀 있다.
+    손해는 분명하다. 지나치게 너그러웠던 옛 모델이 통과시킨 프레임이 그 길로
+    들어온다 - 감도 회귀 시험이 막으려는 바로 그것이다.
+
+    모델을 못 믿을 때의 답은 이미 따로 있다. 기여가 1.00 미만이면 부르는 쪽이
+    min_score 를 0 으로 내려 모델 판단을 아예 쓰지 않고 절대 임계값으로만
+    거른다. 믿기로 한 모델이면 그 모델 하나로 가르는 것이 앞뒤가 맞는다.
 
     [run_temp - 가동 판정 온도]
 
@@ -374,8 +378,10 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
     # 없었다.
     hours_seen = 0
 
-    # 다시 매긴 것으로 들어왔는지, 적힌 점수로 들어왔는지 센다.
     n_by_now = n_by_old = 0
+    # 적힌 점수는 이제 판정에 쓰지 않는다. 자리만 남겨 둔다 - 다시 매기지
+    # 못한 경우를 로그로 남길 때 쓸 수 있고, 튜플 모양을 바꾸면 위아래가
+    # 함께 흔들린다.
     pending = []            # (시각, 적힌 점수, 값, 가동여부, 시기)
 
     def cell_key(hour, running, era):
@@ -391,20 +397,18 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
                 score_fn(np.asarray([q[2] for q in pending], dtype=np.float64)),
                 dtype=np.float64)
         except Exception as e:
-            # 못 매기면 적힌 점수만으로 간다. 표본을 통째로 잃는 것보다 낫다.
-            print(f"[경고] 재생버퍼를 다시 매기지 못해 적힌 점수를 씁니다: "
+            # 못 매기면 이 묶음을 거른다. 적힌 점수로 대신하지 않는다 -
+            # 그 값을 믿지 않기로 한 것이 이 함수의 전제다. 표본이 모자라면
+            # 최소 표본 관문이 재학습을 멈춘다.
+            print(f"[경고] 재생버퍼를 다시 매기지 못해 이 묶음을 거릅니다: "
                   f"{type(e).__name__} {e}")
-            now = np.full(len(pending), -1.0)
+            pending.clear()
+            return
 
-        for (hour, stored, v, running, era), sc_now in zip(pending, now):
-            ok_now = bool(sc_now >= min_score)
-            ok_old = stored is not None and float(stored) >= min_score
-            if not (ok_now or ok_old):
+        for (hour, _stored, v, running, era), sc_now in zip(pending, now):
+            if sc_now < min_score:
                 continue
-            if ok_now:
-                n_by_now += 1
-            else:
-                n_by_old += 1
+            n_by_now += 1
             res.offer(cell_key(hour, running, era), v)
             hours_seen |= (1 << int(hour))
             kept += 1

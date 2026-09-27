@@ -105,7 +105,7 @@ def check(candidate, incumbent=None):
             f"정상 평균 점수 {candidate['normal_mean']:.3f} < {NORMAL_MEAN_MIN} "
             f"(정상을 이상이라 판정)")
     else:
-        reasons.append(f"정상 평균 점수 {candidate['normal_mean']:.3f}  통과")
+        reasons.append(f"정상 평균 점수 {candidate['normal_mean']:.3f}  (통과)")
 
     if candidate["normal_false"] > NORMAL_FALSE_MAX:
         ok = False
@@ -113,7 +113,7 @@ def check(candidate, incumbent=None):
             f"정상 오탐 비율 {100*candidate['normal_false']:.1f}% > "
             f"{100*NORMAL_FALSE_MAX:.0f}%")
     else:
-        reasons.append(f"정상 오탐 비율 {100*candidate['normal_false']:.1f}%  통과")
+        reasons.append(f"정상 오탐 비율 {100*candidate['normal_false']:.1f}%  (통과)")
 
     a40 = candidate["anomaly_40"]
     if a40 > ANOMALY_MEAN_MAX:
@@ -121,7 +121,7 @@ def check(candidate, incumbent=None):
         reasons.append(
             f"+40도 주입 시 평균 {a40:.3f} > {ANOMALY_MEAN_MAX} (이상을 못 잡음)")
     else:
-        reasons.append(f"+40도 주입 시 평균 {a40:.3f}  통과")
+        reasons.append(f"+40도 주입 시 평균 {a40:.3f}  (통과)")
 
     if incumbent is not None:
         # 절대 기준만으로는 세대마다 조금씩 둔해지는 것을 못 잡는다.
@@ -135,7 +135,8 @@ def check(candidate, incumbent=None):
                     f"(+{drift:.3f} > {REGRESSION_TOLERANCE})")
             else:
                 reasons.append(
-                    f"+{int(lv)}도 감도 {incumbent[k]:.3f} -> {candidate[k]:.3f}  통과")
+                    f"+{int(lv)}도 감도 {incumbent[k]:.3f} -> {candidate[k]:.3f}"
+                    f"  (통과)")
 
     return ok, reasons
 
@@ -152,7 +153,10 @@ def format_report(candidate, incumbent, passed, reasons):
     묶음의 줄인지 알 수 없고, 창의 글꼴이 가변폭이라 열도 맞지 않았다.
     다른 줄과 같이 [꼬리표] 를 앞에 둔다.
     """
-    lines = ["[평가] 항목(후보, 현재)"]
+    # 후보를 앞세우고 현재를 괄호에 넣는다. 이번에 만든 모델이 주인공이고
+    # 현재는 견줄 대상일 뿐인데, 나란히 두면 어느 쪽이 무엇인지 매번
+    # 되짚어야 한다.
+    lines = ["[평가] 항목 후보 (현재)"]
 
     rows = [("평균점수", "normal_mean"),
             ("오탐비율", "normal_false")]
@@ -163,13 +167,13 @@ def format_report(candidate, incumbent, passed, reasons):
         # 파이썬의 :<8 은 한글 한 자를 한 칸으로 세어 오히려 어긋난다
         # ('평균점수' 는 네 자 여덟 칸, '+20 변형' 은 일곱 자 여덟 칸).
         if incumbent:
-            lines.append(f"[평가] {label}  ( {candidate[key]:.3f}   "
-                         f"{incumbent[key]:.3f} )")
+            lines.append(f"[평가] {label}   {candidate[key]:.3f}   "
+                         f"( {incumbent[key]:.3f} )")
         else:
             # 첫 모델이라 견줄 것이 없다. 빈칸으로 두면 자리만 비어 무엇이
             # 빠졌는지 알 수 없으므로 까닭을 적는다.
-            lines.append(f"[평가] {label}  ( {candidate[key]:.3f}   "
-                         f"현재 없음 )")
+            lines.append(f"[평가] {label}   {candidate[key]:.3f}   "
+                         f"( 현재 없음 )")
 
     lines.append("")
     lines.append(RULE)

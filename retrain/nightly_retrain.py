@@ -3,7 +3,7 @@
 재학습 (연속 학습)
 
 밤에 저절로 돌지 않는다. 작업 스케줄러에 등록된 것이 없고, 시각을 보고 스스로
-도는 코드도 없다. [재학습] 창에서 [예행연습] 이나 [재학습 실행] 을 눌러야 돈다.
+도는 코드도 없다. [재학습] 창에서 [예행연습] 이나 [재학습 적용] 을 눌러야 돈다.
 파일 이름의 nightly 는 처음에 밤마다 돌릴 생각으로 붙인 흔적이다.
 
   python retrain/nightly_retrain.py kict1
@@ -117,7 +117,7 @@ RETIRED_DIR_NAME = "_retired_baseline"
 
 # 예행연습 결과를 잠깐 두는 곳.
 #
-# 세대 폴더가 아니다. 목록에 나오지 않고 되돌릴 대상도 아니다. [재학습 실행]
+# 세대 폴더가 아니다. 목록에 나오지 않고 되돌릴 대상도 아니다. [재학습 적용]
 # 이 곧바로 집어 갈 자리일 뿐이다.
 DRYRUN_DIR_NAME = ".dryrun"
 
@@ -267,7 +267,7 @@ def save_dry_run(user_path, user_id, files, report, passed, incumbent):
     초기화도 매번 다르다. 그래서 같은 자료로 두 번 돌리면 다른 모델이
     나온다.
 
-    예행연습에서 본 보고서와 [재학습 실행] 이 올리는 모델이 서로 다른
+    예행연습에서 본 보고서와 [재학습 적용] 이 올리는 모델이 서로 다른
     모델이라는 뜻이다. 판정을 읽고 눌렀는데 다른 것이 올라간다. 본 것을
     그대로 올리는 편이 맞다.
 
@@ -620,27 +620,41 @@ def save_scaler(scaler, pkl_path):
 
 def load_live_model(user_path, n_cells, latent_dim, device):
     """
-    지금 운용 중인 모델과 스케일러를 읽는다. 못 읽으면 (None, None).
+    지금 운용 중인 모델과 스케일러를 읽는다.
 
-    두 곳에서 쓴다 - 기여도를 구할 때 프레임을 다시 매기는 데, 그리고 감도
-    회귀 시험에서 새 후보와 견주는 데. 같은 파일을 두 번 읽을 일이 없다.
+    아직 모델이 없으면 (None, None). 첫 학습이라 정상이다.
+
+    파일은 있는데 읽지 못하면 RuntimeError 를 낸다. 그 상태로 재학습하면
+    안 되기 때문이다 - 표본은 옛 판단으로 거르고 웜스타트는 지금 가중치로
+    하는, 짝이 맞지 않는 학습이 된다. 격자나 잠재 차원을 바꾼 경우라면 그
+    가중치는 층 모양조차 다르다.
+
+    세 곳에서 쓴다 - 기여도를 구할 때 프레임을 다시 매기는 데, 표본을 거를
+    때, 그리고 감도 회귀 시험에서 새 후보와 견주는 데.
     """
     mp = os.path.join(user_path, "autoencoder_final.pth")
     sp = os.path.join(user_path, "scaler.pkl")
-    if not (os.path.exists(mp) and os.path.exists(sp)):
-        return None, None
+
+    if not os.path.exists(mp) and not os.path.exists(sp):
+        return None, None               # 첫 학습
+
+    if not os.path.exists(mp):
+        raise RuntimeError("scaler 는 있는데 autoencoder_final.pth 가 없습니다")
+    if not os.path.exists(sp):
+        raise RuntimeError("모델은 있는데 scaler.pkl 이 없습니다")
+
     try:
         m = AutoEncoder(n_cells, latent_dim, n_cells).to(device)
         m.load_state_dict(torch.load(mp, map_location=device))
         sc = load_scaler(sp)
-        if getattr(sc, "n_features_in_", None) != n_cells:
-            print(f"[경고] 현재 scaler 의 차원이 {n_cells} 와 다릅니다 "
-                  f"({getattr(sc, 'n_features_in_', None)}).")
-            return None, None
-        return m, sc
     except Exception as e:
-        print(f"[경고] 운용 모델을 읽지 못했습니다: {type(e).__name__} {e}")
-        return None, None
+        raise RuntimeError(f"{type(e).__name__} {e}")
+
+    got = getattr(sc, "n_features_in_", None)
+    if got != n_cells:
+        raise RuntimeError(f"scaler 의 차원 {got} 이 격자 {n_cells} 와 다릅니다")
+
+    return m, sc
 
 
 def load_mask(user_path, n_cells):
@@ -755,13 +769,14 @@ def main():
         else:
             reset_baseline(user_path, f"{target} 로 되돌림")
 
-        print(f"[OK] {target} 세대로 되돌렸습니다. predict_machine 을 재시작하십시오.")
+        print(f"[OK] {target} 세대로 되돌렸습니다. "
+              f"감시가 곧 알아채고 갈아 끼웁니다(10초 안).")
         return 0
 
     # ---------------- 재학습 ----------------
-    print("=" * 62)
+    print(RULE)
     print(f"재학습  {args.user_id}   {datetime.now():%Y-%m-%d %H:%M:%S}")
-    print("=" * 62)
+    print(RULE)
 
     # 이 판단을 좌우하는 파일을 적는다.
     #
@@ -780,7 +795,7 @@ def main():
     # 예행연습에서 본 그 모델을 그대로 올린다.
     #
     # 학습에는 시드가 없어 같은 자료로 다시 돌리면 다른 모델이 나온다.
-    # 판정을 읽고 [재학습 실행] 을 눌렀는데 다른 것이 올라가면 무엇을 보고
+    # 판정을 읽고 [재학습 적용] 을 눌렀는데 다른 것이 올라가면 무엇을 보고
     # 결정한 것인지 알 수 없다. 본 것을 올린다.
     if not args.dry_run and not args.fresh:
         d, info = load_dry_run(user_path, args.user_id)
@@ -807,14 +822,34 @@ def main():
             activate(user_path, stamp)
             clear_dry_run(user_path)
             print(f"[승격] {stamp} 을 운용 모델로 배치했습니다.")
-            print("       predict_machine 을 재시작해야 반영됩니다.")
+            print("       감시가 곧 알아채고 갈아 끼웁니다(10초 안). "
+                  "재시작하지 않아도 됩니다.")
             return 0
 
         print(f"[예행연습] 다시 쓸 결과가 없어 새로 학습합니다 - {info}")
 
     mask = load_mask(user_path, n_cells)
-    live_model, live_scaler = load_live_model(user_path, n_cells,
-                                             latent_dim, device)
+
+    # 운용 모델을 읽지 못하면 여기서 멈춘다.
+    #
+    # 읽지 못하는 모델로는 기여도도 못 재고 표본도 못 거른다. 그대로 가면
+    # 그때그때 다른 모델의 판단이 섞인 표본으로, 뜻이 없는 가중치를 이어
+    # 학습하게 된다. 무엇이 잘못됐는지 적고 멈추는 편이 낫다.
+    try:
+        live_model, live_scaler = load_live_model(user_path, n_cells,
+                                                  latent_dim, device)
+    except RuntimeError as e:
+        print(f"[중단] 운용 모델을 읽지 못했습니다 - {e}")
+        print()
+        print("       흔한 까닭")
+        print("         · scaler.pkl 이 이 환경의 numpy 로 안 풀리고 "
+              "scaler.npz 도 낡았다")
+        print("         · env.ini 의 격자(X_GRID/Y_GRID)나 "
+              "잠재 차원을 바꿨다")
+        print("         · 산출물이 복사 도중이거나 깨졌다")
+        print()
+        print("       [되돌리기] 로 멀쩡한 세대를 올린 뒤 다시 하십시오.")
+        return 1
 
     history_db = Get_HistoryDB_Config(config)
     conn = Connect_History_DB(history_db)
@@ -832,7 +867,7 @@ def main():
             rescore = model_contribution.batch_scorer(
                 live_model, live_scaler, mask, device)
         else:
-            print("[기여도] 운용 모델을 읽지 못해 DB 에 적힌 점수로 판단합니다.")
+            print("[기여도] 아직 운용 모델이 없어 DB 에 적힌 점수로 판단합니다.")
 
         n_tab, min_fr, max_sm = model_contribution.limits(config)
         dec_score, dec_info = model_contribution.decision_score(
@@ -875,10 +910,10 @@ def main():
             replay_score = rescore
             if replay_score is not None:
                 print(f"[재생버퍼] 정상 판정 기준 : 모델 점수 >= {min_score} "
-                      f"(지금 모델로 다시 매기고, 그 시절 판단도 함께 본다)")
+                      f"(지금 모델로 다시 매긴 값)")
             else:
                 print(f"[재생버퍼] 정상 판정 기준 : 모델 점수 >= {min_score} "
-                      f"(운용 모델을 읽지 못해 적힌 점수를 쓴다)")
+                      f"(아직 운용 모델이 없어 적힌 점수를 쓴다)")
         else:
             min_score = 0.0
             temp_warn = config.get("ABS_TEMP_WARN")
@@ -940,13 +975,14 @@ def main():
     print(f"[학습] {len(X_train):,}건 학습 / {len(X_hold):,}건 검증 "
           f"({info.get('hours', 0)}/{min_hours} 시간대)")
 
+    # 웜스타트는 위에서 읽어 둔 그 모델에서 시작한다.
+    #
+    # 예전에는 여기서 파일을 다시 읽었다. 그러면 스케일러를 못 읽어 기여도와
+    # 표본에서 쓰지 못한 모델의 가중치를 웜스타트에만 쓰는 일이 생긴다.
+    # 이제 읽지 못하면 위에서 멈추므로, 여기 오는 것은 온전히 읽힌 모델뿐이다.
     init_state = None
-    _mp = os.path.join(user_path, "autoencoder_final.pth")
-    if old_weight > 0.0 and os.path.exists(_mp):
-        try:
-            init_state = torch.load(_mp, map_location=device)
-        except Exception as e:
-            print(f"[경고] 기존 모델을 읽지 못했습니다: {type(e).__name__} {e}")
+    if old_weight > 0.0 and live_model is not None:
+        init_state = live_model.state_dict()
 
     model, scaler = train(X_train, n_cells, latent_dim, device,
                           init_state=init_state, old_weight=old_weight)
@@ -999,7 +1035,7 @@ def main():
     # 9개가 예행연습인 상태였다.
     #
     # 대신 .dryrun 에 잠깐 둔다. 목록에 나오지 않고 되돌릴 대상도 아니지만,
-    # [재학습 실행] 이 곧바로 집어 갈 수 있다. 학습에 시드가 없어 다시
+    # [재학습 적용] 이 곧바로 집어 갈 수 있다. 학습에 시드가 없어 다시
     # 돌리면 다른 모델이 나오기 때문이다 - 본 것을 올려야 한다.
     tmp = os.path.join(user_path, ".candidate")
     os.makedirs(tmp, exist_ok=True)
@@ -1037,12 +1073,9 @@ def main():
                          passed, cur)
         shutil.rmtree(tmp, ignore_errors=True)
 
-        # 예행연습이라는 것은 창이 이미 말하고 있다. 여기서는 그 결과를
-        # 어떻게 쓸 수 있는지만 적는다.
-        if passed:
-            print(f"이 결과를 {DRYRUN_MAX_AGE_H}시간 안에 [재학습 실행] 하면 "
-                  f"보신 그 모델이 그대로 올라갑니다.")
-        else:
+        # 승격이면 아무 말도 덧붙이지 않는다. 판정 줄이 결론이고, 그 다음에
+        # 무엇을 할지는 [재학습 적용] 단추가 켜지는 것으로 이미 보인다.
+        if not passed:
             print("판정이 승격이 아니라 이 결과를 다시 쓰지 않습니다.")
         return 0
 
@@ -1060,7 +1093,8 @@ def main():
 
     activate(user_path, stamp)
     print(f"[승격] {stamp} 을 운용 모델로 배치했습니다.")
-    print("       predict_machine 을 재시작해야 반영됩니다.")
+    print("       감시가 곧 알아채고 갈아 끼웁니다(10초 안). "
+          "재시작하지 않아도 됩니다.")
     return 0
 
 

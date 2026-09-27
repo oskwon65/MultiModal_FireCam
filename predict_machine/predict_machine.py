@@ -334,6 +334,76 @@ def normality_score(x_input, mask, scaler, model):
 
 
 # ==================================================
+# 운용 모델 갈아 끼우기
+# ==================================================
+#
+# 재학습이 새 모델을 올리면 여기서 알아채고 다시 읽는다. 예전에는 사람이
+# predict_machine 을 껐다 켜야 반영됐다. 그 사이 감시는 옛 모델로 돌고,
+# 껐다 켜는 동안에는 아예 멈춘다.
+#
+# 얼마나 자주 볼지. 파일 stat 세 번이라 부담이 없다.
+MODEL_RELOAD_INTERVAL = 10.0
+
+
+def artifact_fingerprint(user_path):
+    """운용 산출물이 바뀌었는지 볼 지문 - 세대 이름과 세 파일의 크기·시각."""
+    gen = ""
+    gp = os.path.join(user_path, "current_generation.txt")
+    try:
+        if os.path.exists(gp):
+            with open(gp, encoding="utf-8") as f:
+                gen = f.read().strip()
+    except OSError:
+        pass
+
+    parts = [gen]
+    for name in ("autoencoder_final.pth", "scaler.pkl", "scaler.npz"):
+        try:
+            st = os.stat(os.path.join(user_path, name))
+            parts.append(f"{name}:{st.st_size}:{int(st.st_mtime)}")
+        except OSError:
+            parts.append(f"{name}:-")
+    return "|".join(parts)
+
+
+def load_live_artifacts(user_path, input_dim, latent_dim, output_dim, device):
+    """
+    운용 중인 모델과 스케일러를 읽는다. (model, scaler, 사유).
+
+    읽을 수 없으면 (None, None, 사유). 사유는 화면에 그대로 적는다.
+
+    [복사 도중에 읽지 않는다]
+
+    activate() 는 파일 셋을 하나씩 복사하고 마지막에 current_generation.txt
+    를 쓴다. 그 사이에 읽으면 새 모델과 옛 스케일러가 짝이 된다 - 2026-09-25
+    cj_busan_1 이 그 상태로 이틀을 돌며 모든 프레임에 0.05를 줬다.
+    artifact_guard 가 세대 폴더의 것과 바이트까지 견주므로, 복사 도중이면
+    어긋남으로 걸려 이번 차례를 거른다. 다음 차례에 다시 본다.
+    """
+    state, msg, _rows = artifact_guard.check(user_path)
+    if state == artifact_guard.MISMATCH:
+        return None, None, f"산출물 짝이 어긋납니다 - {msg}"
+
+    mp = os.path.join(user_path, "autoencoder_final.pth")
+    sp = os.path.join(user_path, "scaler.pkl")
+    if not (os.path.exists(mp) and os.path.exists(sp)):
+        return None, None, "모델 파일이 없습니다"
+
+    try:
+        m = AutoEncoder(input_dim, latent_dim, output_dim).to(device)
+        m.load_state_dict(torch.load(mp, map_location=device))
+        sc = load_scaler(sp)
+    except Exception as e:
+        return None, None, f"{type(e).__name__} {e}"
+
+    if getattr(sc, "n_features_in_", None) != input_dim:
+        return None, None, (f"scaler 의 차원이 {getattr(sc, 'n_features_in_', None)} "
+                            f"로 INPUT_DIM({input_dim})과 다릅니다")
+
+    return m, sc, ""
+
+
+# ==================================================
 # SMS
 # ==================================================
 
@@ -602,6 +672,10 @@ def main_loop(config, sensor_db_config):
     status_written_at = 0.0   # 0 이면 첫 프레임에서 바로 한 번 남긴다
     prev_fire_detected = False
 
+    # 운용 모델이 갈렸는지 보는 데 쓴다. 지금 읽어 둔 것을 지문으로 남긴다.
+    model_fingerprint = artifact_fingerprint(config["LOCAL_USER_PATH"])
+    model_checked_at = time.time()
+
     input_img = Get_Input_Image_URL(IMG_URL)
 
     if input_img is None:
@@ -678,6 +752,47 @@ def main_loop(config, sensor_db_config):
     # ---------- Real-time inference loop ----------
     while True:
         try:
+            # ---------- 운용 모델이 갈렸는지 본다 ----------
+            #
+            # 프레임을 읽기 전에 본다. 뒤에 두면 프레임이 없는 동안
+            # (median_hot.size == 0 으로 continue) 영영 확인하지 않는다.
+            _t_chk = time.time()
+            if _t_chk - model_checked_at >= MODEL_RELOAD_INTERVAL:
+                model_checked_at = _t_chk
+                _fp = artifact_fingerprint(config["LOCAL_USER_PATH"])
+                if _fp != model_fingerprint:
+                    _m2, _sc2, _why = load_live_artifacts(
+                        config["LOCAL_USER_PATH"], INPUT_DIM, LATENT_DIM,
+                        OUTPUT_DIM, device)
+                    if _m2 is not None:
+                        model, scaler = _m2, _sc2
+                        model_fingerprint = _fp
+
+                        # 기준선도 파일에서 다시 읽는다.
+                        #
+                        # 되돌리기는 기준선 파일을 치운다 - 기준선은 그 모델의
+                        # 오차 분포라 모델만 갈면 임계치가 남의 것이 된다.
+                        # 메모리의 것을 그대로 두면 껐다 켠 것과 결과가 달라진다.
+                        # 저장하지 않고 읽기만 한다. 저장하면 치워 둔 파일을
+                        # 되살리게 된다. 마지막 저장 뒤의 누적(최대 200건)은
+                        # 잃지만, 껐다 켤 때도 같은 만큼 잃는다.
+                        baseline = OnlineBaseline.load(
+                            BASELINE_PATH, INPUT_DIM,
+                            min_samples=config.get("BASELINE_MIN_SAMPLES"),
+                            min_hours=config.get("BASELINE_MIN_HOURS"),
+                            base_date=config.get("CALC_BASE_DATE"),
+                        )
+                        baseline_dirty = 0
+
+                        _gen = _fp.split("|")[0] or "이름 없음"
+                        print(f"[STAGE 2] 운용 모델이 바뀌어 다시 읽었습니다 - "
+                              f"세대 {_gen}")
+                        print(f"[STAGE 1] 셀별 기준선 — {baseline.summary()}")
+                    else:
+                        # 복사 도중이면 여기로 온다. 지문을 갱신하지 않으므로
+                        # 다음 차례에 다시 본다.
+                        print(f"[STAGE 2] 새 모델을 아직 읽지 못했습니다 - {_why}")
+
             cur_error_code = read_db_error_code(sensor_db_config)
 
             median_hot, ts = read_from_current_value_median(sensor_db_config)
