@@ -1348,19 +1348,14 @@ LRESULT CDlg_Retrain::OnRunDone(WPARAM wp, LPARAM lp)
     m_tickStart = 0;
     m_lblState.SetWindowTextA(st);
 
-    CStringA tail;
-    tail.Format("\r\n---- 종료 코드 %lu ----\r\n", code);
-    AppendLog(tail);
+    // 종료 코드와 운용 세대를 로그에 적지 않는다.
+    //
+    // 코드는 위 상태줄이 "판정: 승격" 처럼 사람 말로 이미 알려 준다.
+    // 운용 세대와 되돌리기 대상은 바로 위 단추 옆 목록에 늘 떠 있다.
+    // 파이썬 출력 끝에 덧붙이면 결과와 섞여 어디까지가 결과인지 흐려진다.
 
     // 운용 세대가 바뀌었을 수 있다. 다음 [되돌리기] 대상을 다시 구한다.
     ScanGenerations();
-    if (!m_backGen.IsEmpty())
-    {
-        CStringA n;
-        n.Format("운용 중 %s · 다음 [되돌리기] 대상 %s\r\n",
-                 (LPCSTR)m_curGen, (LPCSTR)m_backGen);
-        AppendLog(n);
-    }
 
     SetButtons();
     return 0;

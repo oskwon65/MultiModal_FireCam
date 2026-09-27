@@ -177,14 +177,14 @@ def weight_for(score, bounds=None):
 
 def describe(score, w):
     if score is None:
-        return "판단 점수 없음 - 기존 모델을 그대로 물려받습니다 (기여 1.00)"
+        return "SCORE 없음 - (기여: 1.00)"
     if w >= 1.0:
-        return f"판단 점수(중앙값) {score:.3f} - 평소대로 이어갑니다 (기여 1.00)"
+        return f"SCORE (중앙값) {score:.3f} - (기여: 1.00)"
     if w <= 0.0:
-        return (f"판단 점수(중앙값) {score:.3f} - 기존 가중치를 물려받지 않고 "
-                f"새로 시작합니다 (기여 0.00). 감도 비교 대상으로는 계속 씁니다.")
-    return (f"판단 점수(중앙값) {score:.3f} - 기존 모델 기여를 {w:.2f} 로 "
-            f"줄입니다 (옛 자료 {w*100:.0f}%)")
+        # 여기만 꼬리를 붙인다. 기여 0.00 은 기존 가중치를 통째로 버린다는
+        # 뜻인데, 숫자만 보고 그것을 읽어 내기는 어렵다.
+        return f"SCORE (중앙값) {score:.3f} - (기여: 0.00, 새로 시작)"
+    return f"SCORE (중앙값) {score:.3f} - (기여: {w:.2f})"
 
 
 def batch_scorer(model, scaler, mask, device):
@@ -351,7 +351,7 @@ def decision_score(conn, db_name, n_cells, mask=None, temp_warn=None,
                 info["rescored"] = len(pool)
                 if verbose:
                     print(f"[기여도] 표본 {len(pool):,}건을 지금 모델로 다시 "
-                          f"매겼습니다 (DB 에 적힌 값은 {info['stored']:.4f})")
+                          f"SCORE 계산함")
             except Exception as e:
                 # 다시 매기지 못했으면 적힌 값으로 간다. 값이 없다는 이유로
                 # 모델을 버리는 쪽이 더 위험하다.

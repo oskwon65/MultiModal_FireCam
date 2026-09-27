@@ -133,6 +133,12 @@ DRYRUN_MAX_AGE_H = 6
 # 없는 후보로 되돌아간다.
 HISTORY_NAME = "generation_history.txt"
 
+# 묶음을 가르는 가로줄.
+#
+# 창의 로그 칸은 열 몇 줄이라 한 화면에 세 묶음이 함께 들어온다 - 기여도,
+# 재생버퍼, 학습. 줄바꿈만으로는 어디서 갈리는지 보이지 않는다.
+RULE = "-" * 113
+
 
 # ======================================================================
 # 세대 관리
@@ -386,7 +392,7 @@ def print_base_info(user_path):
 
     sc = gen_score(user_path, cur)
 
-    line = (f"[기준] 세대 {cur or '없음'}"
+    line = (f"[기준모델] 세대 {cur or '없음'}"
             + (f" · 올린 때 {when[:16]}" if when else "")
             + (f" · 점수 {sc:.3f}" if sc is not None else " · 점수 -"))
     print(line)
@@ -763,12 +769,13 @@ def main():
     # 무엇을 고쳐야 결과가 달라지는지 바로 알 수 있어야 한다.
     # normpath 로 고른다. LOCAL_USER_PATH 는 빗금 방향이 섞여 있고 끝에도
     # 빗금이 붙어 있어, 그냥 이으면 D:/A//users/... 처럼 보인다.
-    print("[설정] " + os.path.normpath(
+    print("[설정파일] " + os.path.normpath(
         os.path.join(user_path, "continual_learning.ini")))
 
     base_line = print_base_info(user_path)
     comp_line = ""
     print()
+    print(RULE)
 
     # 예행연습에서 본 그 모델을 그대로 올린다.
     #
@@ -835,6 +842,7 @@ def main():
         old_weight = model_contribution.weight_for(dec_score, bands(config))
         print(f"[기여도] {model_contribution.describe(dec_score, old_weight)}")
         print()
+        print(RULE)
 
         # 표본을 고르는 잣대를 기여 가중치에 맞춘다.
         #
@@ -926,6 +934,8 @@ def main():
                     if info.get("split") else ""))
     print(comp_line)
     print()
+    print(RULE)
+    print()
 
     print(f"[학습] {len(X_train):,}건 학습 / {len(X_hold):,}건 검증 "
           f"({info.get('hours', 0)}/{min_hours} 시간대)")
@@ -971,15 +981,16 @@ def main():
     passed, reasons = sensitivity_gate.check(cand, incumbent)
     report = sensitivity_gate.format_report(cand, incumbent, passed, reasons)
     print()
+    print(RULE)
     print(report)
+    print(RULE)
     print()
 
-    # 창의 로그 칸은 열 몇 줄이다. 30줄 넘는 출력이 지나가면 맨 위가 밀려
-    # 사라지므로, 무엇에서 출발해 무엇으로 배웠는지 끝에 한 번 더 적는다.
-    # 판정 바로 아래라 결과와 함께 눈에 들어온다.
-    print(base_line)
-    print(comp_line)
-    print()
+    # 기준과 구성을 끝에서 되풀이하지 않는다.
+    #
+    # 로그가 밀려 올라가는 것을 걱정해 한 번 더 찍었는데, 줄을 줄이고 나니
+    # 한 화면에 다 들어온다. 같은 줄이 두 번 나오면 어느 것이 결과인지
+    # 헷갈린다.
 
     # ---------------- 보관 및 승격 ----------------
     #
@@ -1026,12 +1037,13 @@ def main():
                          passed, cur)
         shutil.rmtree(tmp, ignore_errors=True)
 
-        print(f"[중단] --dry-run 이므로 운용 모델을 바꾸지 않았습니다.")
+        # 예행연습이라는 것은 창이 이미 말하고 있다. 여기서는 그 결과를
+        # 어떻게 쓸 수 있는지만 적는다.
         if passed:
-            print(f"       이 결과를 {DRYRUN_MAX_AGE_H}시간 안에 [재학습 실행] "
-                  f"하면 보신 그 모델이 그대로 올라갑니다.")
+            print(f"이 결과를 {DRYRUN_MAX_AGE_H}시간 안에 [재학습 실행] 하면 "
+                  f"보신 그 모델이 그대로 올라갑니다.")
         else:
-            print("       판정이 승격이 아니라 다시 쓰지 않습니다.")
+            print("판정이 승격이 아니라 이 결과를 다시 쓰지 않습니다.")
         return 0
 
     stamp = save_generation(user_path, files, header + report)

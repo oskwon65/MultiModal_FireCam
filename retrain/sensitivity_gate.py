@@ -140,26 +140,40 @@ def check(candidate, incumbent=None):
     return ok, reasons
 
 
-def format_report(candidate, incumbent, passed, reasons):
-    lines = ["=" * 62, "감도 회귀 시험", "=" * 62]
-    head = f"{'항목':<22}{'후보':>10}"
-    if incumbent:
-        head += f"{'현재':>10}"
-    lines.append(head)
-    lines.append("-" * 62)
+# 묶음을 가르는 가로줄. nightly_retrain 의 RULE 과 같은 길이여야 한다.
+RULE = "-" * 113
 
-    rows = [("정상 평균 점수", "normal_mean"),
-            ("정상 오탐 비율", "normal_false")]
-    rows += [(f"+{int(l)}도 주입 평균", f"anomaly_{int(l)}") for l in INJECT_LEVELS]
+
+def format_report(candidate, incumbent, passed, reasons):
+    """
+    감도 시험 결과를 두 묶음으로 적는다 - 잰 값([평가])과 판정([판정]).
+
+    예전에는 표로 그렸다. 줄 머리에 표가 없으면 로그가 길어졌을 때 어느
+    묶음의 줄인지 알 수 없고, 창의 글꼴이 가변폭이라 열도 맞지 않았다.
+    다른 줄과 같이 [꼬리표] 를 앞에 둔다.
+    """
+    lines = ["[평가] 항목(후보, 현재)"]
+
+    rows = [("평균점수", "normal_mean"),
+            ("오탐비율", "normal_false")]
+    rows += [(f"+{int(l)} 변형", f"anomaly_{int(l)}") for l in INJECT_LEVELS]
 
     for label, key in rows:
-        line = f"{label:<22}{candidate[key]:>10.3f}"
+        # 이름을 채우지 않는다. 다섯 이름이 모두 여덟 칸이라 그대로 맞고,
+        # 파이썬의 :<8 은 한글 한 자를 한 칸으로 세어 오히려 어긋난다
+        # ('평균점수' 는 네 자 여덟 칸, '+20 변형' 은 일곱 자 여덟 칸).
         if incumbent:
-            line += f"{incumbent[key]:>10.3f}"
-        lines.append(line)
+            lines.append(f"[평가] {label}  ( {candidate[key]:.3f}   "
+                         f"{incumbent[key]:.3f} )")
+        else:
+            # 첫 모델이라 견줄 것이 없다. 빈칸으로 두면 자리만 비어 무엇이
+            # 빠졌는지 알 수 없으므로 까닭을 적는다.
+            lines.append(f"[평가] {label}  ( {candidate[key]:.3f}   "
+                         f"현재 없음 )")
 
-    lines.append("-" * 62)
-    lines.append("판정: " + ("승격" if passed else "보류"))
+    lines.append("")
+    lines.append(RULE)
+    lines.append("[판정] " + ("승격" if passed else "보류"))
     for r in reasons:
-        lines.append("  · " + r)
+        lines.append("[판정] " + r)
     return "\n".join(lines)

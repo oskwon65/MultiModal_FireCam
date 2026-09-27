@@ -476,9 +476,6 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
 
     if verbose:
         print(f"[재생버퍼] 테이블 {info['tables']}개 ({info['period']})")
-        if score_fn is not None:
-            print(f"           본 {rows_seen:,}건 중 정상 {kept:,}건 "
-                  f"(지금 모델로 {n_by_now:,} · 적힌 점수로만 {n_by_old:,})")
         print(f"           정상 프레임 {kept:,}건 중 {info['drawn']:,}건 표집, "
               f"{info['cells']}개 칸(시간대x가동상태) · {info['hours']}개 시간대")
         if info["drawn"] < target:
