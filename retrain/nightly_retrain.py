@@ -665,7 +665,8 @@ def main():
                          "(기본은 치우고 다시 쌓게 한다)")
     args = ap.parse_args()
 
-    config = Set_Env_Config(args.user_id)
+    # 읽은 파일은 제목 아래에 적는다. 여기서 찍으면 제목 위로 올라간다.
+    config = Set_Env_Config(args.user_id, verbose=False)
     user_path = config["LOCAL_USER_PATH"]
     n_cells = config["X_GRID"] * config["Y_GRID"]
     latent_dim = int(config["SZ_OF_LATENT_DIM_AUTOENCODER"])
@@ -755,6 +756,16 @@ def main():
     print("=" * 62)
     print(f"재학습  {args.user_id}   {datetime.now():%Y-%m-%d %H:%M:%S}")
     print("=" * 62)
+
+    # 이 판단을 좌우하는 파일을 적는다.
+    #
+    # 예전에는 env.ini 를 적었는데, 재학습에 쓰이는 값은 모두 여기로 옮겼다.
+    # 무엇을 고쳐야 결과가 달라지는지 바로 알 수 있어야 한다.
+    # normpath 로 고른다. LOCAL_USER_PATH 는 빗금 방향이 섞여 있고 끝에도
+    # 빗금이 붙어 있어, 그냥 이으면 D:/A//users/... 처럼 보인다.
+    print("[설정] " + os.path.normpath(
+        os.path.join(user_path, "continual_learning.ini")))
+
     base_line = print_base_info(user_path)
     comp_line = ""
     print()
@@ -905,7 +916,7 @@ def main():
     # split 은 재생버퍼가 앞쪽 2,000건의 중앙값으로 잡은 가동 판정 온도다.
     # 마스크 칸 최고가 이 위면 "돌고 있다" 로 보고 시간대x가동상태 48칸에
     # 고르게 담는다. 옛/새 시기 비율이 아니다.
-    comp_line = (f"[구성] 표본 {info['drawn']:,}/{target:,}"
+    comp_line = (f"[재생버퍼] 표본 {info['drawn']:,}/{target:,}"
                  f" · 시간대 {info.get('hours', 0)}/{min_hours}"
                  f" · 기간 {info['period']}"
                  f" · 칸 {info['cells']}"

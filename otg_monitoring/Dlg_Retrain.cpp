@@ -615,46 +615,79 @@ void CDlg_Retrain::ShowGenerations()
     m_edLog.SetWindowTextA("");
 
     CStringA head;
-    head.Format("[%s] 보관된 세대   점수는 학습 직후 정상 평균 · "
-                "기준은 출발한 세대 · 기여는 그 세대를 물려받은 정도\r\n",
-                gUserID.c_str());
+    head.Format("[%s] 보관된 세대 %d개   점수는 학습 직후 정상 평균\r\n\r\n",
+                gUserID.c_str(), (int)gens.size());
     AppendLog(head);
 
-    for (size_t i = 0; i < gens.size(); ++i)
+    // 세대 한 줄을 적는다.
+    //
+    // 적는 것은 세대끼리 다른 것뿐이다. 전에는 둘째 줄에 일곱 가지를
+    // 늘어놓았는데, 칸은 모든 세대가 48이고 기간 시작도 모두 같고 시간대와
+    // 기준일은 옛 보고서에 없어 거의 '-' 였다. 읽을 것이 없는데 줄만 배로
+    // 늘었다.
+    //
+    // 기여는 1.00 일 때 적지 않는다. 그것이 예사이고, 줄어들었을 때만
+    // "이 세대는 기존 모델을 덜 물려받았다" 는 뜻이 생긴다.
+    auto emit = [&](const std::string& stamp, bool live)
     {
-        const bool live = (m_curGen.Compare(gens[i].c_str()) == 0);
         bool wasServed = false;
         for (size_t k = 0; k < served.size(); ++k)
-            if (served[k] == gens[i]) { wasServed = true; break; }
+            if (served[k] == stamp) { wasServed = true; break; }
 
-        const GenMeta gm = ReadGenMeta(gens[i].c_str());
+        const GenMeta gm = ReadGenMeta(stamp.c_str());
         CStringA sc = gm.score;
         if (sc.IsEmpty()) sc = "  -  ";
 
-        CStringA line;
-        line.Format("    %s   %s   %s\r\n", gens[i].c_str(), (LPCSTR)sc,
-                    live ? "운영중" :
-                    (wasServed ? "운용된 적 있음" : "승격 안 됨"));
-        AppendLog(line, live ? COLOR_LOG_NORMAL : COLOR_LOG_DIM);
-
-        // 둘째 줄에 무엇에서 출발해 무엇으로 배웠는지 적는다. 점수만으로는
-        // 세대끼리 견줄 수 없다 - 기간과 기여도가 다르면 다른 시험이다.
         CStringA d;
-        d.Format("         기준 %s · 기여 %s · 표본 %s · 기간 %s · 칸 %s"
-                 " · 시간대 %s · 기준일 %s\r\n",
-                 gm.base.IsEmpty()     ? "-" : (LPCSTR)gm.base,
-                 gm.contrib.IsEmpty()  ? "-" : (LPCSTR)gm.contrib,
-                 gm.samples.IsEmpty()  ? "-" : (LPCSTR)gm.samples,
-                 gm.period.IsEmpty()   ? "-" : (LPCSTR)gm.period,
-                 gm.cells.IsEmpty()    ? "-" : (LPCSTR)gm.cells,
-                 gm.hours.IsEmpty()    ? "-" : (LPCSTR)gm.hours,
-                 gm.baseDate.IsEmpty() ? "-" : (LPCSTR)gm.baseDate);
-        AppendLog(d, COLOR_LOG_DIM);
+        if (!gm.samples.IsEmpty()) { d += " · "; d += gm.samples; d += "건"; }
+
+        // 기간은 끝 날짜만. 시작은 어느 세대나 같다.
+        if (!gm.period.IsEmpty())
+        {
+            const int at = gm.period.ReverseFind('~');
+            CStringA end = (at >= 0) ? gm.period.Mid(at + 1) : gm.period;
+            end.Trim();
+            if (end.GetLength() == 8) { d += " · ~"; d += end.Mid(4); }
+        }
+        if (!gm.contrib.IsEmpty() && gm.contrib != "1.00")
+        {
+            d += " · 기여 "; d += gm.contrib;
+        }
+
+        CStringA line;
+        line.Format("    %s   %s   %s%s\r\n", stamp.c_str(), (LPCSTR)sc,
+                    live ? "운영중" :
+                    (wasServed ? "운용된 적 있음" : "승격 안 됨"),
+                    (LPCSTR)d);
+        AppendLog(line, live ? COLOR_LOG_NORMAL : COLOR_LOG_DIM);
+    };
+
+    // 운영 중인 것을 맨 위에 둔다.
+    //
+    // 되돌릴 자리를 고르려면 먼저 '지금 무엇이 돌고 있는가' 를 알아야 한다.
+    // 날짜 순으로만 늘어놓으면 그것이 목록 한가운데 묻힌다 - 되돌린 직후에는
+    // 운영 세대가 마지막이 아니라 중간에 있기 때문이다.
+    bool haveLive = false;
+    for (size_t i = 0; i < gens.size(); ++i)
+        if (m_curGen.Compare(gens[i].c_str()) == 0) { haveLive = true; break; }
+
+    if (haveLive)
+    {
+        emit(std::string((LPCSTR)m_curGen), true);
+        AppendLog("\r\n", COLOR_LOG_DIM);
+    }
+
+    // 나머지는 날짜 순 그대로. 세대 이름이 곧 만든 시각이라 순서가 이야기다.
+    for (size_t i = 0; i < gens.size(); ++i)
+    {
+        if (m_curGen.Compare(gens[i].c_str()) == 0) continue;
+        emit(gens[i], false);
     }
     if (gens.empty()) AppendLog("    (없음)\r\n", COLOR_LOG_DIM);
 
     AppendLog("\r\n모두 되돌릴 수 있습니다. \"승격 안 됨\" 은 감도 시험을 "
               "거치지 않았거나 손으로 넣은 것입니다.\r\n", COLOR_LOG_DIM);
+
 
     // 되돌릴 수 있을 때는 따로 적지 않는다. 위 목록과 단추 옆 목록이
     // 이미 말해 준다. 못 할 때만 이유를 적는다.
@@ -1111,13 +1144,18 @@ void CDlg_Retrain::Run(RunKind kind)
                (LPCSTR)extra);
 
     m_edLog.SetWindowTextA("");
-    CStringA msg;
+
+    // 시작 인사는 로그에 남기지 않는다.
+    //
+    // 가운데 진행 판이 "예행연습 중..." 과 경과 시간을 이미 보여 주고, 곧
+    // 파이썬이 제목 줄을 찍는다. 같은 말이 세 번이면 정작 읽을 것이 밀린다.
+    // 되돌리기는 진행 판을 띄우지 않으므로 그것만 남긴다.
     if (back)
+    {
+        CStringA msg;
         msg.Format("%s 세대로 되돌립니다.\r\n\r\n", (LPCSTR)m_backGen);
-    else
-        msg.Format("%s 시작합니다. 몇 분 걸립니다.\r\n\r\n",
-                   dryRun ? "예행연습을" : "재학습을");
-    AppendLog(msg);
+        AppendLog(msg);
+    }
 
     m_bRunning = true;
     if (dryRun) { m_bDryDone = false; m_bDryPassed = false; }

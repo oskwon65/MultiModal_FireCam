@@ -689,7 +689,7 @@ def delete_files_of_Base_Img(config):
 
 # ----------------------------
 
-def Set_Env_Config(user_ID):
+def Set_Env_Config(user_ID, verbose=True):
 
     global X_GRID, Y_GRID, LENGTH_HOTLIST
 
@@ -701,7 +701,12 @@ def Set_Env_Config(user_ID):
         print(f"[ERROR ] ENV_FILE_NAME not found: {env_path}")
         sys.exit(1)
 
-    print(f"\n[ENV_FILE] = {env_path}")
+    # 어느 파일을 읽었는지 알리는 줄.
+    #
+    # 재학습은 제목을 먼저 찍고 그 아래에 자기 형식으로 적으므로 끈다.
+    # 설정을 읽는 것이 제목보다 먼저라, 켜 두면 제목 위에 얹힌다.
+    if verbose:
+        print(f"\n[ENV_FILE] = {env_path}")
 
     config = configparser.ConfigParser(
         interpolation=configparser.ExtendedInterpolation()
@@ -907,6 +912,11 @@ def Get_HistoryDB_Config(local_config):
         "autocommit": True,
     }
 
-    print(f"[HISTORY_DB_CONFIG.database] = {HISTORY_DB_CONFIG['database']}")
+    # DB 이름은 적지 않는다.
+    #
+    # <현장>_<DB_NAME_HISTORY> 라는 규칙에서 바로 나오는 값이라 새로 알려
+    # 주는 것이 없고, 접속이 안 되면 그때 오류가 이름과 함께 나온다.
+    # 예행연습 창처럼 파이썬 출력을 그대로 보여 주는 화면에서는 본론을
+    # 밀어낼 뿐이다.
 
     return HISTORY_DB_CONFIG

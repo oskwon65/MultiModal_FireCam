@@ -179,12 +179,12 @@ def describe(score, w):
     if score is None:
         return "판단 점수 없음 - 기존 모델을 그대로 물려받습니다 (기여 1.00)"
     if w >= 1.0:
-        return f"판단 점수 {score:.3f} - 평소대로 이어갑니다 (기여 1.00)"
+        return f"판단 점수(중앙값) {score:.3f} - 평소대로 이어갑니다 (기여 1.00)"
     if w <= 0.0:
-        return (f"판단 점수 {score:.3f} - 기존 가중치를 물려받지 않고 새로 "
-                f"시작합니다 (기여 0.00). 감도 비교 대상으로는 계속 씁니다.")
-    return (f"판단 점수 {score:.3f} - 기존 모델 기여를 {w:.2f} 로 줄입니다 "
-            f"(옛 자료 {w*100:.0f}%)")
+        return (f"판단 점수(중앙값) {score:.3f} - 기존 가중치를 물려받지 않고 "
+                f"새로 시작합니다 (기여 0.00). 감도 비교 대상으로는 계속 씁니다.")
+    return (f"판단 점수(중앙값) {score:.3f} - 기존 모델 기여를 {w:.2f} 로 "
+            f"줄입니다 (옛 자료 {w*100:.0f}%)")
 
 
 def batch_scorer(model, scaler, mask, device):
@@ -363,8 +363,6 @@ def decision_score(conn, db_name, n_cells, mask=None, temp_warn=None,
             print("[기여도] DB 에 적힌 점수를 그대로 씁니다 - 기간 중에 모델이 "
                   "바뀌었으면 지금 모델의 점수가 아닙니다.")
 
-        if verbose:
-            print(f"[기여도] 판단 점수(중앙값) {med:.4f}")
         return med, info
     finally:
         cur.close()
