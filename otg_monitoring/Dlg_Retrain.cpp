@@ -1,4 +1,4 @@
-﻿// Dlg_Retrain.cpp: 재학습 실행 창
+﻿// Dlg_Retrain.cpp: 재학습 적용 창
 //
 
 #include "pch.h"
@@ -154,7 +154,7 @@ BOOL CDlg_Retrain::OnInitDialog()
     GetClientRect(&rc);
     const int M = 12;
     const int btnW = 128, btnH = 32;
-    const int btnWrun = 176;          // [재학습 실행] 은 글자가 길어 더 넓다
+    const int btnWrun = 176;          // [재학습 적용] 은 글자가 길어 더 넓다
     const int headH = 84, stateH = 28;
 
     m_lblHead.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
@@ -247,13 +247,13 @@ BOOL CDlg_Retrain::OnInitDialog()
     m_btnClose.Create("닫기", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(bx, yBtnTop, bx + btnW, yBtnTop + btnH), this, IDCANCEL);
     bx -= (btnWrun + 8);
-    m_btnApply.Create("재학습 실행", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    m_btnApply.Create("재학습 적용", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(bx, yBtnTop, bx + btnWrun, yBtnTop + btnH), this, ID_BTN_APPLY);
     bx -= (btnW + 8);
     m_btnDry.Create("예행연습", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(bx, yBtnTop, bx + btnW, yBtnTop + btnH), this, ID_BTN_DRY);
 
-    // [되돌리기] 는 왼쪽 끝에 따로 둔다. 예행연습 - 재학습 실행 흐름에 붙이면
+    // [되돌리기] 는 왼쪽 끝에 따로 둔다. 예행연습 - 재학습 적용 흐름에 붙이면
     // 그 다음 단계처럼 보인다. 하는 일은 반대다.
     m_btnBack.Create("되돌리기", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(M, yBtnTop, M + btnW, yBtnTop + btnH), this, ID_BTN_BACK);
@@ -269,12 +269,12 @@ BOOL CDlg_Retrain::OnInitDialog()
     SendMessageToDescendants(WM_SETFONT, (WPARAM)m_font.GetSafeHandle(), TRUE);
     m_edLog.SetFont(&m_fontMono);
 
-    // [재학습 실행] 이 왜 꺼져 있는지 화면에 적어 둔다. 눌리지 않는 버튼을 두고
+    // [재학습 적용] 이 왜 꺼져 있는지 화면에 적어 둔다. 눌리지 않는 버튼을 두고
     // 설명이 없으면 고장으로 오해한다.
     CStringA head;
     head.Format("[%s]  재학습은 운용 모델을 바꿉니다. 먼저 [예행연습] 으로 결과를 확인하십시오.\r\n"
-                "[재학습 실행] 은 예행연습이 \"판정: 승격\" 을 낸 경우에만 "
-                "켜집니다. 보류로 끝나면 사유가 아래에 남으며 실행할 수 없습니다.\r\n"
+                "[재학습 적용] 은 예행연습이 [판정] 승격 을 낸 경우에만 "
+                "켜집니다. 보류로 끝나면 사유가 아래에 남으며 적용할 수 없습니다.\r\n"
                 "[되돌리기] 는 옆에서 고른 세대로 돌리고, 칸별 기준선도 함께 "
                 "치웁니다. 보관된 세대는 모두 고를 수 있습니다.",
                 gUserID.c_str());
@@ -286,7 +286,7 @@ BOOL CDlg_Retrain::OnInitDialog()
     ShowGenerations();
 
     SetButtons();
-    m_lblState.SetWindowTextA("[예행연습] 을 눌러 시작하십시오. 아직 [재학습 실행] 은 꺼져 있습니다.");
+    m_lblState.SetWindowTextA("[예행연습] 을 눌러 시작하십시오. 아직 [재학습 적용] 은 꺼져 있습니다.");
 
     // 컨트롤을 다 만든 뒤에 줄인다. 먼저 줄이면 GetClientRect 가 바뀌어
     // 배치가 어긋난다. 진행 판 자리는 띄울 때 늘려서 낸다.
@@ -1264,9 +1264,15 @@ LRESULT CDlg_Retrain::OnLogLine(WPARAM, LPARAM lp)
     {
         AppendLog(*s);
 
-        // 예행연습 결과를 읽어 [재학습 실행] 을 열지 말지 정한다.
-        if (s->Find("판정: 승격") >= 0) m_bDryPassed = true;
-        if (s->Find("판정: 보류") >= 0 || s->Find("[보류]") >= 0) m_bDryPassed = false;
+        // 예행연습 결과를 읽어 [재학습 적용] 을 열지 말지 정한다.
+        //
+        // 파이썬이 찍는 글자에 매달려 있다. 2026-09-27 에 보고서 꼴을
+        // "판정: 승격" 에서 "[판정] 승격" 으로 바꾸면서 이 두 줄을 같이
+        // 고치지 않아, 승격 판정이 나도 단추가 켜지지 않았다.
+        // sensitivity_gate.format_report 를 고치면 여기도 함께 고쳐야 한다.
+        if (s->Find("[판정] 승격") >= 0) m_bDryPassed = true;
+        if (s->Find("[판정] 보류") >= 0 || s->Find("[보류]") >= 0)
+            m_bDryPassed = false;
 
         // 같은 줄에서 진행 단계도 읽는다. 학습 구간(epoch)이 가장 길어
         // 거기만 실제 숫자로 채우고 나머지는 지점마다 올린다.
@@ -1285,9 +1291,12 @@ LRESULT CDlg_Retrain::OnLogLine(WPARAM, LPARAM lp)
             }
         }
 
-        if (s->Find("감도 회귀 시험") >= 0) { SetPhase(850); m_phaseNote = "감도 시험"; }
-        if (s->Find("판정:") >= 0)          { SetPhase(950); m_phaseNote = "판정"; }
-        if (s->Find("[보관]") >= 0)         { SetPhase(980); m_phaseNote = "보관"; }
+        // 이 셋도 파이썬이 찍는 글자에 매달려 있다. 꼬리표를 바꾸면 함께
+        // 고쳐야 한다. 어긋나도 조용히 지나가므로(진행 눈금만 멈춘다)
+        // 알아채기 어렵다.
+        if (s->Find("[평가]") >= 0) { SetPhase(850); m_phaseNote = "감도 시험"; }
+        if (s->Find("[판정]") >= 0) { SetPhase(950); m_phaseNote = "판정"; }
+        if (s->Find("[보관]") >= 0) { SetPhase(980); m_phaseNote = "보관"; }
 
         delete s;
     }
@@ -1311,30 +1320,42 @@ LRESULT CDlg_Retrain::OnRunDone(WPARAM wp, LPARAM lp)
     const unsigned sec = (unsigned)(ms / 1000);
     ShowProgress(false);
 
+    // 상태줄을 만들기 전에 다시 훑는다. 운용 세대가 바뀌었으면 그 이름을
+    // 상태줄에 적어야 하는데, 뒤에 훑으면 옛 이름이 적힌다.
+    ScanGenerations();
+
     CStringA st;
     if (wasDry)
     {
         if (code == 0 && m_bDryPassed)
-            st = "예행연습 완료 · 승격 판정입니다. [재학습 실행] 을 누르면 실제로 교체합니다.";
+            st = "예행연습 완료 · 승격 판정입니다. [재학습 적용] 을 누르면 실제로 교체합니다.";
         else if (code == 2)
             st = "예행연습 보류 · 조건이 아직 모자랍니다. 위 사유를 확인하십시오.";
         else
-            st = "예행연습 완료 · \"판정: 승격\" 이 아니어서 [재학습 실행] 을 켤 수 없습니다.";
+            st = "예행연습 완료 · 승격 판정이 아니어서 [재학습 적용] 을 켤 수 없습니다.";
     }
     else if (wasBack)
     {
-        st = (code == 0)
-            ? "되돌렸습니다 · 기준선도 치웠습니다. 감시를 다시 시작해야 반영됩니다."
-            : "되돌리지 못했습니다. 위 내용을 확인하십시오.";
+        // 무엇으로 돌아갔는지 적는다.
+        //
+        // 이것이 없으면 창에 아무 변화가 없다. 아래 목록은 운용 중인 것을
+        // 빼고 보여 주므로 거기서도 알 수 없다.
+        if (code == 0)
+            st.Format("되돌렸습니다 · 운용 중 %s · 기준선도 치웠습니다. "
+                      "감시가 10초 안에 갈아 끼웁니다.", (LPCSTR)m_curGen);
+        else
+            st = "되돌리지 못했습니다. 위 내용을 확인하십시오.";
         // 모델이 바뀌었으니 앞서 받은 승격 판정은 그 모델 것이 아니다.
         m_bDryPassed = false;
         m_bDryDone = false;
     }
     else
     {
-        st = (code == 0)
-            ? "재학습 완료 · 새 모델로 교체했습니다. 감시를 다시 시작해야 반영됩니다."
-            : "재학습이 정상적으로 끝나지 않았습니다. 위 내용을 확인하십시오.";
+        if (code == 0)
+            st.Format("재학습 완료 · 운용 중 %s 로 교체했습니다. "
+                      "감시가 10초 안에 갈아 끼웁니다.", (LPCSTR)m_curGen);
+        else
+            st = "재학습이 정상적으로 끝나지 않았습니다. 위 내용을 확인하십시오.";
         m_bDryPassed = false;   // 한 번 적용한 뒤에는 다시 예행연습부터
         m_bDryDone = false;
     }
@@ -1348,14 +1369,8 @@ LRESULT CDlg_Retrain::OnRunDone(WPARAM wp, LPARAM lp)
     m_tickStart = 0;
     m_lblState.SetWindowTextA(st);
 
-    // 종료 코드와 운용 세대를 로그에 적지 않는다.
-    //
-    // 코드는 위 상태줄이 "판정: 승격" 처럼 사람 말로 이미 알려 준다.
-    // 운용 세대와 되돌리기 대상은 바로 위 단추 옆 목록에 늘 떠 있다.
-    // 파이썬 출력 끝에 덧붙이면 결과와 섞여 어디까지가 결과인지 흐려진다.
-
-    // 운용 세대가 바뀌었을 수 있다. 다음 [되돌리기] 대상을 다시 구한다.
-    ScanGenerations();
+    // 종료 코드는 로그에 적지 않는다. 위 상태줄이 사람 말로 알려 준다.
+    // 운용 세대는 그 상태줄에 들어 있다.
 
     SetButtons();
     return 0;
