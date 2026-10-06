@@ -40,69 +40,36 @@ from collections import defaultdict
 import numpy as np
 
 # 이 점수 이상이어야 "정상으로 판정된 프레임" 으로 본다.
-NORMAL_MIN_SCORE = 0.5
-
-# 시간대(24) × 가동상태(2) = 48칸. 칸마다 이만큼씩 모아 둔 뒤 최종 표집한다.
-# 목표 개수보다 넉넉히 잡아야 칸별 균형을 맞출 여지가 생긴다.
-OVERSAMPLE = 2.0
-
-# 시기를 가르는 공백. 자료가 이만큼 끊기면 다른 시기로 본다.
+# 거르는 것은 절대 임계값 하나다.
 #
-# 날짜를 코드나 설정에 적지 않으려고 이렇게 잡았다. 현장마다 언제 멈췄는지
-# 다르고, 그 날짜를 사람이 적어 넣게 하면 반드시 낡는다. 끊긴 자리는 자료가
-# 스스로 알려 준다.
+# 한동안 '칸마다 상위 0.1% 를 자르는' 선을 함께 두었다. 절대 임계값 밑에도
+# 이상이 있을 수 있다는 생각이었는데, 이 현장 자료에서 확인되지 않았다.
+# 잘린 222건을 들여다보니 전부 가동이 많았던 날의 평소보다 몇 도 뜨거운
+# 정상 프레임이었다 - 07-06·07 에 116건, 09-22·23 에 93건, 칸 23 이 선을
+# 1도 넘긴 것 같은 것들. 이상을 막는 것이 아니라 모델이 배워야 할 상단부를
+# 깎고 있었다.
 #
-# 7일로 둔 이유는 하루 이틀 빠진 것까지 다른 시기로 보면 시기가 잘게 쪼개져
-# 칸마다 자료가 바닥나기 때문이다. 설비를 고치거나 카메라를 옮겨 한동안 멈춘
-# 경우만 갈라진다.
-ERA_GAP_DAYS = 7
+# 모델 점수로 거르던 것도 앞서 뺐다. 그 잣대는 "내가 배운 것과 닮았나" 를
+# 물어서, 모델이 못 배운 정상 상태를 스스로 표본에서 빼 버렸다.
+#
+# 남은 잣대는 사람이 정한 절대 임계값뿐이다. 그것이 실제로 일을 하려면
+# 현장 실측에 맞게 잡혀 있어야 한다 - cj_busan_1 은 역대 최고 118도인데
+# 임계값이 172도라 지금은 한 건도 걸리지 않는다.
 
-# 시기 수의 상한. 넘으면 오래된 것끼리 하나로 묶는다.
+# (날짜, 시간대, 가동상태) 칸마다 모아 둔 뒤 최종 표집한다. 목표 개수보다 넉넉히
+# 잡아야 날짜·칸별 균형을 맞출 여지가 생긴다.
 #
-# 칸 수가 24 x 2 x 시기 라, 시기가 늘수록 칸마다 자료가 얇아진다. 여섯을
-# 넘기면 나누는 이득보다 얇아지는 손해가 크다.
-ERA_MAX = 6
+# 한 날은 보통 시간대마다 가동/정지 중 한쪽 칸만 차서 실제로 쓰이는 칸이 24개
+# 안팎이다. 48칸이 다 찬다고 가정해 2배로 잡았더니 cj_busan_1 에서 칸당 몫이
+# 모자라 목표 20,000건에 13,689건만 뽑혔다. 24칸 기준으로 4배를 잡는다.
+OVERSAMPLE = 4.0
 
 # 다시 매길 때 한 번에 넘기는 프레임 수.
 #
 # 한 건씩 부르면 4만 건에 몇 분이 걸린다. 묶어 넘기면 0.05초다. 4,096 x 64 는
 # 2 MB 라 메모리도 부담이 없다.
-RESCORE_BATCH = 4096
-
-
-def split_eras(tables, gap_days=ERA_GAP_DAYS, era_max=ERA_MAX):
-    """
-    테이블 이름을 보고 시기를 나눈다. {테이블: 시기번호}, 시기 수를 돌려준다.
-
-    끊긴 적이 없으면 시기가 하나다. 그때는 시기 축을 넣어도 칸이 그대로라
-    아무 일도 일어나지 않는다 - 그것이 이 방식의 이점이다. 현장을 가리지
-    않고 같은 규칙을 쓸 수 있다.
-    """
-    if not tables:
-        return {}, 0
-
-    era = {}
-    k = 0
-    prev = None
-    for t in tables:
-        d = t[-8:]
-        try:
-            cur_d = dt.date(int(d[:4]), int(d[4:6]), int(d[6:]))
-        except ValueError:
-            era[t] = k                # 이름이 날짜가 아니면 앞 시기에 붙인다
-            continue
-        if prev is not None and (cur_d - prev).days >= gap_days:
-            k += 1
-        era[t] = k
-        prev = cur_d
-
-    n = k + 1
-    if n > era_max:
-        # 오래된 쪽을 하나로 묶는다. 최근 시기를 쪼개 두는 편이 쓸모 있다.
-        merge = n - era_max
-        era = {t: max(0, v - merge) for t, v in era.items()}
-        n = era_max
-    return era, n
+# (다시 매기기는 model_contribution 으로 옮겼다. 여기서는 모델 점수를
+#  쓰지 않는다.)
 
 
 def list_history_tables(cur, db_name):
@@ -121,8 +88,44 @@ def list_history_tables(cur, db_name):
     return [r[0] for r in cur.fetchall()]
 
 
+def recent_tables(tables, days):
+    """
+    가장 새 테이블의 날짜에서 days-1 일보다 옛것을 뺀다. days 가 없거나 0 이면 전부.
+
+    오늘 날짜가 아니라 테이블 이름끼리 견준다. 며칠 뒤에 돌려도 같은 결과가 나오고,
+    감시가 한동안 멈춰 있었어도 마지막 자료에서 거슬러 센다. 중간에 빈 날이 있으면
+    그만큼 테이블이 적게 남는다(기여도 구간과 같은 규칙).
+    """
+    if not tables or not days or int(days) <= 0:
+        return list(tables)
+    try:
+        newest = max(t[-8:] for t in tables)
+        edge = (dt.datetime.strptime(newest, "%Y%m%d")
+                - dt.timedelta(days=int(days) - 1)).strftime("%Y%m%d")
+    except ValueError:
+        return list(tables)          # 이름이 날짜가 아니면 그대로
+    return [t for t in tables if t[-8:] >= edge]
+
+
+def _water_fill(total, caps):
+    """
+    total 을 caps 의 키들에 되도록 같게 나눈다. 용량(caps)이 모자란 키는 있는 만큼만
+    받고, 남는 몫은 나머지에 다시 나눈다. 용량의 합이 total 보다 작으면 합만큼만.
+    돌려주는 값: {키: 배정 수}
+    """
+    alloc = {}
+    remaining = int(total)
+    keys = sorted(caps, key=lambda k: caps[k])
+    for i, k in enumerate(keys):
+        share = remaining // (len(keys) - i)
+        take = min(caps[k], share)
+        alloc[k] = take
+        remaining -= take
+    return alloc
+
+
 class StratifiedReservoir:
-    """(시간대, 가동상태) 칸마다 따로 저수지 표집을 돌린다."""
+    """(날짜, 시간대, 가동상태) 칸마다 따로 저수지 표집을 돌린다."""
 
     def __init__(self, per_cell, seed=None):
         self.per_cell = int(per_cell)
@@ -144,52 +147,71 @@ class StratifiedReservoir:
         if j < self.per_cell:
             pool[j] = value
 
-    def balanced_draw(self, total):
+    def day_balanced_draw(self, total):
         """
-        칸들에서 고르게 뽑아 최대 total 개를 만든다.
+        날짜마다 같은 몫으로, 하루 안에서는 (시간대, 가동상태) 칸마다 같은 몫으로
+        최대 total 개를 뽑는다.
+
+        날짜: total / 날짜 수. 프레임이 그보다 적은 날은 있는 만큼만 받고, 남는 몫은
+              다른 날에 다시 나눈다. 하루 프레임 수가 몇 건이든 하루의 비중은 같다.
+        하루 안: 그날 몫을 비어 있지 않은 칸에 같게 나눈다(역시 모자라면 다른 칸으로).
 
         [중복 금지] 같은 프레임을 두 번 담으면 안 된다. 학습 표본이
         부풀어 실제보다 많은 것처럼 보이고, 중복된 프레임에 가중치가
         실려 모델이 그쪽으로 기운다. 모아 둔 것보다 많이 요구받으면
         요구량을 줄일지언정 복제하지 않는다.
         """
-        keys = [k for k, v in self.cells.items() if v]
-        if not keys:
+        by_day = defaultdict(dict)                 # 날짜 -> {칸: 풀}
+        for key, pool in self.cells.items():
+            if pool:
+                by_day[key[0]][key[1:]] = pool
+        if not by_day:
             return np.empty((0, 0)), {}
 
-        # 칸별로 색인을 섞어 두고, 앞에서부터 꺼내 쓴다.
-        order = {k: self.rng.sample(range(len(self.cells[k])), len(self.cells[k]))
-                 for k in keys}
-        taken = {k: 0 for k in keys}
+        day_caps = {d: sum(len(p) for p in cells.values())
+                    for d, cells in by_day.items()}
+        day_alloc = _water_fill(total, day_caps)
+
         out = []
-
-        # 1) 칸마다 할당량만큼
-        quota = max(1, total // len(keys))
-        for k in keys:
-            take = min(quota, len(order[k]))
-            out.extend(self.cells[k][i] for i in order[k][:take])
-            taken[k] = take
-
-        # 2) 아직 안 쓴 것만 모아 남는 자리를 메운다 (중복 없음)
-        if len(out) < total:
-            rest = [self.cells[k][i] for k in keys for i in order[k][taken[k]:]]
-            self.rng.shuffle(rest)
-            out.extend(rest[:total - len(out)])
+        for d, n_day in day_alloc.items():
+            if n_day <= 0:
+                continue
+            cells = by_day[d]
+            cell_alloc = _water_fill(n_day, {c: len(p) for c, p in cells.items()})
+            for c, n_cell in cell_alloc.items():
+                if n_cell <= 0:
+                    continue
+                pool = cells[c]
+                for i in self.rng.sample(range(len(pool)), n_cell):
+                    out.append(pool[i])
 
         self.rng.shuffle(out)
         return np.array(out, dtype=np.float64), dict(self.seen)
 
 
 def collect(conn, db_name, n_cells, target, mask=None,
-            min_score=NORMAL_MIN_SCORE, seed=None, verbose=True,
-            base_date=None, old_weight=None, temp_warn=None,
-            score_fn=None, run_temp=None, era_balance=False):
+            seed=None, verbose=True,
+            split_days=None, old_weight=None, temp_warn=None,
+            run_temp=None, dynamic_mix=True,
+            recent_days=None):
     """
     히스토리 DB 를 훑어 학습용 표본을 만든다.
 
+    recent_days
+        가장 새 테이블부터 이 일수 안의 테이블만 훑는다. None 이거나 0 이면 전체.
+
+    split_days
+        옛 시기와 새 시기를 가르는 경계. 가장 새 테이블에서 이 일수 안이 새 시기
+        (기여도를 재는 판단 구간과 같다)이고 그 앞이 옛 시기다. None 이면 가르지
+        않는다.
+
+    dynamic_mix
+        True  옛/새 시기 비율을 old_weight(기여 w) 로 정한다. 아래 설명대로.
+        False w 를 보지 않고 옛/새를 가르지 않은 채 전체 테이블에서 뽑는다
+              (시기 비율은 자료량에 비례한다).
+
     old_weight (0.0 ~ 1.0)
-        기준일 이전(옛 시기) 자료를 얼마나 섞을지. None 이면 예전처럼 기준일
-        이전을 통째로 버린다.
+        옛 시기 자료를 얼마나 섞을지. None 이면 옛 시기를 통째로 버린다.
 
         카메라가 밀리거나 설비가 바뀌어도 옛 자료가 전부 쓸모없어지는 것은
         아니다. 지금 모델이 몇 점을 내고 있느냐에 따라 옛 시기를 조금 남길지
@@ -207,38 +229,49 @@ def collect(conn, db_name, n_cells, target, mask=None,
     cur = conn.cursor()
     tables = list_history_tables(cur, db_name)
 
-    # 계산 기준일로 옛 시기와 새 시기를 가른다. 기준선과 달리 히스토리 DB 는
-    # 날짜별 테이블이라 과거 구간을 정확히 잘라낼 수 있다.
+    # 수집 일수. 옛 시기를 가르기 전에 먼저 자른다.
+    if recent_days:
+        kept_tables = recent_tables(tables, recent_days)
+        if verbose:
+            print(f"[재생버퍼] 최근 {int(recent_days)}일 이내 테이블 "
+                  f"{len(kept_tables)}개만 사용 "
+                  f"({len(tables) - len(kept_tables)}개 제외)")
+        tables = kept_tables
+
+    # 동적 구성이 꺼져 있으면 w 를 보지 않고 옛/새를 가르지 않은 채 전체에서 뽑는다.
+    if not dynamic_mix:
+        split_days = None
+    mix_weight = old_weight
+
+    # 판단 구간(가장 새 테이블에서 split_days 일 이내)을 새 시기로, 그 앞을 옛 시기로
+    # 가른다. 히스토리 DB 는 날짜별 테이블이라 과거 구간을 정확히 잘라낼 수 있다.
     old_tables = []
+    cutoff = None
+    if split_days and tables:
+        try:
+            newest = max(t[-8:] for t in tables)
+            edge = (dt.datetime.strptime(newest, "%Y%m%d")
+                    - dt.timedelta(days=int(split_days) - 1)).strftime("%Y%m%d")
+            cutoff = "results_history_" + edge
+        except ValueError:
+            cutoff = None
 
-    # 기여 가중치를 낮추기로 해 놓고 기준일이 없으면, 옛 시기와 새 시기를
-    # 가를 방법이 없어 그냥 전체에서 뽑게 된다. 가중치가 조용히 무시되는
-    # 것이라 반드시 알려야 한다.
-    if old_weight is not None and old_weight < 1.0 and not base_date:
-        print("[경고] 기여 가중치가 "
-              f"{float(old_weight):.2f} 인데 계산 기준일(CALC_BASE_DATE)이 "
-              "비어 있습니다.")
-        print("       옛 시기와 새 시기를 가를 수 없어 전체 기간에서 뽑습니다.")
-        print("       [설정] 창에서 계산 기준일을 지정해야 가중치가 적용됩니다.")
-
-    if base_date:
-        cutoff = "results_history_" + str(base_date).replace("-", "")
+    if cutoff:
         old_tables = [t for t in tables if t < cutoff]
         new_tables = [t for t in tables if t >= cutoff]
 
-        if old_weight is None:
-            # 예전 방식: 기준일 이전은 아예 읽지 않는다.
+        if mix_weight is None:
+            # 옛 시기는 아예 읽지 않는다.
             if old_tables and verbose:
-                print(f"[재생버퍼] 기준일({base_date}) 이전 테이블 "
+                print(f"[재생버퍼] 판단 구간({split_days}일) 이전 테이블 "
                       f"{len(old_tables)}개 제외")
             tables, old_tables = new_tables, []
-        elif old_weight >= 1.0:
+        elif mix_weight >= 1.0:
             old_tables = []          # 가르지 않고 전체에서 뽑는다
         elif not new_tables:
             # 새 시기에 자료가 없으면 비율을 논할 수 없다. 있는 것으로 뽑는다.
             if verbose:
-                print(f"[재생버퍼] 기준일({base_date}) 이후 자료가 없어 "
-                      f"전체에서 뽑습니다")
+                print("[재생버퍼] 판단 구간에 자료가 없어 전체에서 뽑습니다")
             old_tables = []
         else:
             tables = new_tables
@@ -249,18 +282,18 @@ def collect(conn, db_name, n_cells, target, mask=None,
 
     # 옛 시기를 섞는 경우, 목표 수를 비율로 나눠 두 번 뽑고 합친다.
     if old_tables:
-        n_old = int(round(target * float(old_weight)))
+        n_old = int(round(target * float(mix_weight)))
         n_new = target - n_old
         if verbose:
             print(f"[재생버퍼] 옛 시기 {len(old_tables)}개 테이블에서 {n_old:,}건, "
-                  f"새 시기 {len(tables)}개에서 {n_new:,}건 "
-                  f"(기여 가중치 {float(old_weight):.2f})")
+                  f"새 시기(최근 {split_days}일) {len(tables)}개에서 {n_new:,}건 "
+                  f"(기여 가중치 {float(mix_weight):.2f})")
         X_old, info_old = _collect_from(cur, db_name, old_tables, n_cells, n_old,
-                                        mask, min_score, seed, verbose, temp_warn,
-                                        score_fn, run_temp, era_balance)
+                                        mask, seed, verbose, temp_warn,
+                                        run_temp)
         X_new, info_new = _collect_from(cur, db_name, tables, n_cells, n_new,
-                                        mask, min_score, seed, verbose, temp_warn,
-                                        score_fn, run_temp, era_balance)
+                                        mask, seed, verbose, temp_warn,
+                                        run_temp)
         cur.close()
         X = np.concatenate([a for a in (X_old, X_new) if len(a)]) \
             if (len(X_old) or len(X_new)) else np.empty((0, n_cells))
@@ -278,95 +311,110 @@ def collect(conn, db_name, n_cells, target, mask=None,
             # 관문을 느슨하게 만들지는 않는다.
             "hours": max(info_old.get("hours", 0), info_new.get("hours", 0)),
             "split": info_new.get("split", info_old.get("split")),
+            "run_share": info_new.get("run_share", info_old.get("run_share")),
             "old_rows": int(len(X_old)), "new_rows": int(len(X_new)),
-            "old_weight": float(old_weight),
+            "mix_weight": float(mix_weight), "dynamic_mix": bool(dynamic_mix),
         }
         return X, info
 
     X, info = _collect_from(cur, db_name, tables, n_cells, target,
-                            mask, min_score, seed, verbose, temp_warn, score_fn,
-                            run_temp, era_balance)
+                            mask, seed, verbose, temp_warn,
+                            run_temp)
     cur.close()
-    info["old_weight"] = 1.0 if old_weight is None else float(old_weight)
+    info["mix_weight"] = 1.0 if mix_weight is None else float(mix_weight)
     return X, info
 
 
+def auto_run_temp(peaks):
+    """
+    가동 판정 온도를 자료에서 잡는다. 마스크 셀 최고 온도(peak)의 분포를
+    둘로 가르는 자리(오쓰 방법: 두 덩어리의 분산 차이가 가장 큰 자리).
+
+    설비는 서 있을 때와 돌 때의 온도가 뚜렷이 갈리므로 분포가 두 봉우리다.
+    예전에는 앞쪽 2,000건의 중앙값을 썼는데, 그 방식은 훑기 시작한 시간대에
+    끌려가고 그 2,000건은 전부 정지로 들어갔다. 가동이 70% 넘는 현장에서는
+    중앙값이 가동 봉우리 한가운데에 놓이기도 한다.
+
+    돌려주는 값 이상이면 가동이다. 자료가 없으면 None.
+    """
+    p = np.asarray(peaks, dtype=np.float64).reshape(-1)
+    p = p[np.isfinite(p)]
+    if p.size == 0:
+        return None
+
+    lo, hi = float(p.min()), float(p.max())
+    if hi - lo < 1.0:
+        # 온도가 한 값뿐이라 가를 수 없다. 전부 가동으로 본다.
+        return lo
+
+    nb = int(np.ceil(hi - lo)) + 1                # 1도 폭
+    hist, edges = np.histogram(p, bins=nb, range=(lo, lo + nb))
+    centers = (edges[:-1] + edges[1:]) / 2.0
+
+    w0 = np.cumsum(hist).astype(np.float64)
+    w1 = float(p.size) - w0
+    s0 = np.cumsum(hist * centers)
+    tot = float((hist * centers).sum())
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        m0 = s0 / w0
+        m1 = (tot - s0) / w1
+        between = w0 * w1 * (m0 - m1) ** 2
+    between[~np.isfinite(between)] = -1.0
+
+    k = int(np.argmax(between))
+
+    # 두 덩어리 사이의 한가운데를 돌려준다. 아래 덩어리의 위쪽 끝에 바짝 붙이면
+    # 정지 상태의 꼬리가 가동으로 넘어간다.
+    occupied = np.nonzero(hist)[0]
+    below = occupied[occupied <= k]
+    above = occupied[occupied > k]
+    if below.size == 0 or above.size == 0:
+        return float(edges[k + 1])
+    return float((edges[below[-1] + 1] + edges[above[0]]) / 2.0)
+
+
 def _collect_from(cur, db_name, tables, n_cells, target, mask,
-                  min_score, seed, verbose, temp_warn=None, score_fn=None,
-                  run_temp=None, era_balance=False):
+                  seed, verbose, temp_warn=None,
+                  run_temp=None):
     """
     테이블 묶음 하나에서 target 건을 고르게 뽑는다.
 
-    temp_warn 이 주어지면 마스크 칸 최고 온도가 그 값 이상인 프레임을 뺀다.
-    모델 점수를 믿을 수 없을 때(min_score 를 낮췄을 때) 정상 여부를 가리는
-    유일한 근거다.
+    [무엇으로 거르는가]
 
-    [score_fn - 지금 모델로 다시 매긴다]
+    절대 임계값(temp_warn) 하나다.
 
-    DB 의 mscore 는 그 프레임이 지나갈 때 돌던 모델이 매긴 값이다. 세대를
-    갈아 끼운 날이면 한 구간 안에 여러 모델의 판단이 섞이고, 그 중에 망가진
-    모델이 있으면 멀쩡한 프레임이 통째로 빠진다.
+    예전에는 모델 점수(mscore >= 0.5)로 걸렀다. 그 잣대는 "내가 배운 것과
+    닮았나" 를 물어서, 모델이 못 배운 정상 상태와 진짜 이상을 구분하지
+    못한다. 그래서 모델이 틀린 자리가 표본에서 빠지고, 다음 세대도 같은
+    자리에서 틀렸다. 눈먼 자리가 자기를 지켜 냈다.
 
-    2026-09-26 cj_busan_1 실측. 짝이 어긋난 산출물로 이틀을 돈 구간이다.
+    2026-09-28 cj_busan_1. 칸 37 이 70도인 상태는 09-20·21 에 1,125번 있던
+    정상인데, 운용 모델이 0.06 을 주어 표본에서 빠졌다. 세대가 거듭될수록
+    그 상태의 점수가 0.84 -> 0.08 -> 0.06 으로 떨어졌다.
 
-        09-25   1,713건 중 정상 49건 (2.9%)
-        09-26   1,287건 중 정상 53건 (4.1%)
-
-    그 바람에 학습 표본의 79%가 두 달 전 7월 것이 됐다.
-
-    [지금 모델 하나로 가른다]
-
-    한동안 '적힌 점수와 다시 매긴 점수 중 하나만 넘으면 받는' 식으로 두었다.
-    지금 모델이 못 보던 상태를 스스로 빼 버리는 것을 막으려 했는데, 그 경우
-    적힌 점수도 같은 망가진 모델이 매긴 것이라 함께 버려진다. 실제로 적힌
-    점수로만 들어온 것은 43,687건 중 19건뿐이었다.
-
-    손해는 분명하다. 지나치게 너그러웠던 옛 모델이 통과시킨 프레임이 그 길로
-    들어온다 - 감도 회귀 시험이 막으려는 바로 그것이다.
-
-    모델을 못 믿을 때의 답은 이미 따로 있다. 기여가 1.00 미만이면 부르는 쪽이
-    min_score 를 0 으로 내려 모델 판단을 아예 쓰지 않고 절대 임계값으로만
-    거른다. 믿기로 한 모델이면 그 모델 하나로 가르는 것이 앞뒤가 맞는다.
-
-    [run_temp - 가동 판정 온도]
+        [run_temp - 가동 판정 온도]
 
     주지 않으면 앞쪽 2,000건 최고 온도의 중앙값으로 잡는다. 그 방식은 앞쪽
     2,000건이 어느 시간대인지에 끌려가고, 그 2,000건 자체는 판정선이 아직
     없어 전부 정지로 들어간다. 값을 주면 처음부터 같은 선으로 가른다.
 
-    [era_balance - 시기를 나누어 담기]
-
-    켜면 칸이 (시각 x 가동상태) 에서 (시각 x 가동상태 x 시기) 로 늘어난다.
-    끄면 자료가 많은 시기가 그만큼 많이 뽑힌다 - 칸 안에서는 모두 같은
-    확률이라 비율이 그대로 보존되기 때문이다.
-
-    시기는 날짜가 아니라 자료가 끊긴 자리로 나눈다(split_eras 참고).
     """
     if not tables or target <= 0:
         return np.empty((0, n_cells)), {"tables": 0, "rows": 0, "kept": 0}
 
-    era_of, n_eras = split_eras(tables)
-    if not era_balance:
-        n_eras = 1
-
-    n_keys_est = 24 * 2 * n_eras
-    per_cell = int(OVERSAMPLE * target / n_keys_est) + 1
+    # 날짜가 칸에 들어가므로 칸 수는 날짜 수 x 하루 칸 수다(날짜 테이블 하나가 하루).
+    # 하루에 실제로 쓰이는 칸은 24개 안팎으로 어림한다(OVERSAMPLE 설명 참고).
+    # 칸마다 최소 셋은 들고 있어야 한 날의 몫을 채울 여지가 있다.
+    n_days = max(1, len(tables))
+    n_keys_est = 24 * n_days
+    per_cell = max(3, int(OVERSAMPLE * target / n_keys_est) + 1)
     res = StratifiedReservoir(per_cell, seed=seed)
-
-    if era_balance and verbose:
-        if n_eras > 1:
-            print(f"[재생버퍼] 시기 {n_eras}개로 나누어 담습니다 "
-                  f"(자료가 {ERA_GAP_DAYS}일 이상 끊긴 자리가 경계)")
-        else:
-            print(f"[재생버퍼] 자료가 끊긴 자리가 없어 시기가 하나입니다")
 
     # 가동/정지를 가르는 기준. 값을 주면 그대로 쓰고, 없으면 마스크 셀 최고
     # 온도의 중앙값으로 잡는다 - 한 번 훑는 동안은 알 수 없으므로 앞쪽
     # 표본으로 잡고 간다.
-    warmup_peaks = []
     split = None if run_temp is None else float(run_temp)
-    if split is not None and verbose:
-        print(f"[재생버퍼] 가동 판정 온도 {split:.0f}도 (지정값)")
 
     rows_seen = 0
     kept = 0
@@ -374,60 +422,22 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
     #
     # 개수만으로는 "낮에만 아는 모델" 을 막지 못한다. kict1 은 표본
     # 15,352건으로 최소 기준(5,000)을 세 배 넘겼지만 새벽 02~07시가 통째로
-    # 비어 있었다. 1단계 기준선에는 같은 뜻의 조건이 이미 있는데 재학습에만
+    # 비어 있었다. 2단계 기준선에는 같은 뜻의 조건이 이미 있는데 재학습에만
     # 없었다.
     hours_seen = 0
 
-    n_by_now = n_by_old = 0
-    # 적힌 점수는 이제 판정에 쓰지 않는다. 자리만 남겨 둔다 - 다시 매기지
-    # 못한 경우를 로그로 남길 때 쓸 수 있고, 튜플 모양을 바꾸면 위아래가
-    # 함께 흔들린다.
-    pending = []            # (시각, 적힌 점수, 값, 가동여부, 시기)
+    def cell_key(day, hour, running):
+        return (day, hour, running)
 
-    def cell_key(hour, running, era):
-        return (hour, running, era) if era_balance else (hour, running)
-
-    def flush():
-        """모아 둔 프레임을 한 번에 매기고 받을 것만 담는다."""
-        nonlocal kept, hours_seen, n_by_now, n_by_old
-        if not pending:
-            return
-        try:
-            now = np.asarray(
-                score_fn(np.asarray([q[2] for q in pending], dtype=np.float64)),
-                dtype=np.float64)
-        except Exception as e:
-            # 못 매기면 이 묶음을 거른다. 적힌 점수로 대신하지 않는다 -
-            # 그 값을 믿지 않기로 한 것이 이 함수의 전제다. 표본이 모자라면
-            # 최소 표본 관문이 재학습을 멈춘다.
-            print(f"[경고] 재생버퍼를 다시 매기지 못해 이 묶음을 거릅니다: "
-                  f"{type(e).__name__} {e}")
-            pending.clear()
-            return
-
-        for (hour, _stored, v, running, era), sc_now in zip(pending, now):
-            if sc_now < min_score:
-                continue
-            n_by_now += 1
-            res.offer(cell_key(hour, running, era), v)
-            hours_seen |= (1 << int(hour))
-            kept += 1
-        pending.clear()
+    # ---- 1) 훑어 모은다 ----
+    #
+    # 여기서 거는 것은 절대 임계값 하나다.
+    frames = []          # (날짜, 시각, 값)
+    n_abs = 0            # 절대 임계값에 걸린 수
 
     for t in tables:
-        era = era_of.get(t, 0)
-        if score_fn is None:
-            cur.execute(
-                f"SELECT time, mscore, hot_list FROM `{db_name}`.`{t}` "
-                f"WHERE mscore >= %s",
-                (min_score,),
-            )
-        else:
-            # 여기서 걸러 버리면 다시 매길 기회조차 없어진다. 다 가져온다.
-            cur.execute(
-                f"SELECT time, mscore, hot_list FROM `{db_name}`.`{t}`"
-            )
-        for when, score, raw in cur:
+        cur.execute(f"SELECT time, hot_list FROM `{db_name}`.`{t}`")
+        for when, raw in cur:
             rows_seen += 1
             try:
                 v = np.asarray(json.loads(raw), dtype=np.float64)
@@ -437,51 +447,71 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
                 continue
 
             peak = float(v[mask == 1].max()) if mask is not None else float(v.max())
-
-            # 0단계 절대 임계값. 모델을 못 믿을 때 남는 유일한 판단이다.
             if temp_warn is not None and peak >= float(temp_warn):
+                n_abs += 1
                 continue
 
-            if split is None:
-                warmup_peaks.append(peak)
-                if len(warmup_peaks) >= 2000:
-                    split = float(np.median(warmup_peaks))
-                running = 0
-            else:
-                running = 1 if peak >= split else 0
+            frames.append((t[-8:], int(when.hour), v.astype(np.float32)))
 
-            if score_fn is None:
-                res.offer(cell_key(when.hour, running, era), v)
-                hours_seen |= (1 << int(when.hour))
-                kept += 1
-            else:
-                pending.append((when.hour, score, v, running, era))
-                if len(pending) >= RESCORE_BATCH:
-                    flush()
-
-    flush()
     cur.close()
 
-    X, seen = res.balanced_draw(target)
+    if not frames:
+        return (np.empty((0, n_cells)),
+                {"tables": len(tables), "rows": rows_seen, "kept": 0,
+                 "period": f"{tables[0][-8:]} ~ {tables[-1][-8:]}",
+                 "cells": 0, "drawn": 0, "hours": 0, "split": split,
+                 "abs_cut": n_abs})
+
+    # ---- 2) 칸에 나눠 담는다 ----
+    sel = (np.asarray(mask, dtype=np.int32).reshape(-1) == 1
+           if mask is not None else np.ones(n_cells, dtype=bool))
+
+    # 가동 판정 온도는 훑어 모은 프레임 전체의 분포에서 잡는다. 사람이 정하는
+    # 값이 아니다.
+    peaks = np.array([float(np.asarray(v32, dtype=np.float64)[sel].max())
+                      for _d, _h, v32 in frames])
+    if split is None:
+        split = auto_run_temp(peaks)
+
+    n_run = 0
+    for (day, hour, v32), peak in zip(frames, peaks):
+        v = np.asarray(v32, dtype=np.float64)
+        running = 1 if peak >= split else 0
+        n_run += running
+
+        res.offer(cell_key(day, hour, running), v)
+        hours_seen |= (1 << hour)
+        kept += 1
+
+    run_share = (n_run / kept) if kept else 0.0
+    if verbose:
+        print(f"[재생버퍼] 가동 판정 온도 {split:.0f}도 (자동) · "
+              f"가동 {run_share * 100:.0f}% / 정지 {(1 - run_share) * 100:.0f}%")
+
+    X, seen = res.day_balanced_draw(target)
 
     info = {
         "tables": len(tables),
         "period": f"{tables[0][-8:]} ~ {tables[-1][-8:]}" if tables else "",
         "rows": rows_seen,
         "kept": kept,
-        "cells": len(seen),
+        "cells": len({k[1:] for k in seen}),
+        "days": len({k[0] for k in seen}),
         "drawn": int(X.shape[0]),
         "hours": bin(hours_seen).count("1"),
         "split": split,
-        "by_now": n_by_now,
-        "by_old": n_by_old,
-        "eras": n_eras,
+        "run_share": run_share,
+        "abs_cut": n_abs,
     }
 
     if verbose:
         print(f"[재생버퍼] 테이블 {info['tables']}개 ({info['period']})")
-        print(f"           정상 프레임 {kept:,}건 중 {info['drawn']:,}건 표집, "
-              f"{info['cells']}개 칸(시간대x가동상태) · {info['hours']}개 시간대")
+        # 0건도 적는다. 0 은 '그 잣대가 아무것도 걸러내지 않고 있다' 는
+        # 뜻이고, 그것을 알아야 임계값이 맞게 잡혔는지 의심할 수 있다.
+        print(f"           본 {rows_seen:,}건 중 {kept:,}건 사용")
+        print(f"           절대 임계값 위반 [ {n_abs:,} ] 건")
+        print(f"           {info['drawn']:,}건 표집, 날짜 {info['days']}일 균등 · "
+              f"{info['cells']}개 칸(시각x가동상태) · {info['hours']}개 시간대")
         if info["drawn"] < target:
             print(f"           (목표 {target:,}건에 못 미칩니다. 중복 복제 대신 "
                   f"있는 만큼만 씁니다)")

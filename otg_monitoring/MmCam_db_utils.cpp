@@ -335,6 +335,94 @@ MYSQL* connect_history_db(std::string* dbNameOut)
 }
 
 // =====================================
+// 히스토리 DB 의 날짜 테이블 수와 첫 날·끝 날
+//
+// [설정] 창이 "재학습 수집 일수" 옆에 DB 전체 기간을 보여 주려고 부른다. 테이블
+// 이름만 읽고 행은 세지 않는다.
+//
+// 접속·읽기 제한 시간을 짧게 둔다. 기본값으로 두면 DB 가 꺼져 있거나 네트워크가
+// 막혔을 때 수 초에서 수십 초를 기다린다. 호출하는 쪽이 UI 스레드가 아니어도
+// 오래 붙들려 있을 이유가 없다.
+//
+// 실패하면 false. 성공하면 first/last 는 "YYYY-MM-DD".
+// =====================================
+bool read_history_span(unsigned int timeoutSec, int* nTables,
+                       std::string* first, std::string* last)
+{
+    const std::string host = read_ini_string("DB_RUNTIME", "DB_HOST", "");
+    const std::string user = read_ini_string("DB_RUNTIME", "DB_USER", "");
+    const std::string pass = read_secret_string("DB_RUNTIME", "DB_PASSWORD", "");
+
+    std::string base = read_ini_string("DB_RUNTIME", "DB_NAME_HISTORY", "");
+    if (base.empty()) return false;
+
+    const std::string prefix = gUserID + "_";
+    const std::string dbName =
+        (base.find(prefix) == 0) ? base : prefix + base;
+
+    const std::string ini_path = make_ini_path();
+    const unsigned int port = static_cast<unsigned int>(
+        GetPrivateProfileIntA("DB_RUNTIME", "DB_PORT", 3306, ini_path.c_str()));
+
+    MYSQL* conn = mysql_init(nullptr);
+    if (!conn) return false;
+
+    unsigned int to = timeoutSec;
+    mysql_options(conn, MYSQL_OPT_CONNECT_TIMEOUT, &to);
+    mysql_options(conn, MYSQL_OPT_READ_TIMEOUT, &to);
+    mysql_options(conn, MYSQL_OPT_WRITE_TIMEOUT, &to);
+
+    if (!mysql_real_connect(conn, host.c_str(), user.c_str(), pass.c_str(),
+                            dbName.c_str(), port, nullptr, 0))
+    {
+        mysql_close(conn);
+        return false;
+    }
+
+    std::string esc(dbName.size() * 2 + 1, '\0');
+    const unsigned long n = mysql_real_escape_string(
+        conn, &esc[0], dbName.c_str(), (unsigned long)dbName.size());
+    esc.resize(n);
+
+    const std::string sql =
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = '" + esc + "' "
+        "AND table_name LIKE 'results_history_%' "
+        "AND table_type = 'BASE TABLE' ORDER BY table_name";
+
+    bool ok = false;
+    if (mysql_query(conn, sql.c_str()) == 0)
+    {
+        MYSQL_RES* res = mysql_store_result(conn);
+        if (res)
+        {
+            int cnt = 0;
+            std::string f, l;
+            while (MYSQL_ROW row = mysql_fetch_row(res))
+            {
+                if (!row[0]) continue;
+                const std::string nm = row[0];
+                if (nm.size() < 8) continue;
+                const std::string d8 = nm.substr(nm.size() - 8);
+                const std::string iso =
+                    d8.substr(0, 4) + "-" + d8.substr(4, 2) + "-" + d8.substr(6, 2);
+                if (cnt == 0) f = iso;
+                l = iso;
+                ++cnt;
+            }
+            mysql_free_result(res);
+            if (nTables) *nTables = cnt;
+            if (first) *first = f;
+            if (last)  *last = l;
+            ok = true;
+        }
+    }
+
+    mysql_close(conn);
+    return ok;
+}
+
+// =====================================
 // current_value(id=1) 읽기
 //
 // 컬럼 순서:

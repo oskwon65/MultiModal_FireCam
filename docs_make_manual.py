@@ -793,16 +793,16 @@ write(tf, [("예전에는 모델 파일이 없으면 프로그램이 종료되�
             dict(size=13.5, color=MUTED), dict(space_after=0, line=1.3))])
 
 stages = [
-    ("0", "절대 임계값", "설치 즉시", "학습 0건", EMBER,
+    ("1", "절대 임계값", "설치 즉시", "학습 0건", EMBER,
      "고정된 온도·상승률 선. 학습 기반 판정이 모두 실패해도 이것만은 남습니다."),
-    ("1", "셀별 기준선", "약 하루 후", "표본 3,000건 + 18시간", AMBER,
+    ("2", "경험 임계값", "약 하루 후", "표본 3,000건 + 18시간", AMBER,
      "셀마다 정상 범위를 누적해 그 선을 넘은 만큼 채점합니다."),
-    ("2", "오토인코더", "수 일~수 주", "히스토리 DB", TEAL,
-     "셀 사이의 결합 분포까지 봅니다. 1단계가 놓치는 조합 이상을 잡습니다."),
+    ("3", "오토인코더", "수 일~수 주", "히스토리 DB", TEAL,
+     "셀 사이의 결합 분포까지 봅니다. 2단계가 놓치는 조합 이상을 잡습니다."),
     # 0~2 는 '지금 무엇으로 채점할 수 있는가'(상태)이고 연속학습은 '모델을
     # 어떻게 갱신하는가'(활동)다. 성격이 달라 번호를 붙이지 않는다.
     ("", "연속학습", "지속", "감도 시험 통과 시", RGBColor(0x3D, 0x6B, 0xA8),
-     "쌓인 데이터로 2단계 모델을 스스로 갱신하며, 검증을 통과해야만 교체됩니다."),
+     "쌓인 데이터로 3단계 모델을 스스로 갱신하며, 검증을 통과해야만 교체됩니다."),
 ]
 
 bw5 = 2.78
@@ -836,23 +836,23 @@ tf = textbox(s, M + 0.82, 5.7, 10.6, 0.3)
 write(tf, [("하위 단계는 상위 단계가 생겨도 계속 살아 있습니다",
             dict(size=13.5, bold=True, color=TEAL), dict(space_after=0))])
 tf = textbox(s, M + 0.82, 6.1, 10.6, 0.55)
-write(tf, [("오토인코더나 기준선은 '이 현장의 평소'를 기준으로 판정하므로, 평소가 서서히 변하면 "
+write(tf, [("오토인코더나 경험 임계값은 '이 현장의 평소'를 기준으로 판정하므로, 평소가 서서히 변하면 "
             "기준도 따라갑니다. 그 특성은 오탐을 줄이지만 서서히 커지는 위험을 놓칠 수 있다는 뜻이기도 "
-            "합니다. 0단계의 고정선이 그 마지막 안전망입니다.",
+            "합니다. 1단계의 고정선이 그 마지막 안전망입니다.",
             dict(size=11.5, color=INK), dict(space_after=0, line=1.25))])
 page_num(s, 17)
 
-# =================================================================== 19 0~1단계
+# =================================================================== 19 1~2단계
 s = slide_light(prs)
-title_bar(s, "18  STAGE 0-1", "학습 전에도 감시한다")
+title_bar(s, "18  STAGE 1-2", "학습 전에도 감시한다")
 
 lw6 = 5.78
 
-# --- 0단계 ---
+# --- 1단계 ---
 tf = textbox(s, M, 1.76, lw6, 0.3)
-write(tf, [("0단계 · 절대 임계값", dict(size=14, bold=True, color=EMBER), dict(space_after=0))])
+write(tf, [("1단계 · 절대 임계값", dict(size=14, bold=True, color=EMBER), dict(space_after=0))])
 tf = textbox(s, M, 2.12, lw6, 0.5)
-write(tf, [("마스크 셀의 최대 온도와 분당 상승률을 고정선과 비교합니다. "
+write(tf, [("격자 64칸의 최대 온도와 분당 상승률을 고정선과 비교합니다. "
             "학습이 전혀 없어도 동작합니다.",
             dict(size=11.5, color=MUTED), dict(space_after=0, line=1.25))])
 
@@ -863,12 +863,12 @@ write(tf, [("기본값을 두지 않습니다", dict(size=12.5, bold=True, color
 tf = textbox(s, M + 0.28, 3.26, lw6 - 0.56, 1.05)
 write(tf, [("설비마다 정상 온도가 전혀 다릅니다. 실측 결과입니다.",
             dict(size=10.5, color=INK), dict(space_after=5, line=1.2)),
-           ("kict1          정상 가동 중 마스크 셀이 197도까지",
+           ("kict1          정상 가동 중 격자 최고가 197도까지",
             dict(name=MONO, size=9.5, color=INK), dict(space_after=3)),
            ("cj_busan_1     정상 가동의 99.05% 가 12도/분 초과",
             dict(name=MONO, size=9.5, color=INK), dict(space_after=5)),
            ("추측한 기본값은 쉬지 않고 경보를 울립니다. 미지정이면 "
-            "0단계를 끄고 시작 시 경고합니다.",
+            "1단계를 끄고 시작 시 경고합니다.",
             dict(size=10.5, color=EMBER), dict(space_after=0, line=1.2))])
 
 code_block(s, M, 4.50, lw6, [
@@ -879,10 +879,10 @@ code_block(s, M, 4.50, lw6, [
     "ABS_RISE_ALARM = 120",
 ], size=9.5)
 
-# --- 1단계 ---
+# --- 2단계 ---
 rx6 = M + lw6 + 0.33
 tf = textbox(s, rx6, 1.76, lw6, 0.3)
-write(tf, [("1단계 · 셀별 기준선", dict(size=14, bold=True, color=AMBER), dict(space_after=0))])
+write(tf, [("2단계 · 경험 임계값", dict(size=14, bold=True, color=AMBER), dict(space_after=0))])
 tf = textbox(s, rx6, 2.12, lw6, 0.5)
 write(tf, [("\"이 셀이 지금까지 이렇게 뜨거운 적이 있었는가\" 를 봅니다. "
             "평균에서 몇 σ 위인지가 아닙니다.",
@@ -918,7 +918,7 @@ for label, val, col in vals:
 
 card(s, M, 5.98, W - 2 * M, 0.76, fill=RGBColor(0xEC, 0xF6, 0xF4))
 tf = textbox(s, M + 0.3, 6.08, W - 2 * M - 0.6, 0.3)
-write(tf, [("기준선은 2단계 이후에도 은퇴하지 않습니다",
+write(tf, [("경험 임계값은 3단계 이후에도 은퇴하지 않습니다",
             dict(size=12.5, bold=True, color=TEAL), dict(space_after=0))])
 tf = textbox(s, M + 0.3, 6.40, W - 2 * M - 0.6, 0.32)
 write(tf, [("오토인코더가 준비되면 두 점수를 함께 내고 낮은 쪽을 씁니다. 한쪽만 이상이라 하면 "
@@ -927,9 +927,163 @@ write(tf, [("오토인코더가 준비되면 두 점수를 함께 내고 낮은 
             dict(size=11, color=INK), dict(space_after=0, line=1.2))])
 page_num(s, 18)
 
+# =================================================================== 19-1 단계 조건
+s = slide_light(prs)
+title_bar(s, "19  STAGE CONDITIONS", "단계는 언제 서는가")
+
+tf = textbox(s, M, 1.72, 11.6, 0.35)
+write(tf, [("세 단계는 차례로 서고, 선 뒤에도 물러나지 않습니다. 조건은 모두 "
+            "[설정] 창에서 바꿉니다.",
+            dict(size=14, color=MUTED), dict(space_after=0))])
+
+cw9, gap9 = 3.85, 0.29
+cols = [
+    ("1단계", "절대 임계값", EMBER, "설치 즉시 동작",
+     [("서는 조건", "네 값을 모두 채우면 그 순간부터"),
+      ("걸리는 조건", "격자 64칸 최고 온도 >= 선"),
+      ("", "또는 분당 상승률 >= 선"),
+      ("끄는 법", "네 칸을 모두 비운다")],
+     ["ABS_TEMP_WARN  = 172", "ABS_TEMP_ALARM = 187",
+      "ABS_RISE_WARN  = 90", "ABS_RISE_ALARM = 120"],
+     "네 칸을 모두 채우거나 모두 비웁니다. 섞이면 저장을 막습니다."),
+    ("2단계", "경험 임계값", AMBER, "서기까지 하루 남짓",
+     [("서는 조건", "표본 >= 3,000 그리고"),
+      ("", "시간대 >= 18 (둘 다)"),
+      ("걸리는 조건", "셀 온도 > 그 셀의 상위 분위선"),
+      ("쌓는 곳", "online_baseline.npz")],
+     ["BASELINE_MIN_SAMPLES = 3000", "BASELINE_MIN_HOURS   = 18"],
+     "시간대 조건이 있는 이유: 낮만 모은 임계값은 밤을 모릅니다."),
+    ("3단계", "오토인코더", TEAL, "자료가 모여야 만듦",
+     [("만드는 조건", "DB 행 >= 5,000 그리고"),
+      ("", "시간대 >= 18"),
+      ("쓰는 조건", "예행연습이 승격 판정을 내고"),
+      ("", "[재학습 적용] 을 누를 때")],
+     ["RETRAIN_MIN_SAMPLES = 5000", "RETRAIN_MIN_HOURS   = 18"],
+     "승격해도 2단계는 함께 돕니다. 두 점수 중 낮은 쪽을 씁니다."),
+]
+
+for i, (num, name, col, when, rows, keys, note) in enumerate(cols):
+    x = M + i * (cw9 + gap9)
+    card(s, x, 2.25, cw9, 4.42, fill=PAPER)
+
+    circle(s, x + 0.26, 2.48, 0.46, col, num[0], WHITE, 13)
+    tf = textbox(s, x + 0.84, 2.52, cw9 - 1.1, 0.28)
+    write(tf, [(num + " · " + name, dict(size=12.5, bold=True, color=INK),
+                dict(space_after=0))])
+    tf = textbox(s, x + 0.84, 2.80, cw9 - 1.1, 0.24)
+    write(tf, [(when, dict(size=9.5, color=MUTED),
+                dict(space_after=0))])
+
+    y = 3.22
+    for lab, val in rows:
+        if lab:
+            tf = textbox(s, x + 0.26, y, 1.25, 0.24)
+            write(tf, [(lab, dict(size=9.5, bold=True, color=col),
+                        dict(space_after=0))])
+        tf = textbox(s, x + 1.52, y, cw9 - 1.78, 0.24)
+        write(tf, [(val, dict(size=9.5, color=INK), dict(space_after=0))])
+        y += 0.265
+
+    code_block(s, x + 0.26, y + 0.12, cw9 - 0.52, keys, size=8.0, pad=0.16)
+
+    tf = textbox(s, x + 0.26, 6.02, cw9 - 0.52, 0.55)
+    write(tf, [(note, dict(size=9.5, color=MUTED),
+                dict(space_after=0, line=1.2))])
+
+page_num(s, 19)
+
+# =================================================================== 19-2 경험 임계값 변경
+s = slide_light(prs)
+title_bar(s, "20  BASELINE LIFECYCLE", "2단계 경험 임계값은 언제 바뀌는가")
+
+tf = textbox(s, M, 1.72, 11.6, 0.35)
+write(tf, [("경험 임계값이 세는 것은 모델의 오차가 아니라 칸의 온도 그 자체입니다. "
+            "그래서 모델을 갈아도 그대로 맞습니다.",
+            dict(size=14, color=MUTED), dict(space_after=0))])
+
+lwB = 6.05
+rxB = M + lwB + 0.33
+
+# --- 왼쪽: 쌓이는 조건과 창 ---
+tf = textbox(s, M, 2.24, lwB, 0.3)
+write(tf, [("쌓이는 조건", dict(size=14, bold=True, color=AMBER),
+            dict(space_after=0))])
+
+card(s, M, 2.62, lwB, 1.52, fill=PAPER)
+tf = textbox(s, M + 0.28, 2.80, lwB - 0.56, 1.2)
+write(tf, [("두 가지가 모두 맞을 때만 한 프레임이 들어갑니다.",
+            dict(size=10.5, color=INK), dict(space_after=5, line=1.2)),
+           ("절대 임계값에 걸리지 않았다", dict(size=10.5, color=INK),
+            dict(space_after=3)),
+           ("화면이 밀리지 않았다 (기준 패턴과의 상관 0.95 이상)",
+            dict(size=10.5, color=INK), dict(space_after=5)),
+           ("이상으로 본 프레임을 넣으면 서서히 커지는 열점을 "
+            "\"요즘의 정상\" 으로 흡수합니다.",
+            dict(size=10, color=EMBER), dict(space_after=0, line=1.2))])
+
+tf = textbox(s, M, 4.28, lwB, 0.3)
+write(tf, [("창은 최근 것만 듭니다 (고리 버퍼)", dict(size=14, bold=True, color=AMBER),
+            dict(space_after=0))])
+
+card(s, M, 4.66, lwB, 1.62, fill=PAPER)
+tf = textbox(s, M + 0.28, 4.84, lwB - 0.56, 1.3)
+write(tf, [("최소 조건(3,000건 · 18시간대)을 지키는 선까지만 들고, 그 위로는 "
+            "오래된 것부터 밀어냅니다. 상한 50,000건.",
+            dict(size=10.5, color=INK), dict(space_after=5, line=1.2)),
+           ("그래서 기간을 길게 잡아도 내용은 같습니다. 7월부터 넣든 최근 "
+            "5일만 넣든 남는 것은 최근 3,000건입니다.",
+            dict(size=10.5, color=MUTED), dict(space_after=5, line=1.2)),
+           ("200건마다 저장합니다. 비정상 종료 시 최대 199건을 잃습니다.",
+            dict(size=10, color=MUTED), dict(space_after=0, line=1.2))])
+
+# --- 오른쪽: 처음부터 다시 쌓는 네 가지 ---
+tf = textbox(s, rxB, 2.24, lwB, 0.3)
+write(tf, [("처음부터 다시 쌓는 경우는 네 가지뿐", dict(size=14, bold=True, color=EMBER),
+            dict(space_after=0))])
+
+resets = [
+    ("--reset-baseline", "사람이 치울 때. 마스크를 다시 떴거나 카메라를 옮겼을 때"),
+    ("파일 없음", "설치 직후"),
+    ("격자 칸 수 바뀜", "마스크 격자가 64칸이 아니게 되었을 때"),
+    ("읽기 실패", "저장 도중 꺼져 파일이 깨졌을 때"),
+]
+yR = 2.68
+for lab, why in resets:
+    card(s, rxB, yR, lwB, 0.56, fill=PAPER)
+    tf = textbox(s, rxB + 0.24, yR + 0.09, 2.1, 0.24)
+    write(tf, [(lab, dict(name=MONO, size=9.5, bold=True, color=EMBER),
+                dict(space_after=0))])
+    tf = textbox(s, rxB + 2.42, yR + 0.09, lwB - 2.66, 0.4)
+    write(tf, [(why, dict(size=9.5, color=INK), dict(space_after=0, line=1.15))])
+    yR += 0.64
+
+card(s, rxB, yR + 0.06, lwB, 0.86, fill=RGBColor(0xEC, 0xF6, 0xF4))
+tf = textbox(s, rxB + 0.26, yR + 0.18, lwB - 0.52, 0.26)
+write(tf, [("되돌리기는 경험 임계값을 건드리지 않습니다",
+            dict(size=11.5, bold=True, color=TEAL), dict(space_after=0))])
+tf = textbox(s, rxB + 0.26, yR + 0.46, lwB - 0.52, 0.4)
+write(tf, [("[되돌리기] 는 오토인코더 모델만 세대 단위로 돌립니다. 치운 임계값은 "
+            "지우지 않고 _retired_baseline 에 보관합니다.",
+            dict(size=9.5, color=INK), dict(space_after=0, line=1.2))])
+
+tf = textbox(s, rxB, yR + 1.06, lwB, 0.26)
+write(tf, [("사유는 baseline_reset.ini 에 남고 [설정] 창 [현재 진행] 에 나옵니다.",
+            dict(size=9.5, color=MUTED), dict(space_after=0))])
+
+# --- 아래: DB 에서 되쌓기 ---
+card(s, M, 6.44, W - 2 * M, 0.62, fill=RGBColor(0xFD, 0xF1, 0xEC))
+tf = textbox(s, M + 0.3, 6.53, 3.6, 0.26)
+write(tf, [("기다리지 않고 되쌓기", dict(size=11.5, bold=True, color=EMBER),
+            dict(space_after=0))])
+tf = textbox(s, M + 3.95, 6.53, W - 2 * M - 4.25, 0.26)
+write(tf, [("python retrain/rebuild_baseline.py <user>   "
+            "— 히스토리 DB 의 프레임으로 한 번에 다시 쌓습니다 (하루 대기 불필요)",
+            dict(size=10, color=INK), dict(space_after=0))])
+page_num(s, 20)
+
 # =================================================================== 20 재학습
 s = slide_light(prs)
-title_bar(s, "19  RETRAIN", "재학습 - 창에서 눌러 돌립니다")
+title_bar(s, "21  RETRAIN", "재학습 - 창에서 눌러 돌립니다")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
 write(tf, [("히스토리 DB 에 이미 64셀 값이 쌓이고 있어, 별도 수집 장치 없이 갱신합니다. "
@@ -938,10 +1092,10 @@ write(tf, [("히스토리 DB 에 이미 64셀 값이 쌓이고 있어, 별도 �
             dict(size=13.5, color=MUTED), dict(space_after=0))])
 
 steps4 = [
-    ("1", "재생 버퍼", "시간대(24) x 가동상태(2) = 48칸에서 고르게 표집합니다. "
-     "최근 것만 쓰면 여름에 겨울 패턴을 잊습니다."),
+    ("1", "재생 버퍼", "날짜마다 같은 몫으로, 하루 안에서는 시각(24) x 가동상태(2) = 48칸에서 "
+     "고르게 표집합니다. 최근 것만 쓰면 여름에 겨울 패턴을 잊습니다."),
     ("2", "후보 학습", "서빙과 같은 환경에서 학습하므로 numpy 버전 문제가 없습니다. "
-     "모델이 작아 CPU 로 수 분입니다."),
+     "모델이 작아 CPU 로 수 분입니다. 다음 장에 전체 흐름도가 있습니다."),
     ("3", "감도 회귀 시험", "정상 적합도만 보면 절반만 본 것입니다. 합성 이상을 주입해 "
      "여전히 잡아내는지 함께 봅니다."),
     ("4", "세대 보관", "재학습을 실제로 돌린 경우만 보관합니다(10세대). 예행연습은 "
@@ -961,22 +1115,21 @@ tf = textbox(s, bx7, 2.24, 4.21, 0.3)
 write(tf, [("실행", dict(size=13, bold=True, color=INK), dict(space_after=0))])
 code_block(s, bx7, 2.6, 4.21, [
     "$ python retrain/nightly_retrain.py <user>",
-    "",
     "  --dry-run     시험만, 교체 안 함",
+    "  --fresh       예행연습을 안 쓰고 새로",
     "  --list        세대 목록",
-    "  --rollback    직전 운용 세대로",
-    "  --rollback <세대>",
-    "  --keep-baseline",
+    "  --rollback [세대]  되돌리기",
+    "  --reset-baseline  기준선 치우기",
 ], size=10)
 
-tf = textbox(s, bx7, 4.36, 4.21, 0.3)
+tf = textbox(s, bx7, 4.5, 4.21, 0.3)
 write(tf, [("실측 — cj_busan_1", dict(size=13, bold=True, color=INK), dict(space_after=0))])
 rows7 = [("", "후보", "현재"),
          ("정상 평균 점수", "0.931", "0.816"),
          ("정상 오탐 비율", "0.8%", "3.8%"),
          ("+20도 주입", "0.039", "0.433"),
          ("+40도 주입", "0.004", "0.112")]
-y7 = 4.74
+y7 = 4.88
 for i, (a, b, c) in enumerate(rows7):
     hd = (i == 0)
     tf = textbox(s, bx7 + 0.04, y7, 2.1, 0.26)
@@ -988,15 +1141,106 @@ for i, (a, b, c) in enumerate(rows7):
     write(tf, [(c, dict(name=MONO, size=10, color=MUTED), dict(space_after=0))])
     y7 += 0.3
 
-tf = textbox(s, bx7 + 0.04, 6.3, 4.1, 0.44)
+tf = textbox(s, bx7 + 0.04, 6.42, 4.1, 0.44)
 write(tf, [("검증 구간이 최근이라 후보에 유리한 비교입니다. "
             "\"지금 데이터에 어느 쪽이 맞는가\" 로 보십시오.",
             dict(size=9.5, color=MUTED), dict(space_after=0, line=1.2))])
-page_num(s, 19)
+page_num(s, 21)
+
+# =================================================================== 재학습 흐름도
+s = slide_light(prs)
+title_bar(s, "22  RETRAIN FLOW", "재학습은 이렇게 흐릅니다")
+
+tf = textbox(s, M, 1.72, 11.6, 0.35)
+write(tf, [("[재학습] 창에서 [예행연습] 이나 [재학습 적용] 을 눌러 시작합니다. "
+            "위 줄은 준비, 아래 줄은 학습과 승격입니다.",
+            dict(size=13.5, color=MUTED), dict(space_after=0))])
+
+from pptx.enum.shapes import MSO_CONNECTOR
+from pptx.oxml.ns import qn
+from lxml import etree
+
+FL_BG = RGBColor(0xFD, 0xF3, 0xE3)       # 분기
+FL_OK = RGBColor(0xEC, 0xF6, 0xF4)       # 승격
+FL_LN = RGBColor(0x8A, 0x94, 0xA6)
+
+
+def fl_line(x1, y1, x2, y2, arrow=False):
+    c = s.shapes.add_connector(MSO_CONNECTOR.STRAIGHT,
+                               Inches(x1), Inches(y1), Inches(x2), Inches(y2))
+    c.line.color.rgb = FL_LN
+    c.line.width = Pt(1.5)
+    if arrow:
+        ln = c.line._get_or_add_ln()
+        te = etree.SubElement(ln, qn("a:tailEnd"))
+        te.set("type", "triangle")
+        te.set("w", "med")
+        te.set("len", "med")
+    return c
+
+
+def fl_node(x, y, w, h, title, sub="", branch="", kind="step", bcol=None):
+    fill = {"step": PAPER, "ask": FL_BG, "ok": FL_OK}[kind]
+    card(s, x, y, w, h, fill=fill, radius=0.16 if kind == "ask" else 0.06)
+    tf = textbox(s, x + 0.1, y + 0.08, w - 0.2, 0.3)
+    write(tf, [(title, dict(size=11.5, bold=True, color=INK), dict(space_after=0))])
+    lines = []
+    if sub:
+        lines.append((sub, dict(size=9, color=MUTED), dict(space_after=3, line=1.15)))
+    if branch:
+        lines.append((branch, dict(size=9, bold=True, color=bcol or EMBER),
+                      dict(space_after=0, line=1.15)))
+    if lines:
+        tf = textbox(s, x + 0.1, y + 0.42, w - 0.2, h - 0.5)
+        write(tf, lines)
+
+
+bw, bh, gp = 1.62, 1.45, 0.376
+yA, yB = 2.22, 4.55
+xs = [M + i * (bw + gp) for i in range(6)]
+
+rowA = [
+    ("재학습 실행", "[예행연습]\n[재학습 적용]", "", "step", None),
+    ("예행연습 결과", "적용 때, 6시간 이내", "있으면 그 모델 승격", "ask", TEAL),
+    ("운용 모델 읽기", "점수와 표본 선별에 씁니다", "못 읽으면 중단", "ask", EMBER),
+    ("기여도 판단", "최근 판단 구간에서 2,000건을 채점해 w 계산", "", "step", None),
+    ("재생 버퍼", "날짜마다 같은 몫 · 하루 안은 48칸 균등 · 최대 20,000건", "", "step", None),
+    ("표본 충분?", "5,000건 · 18시간대 이상", "모자라면 보류", "ask", EMBER),
+]
+rowB = [
+    ("후보 학습", "85% 학습 · 15% 검증. 웜스타트 (켬: w=0 이면 새로)", "", "step", None),
+    ("감도 회귀 시험", "정상 점수 · 오탐 · 합성 이상", "", "step", None),
+    ("예행연습인가", "", "예이면 .dryrun 임시 저장", "ask", EMBER),
+    ("세대로 보관", "10세대까지 남깁니다", "", "step", None),
+    ("시험 통과?", "현재 모델보다 둔하면 불합격", "불합격이면 보류", "ask", EMBER),
+    ("승격", "운용 모델로 배치, 10초 안에 교체", "", "ok", None),
+]
+
+for row, y in ((rowA, yA), (rowB, yB)):
+    for i, (t, sub, br, kind, bcol) in enumerate(row):
+        fl_node(xs[i], y, bw, bh, t, sub.replace("\\n", "\n"), br, kind, bcol)
+        if i < len(row) - 1:
+            fl_line(xs[i] + bw, y + bh / 2, xs[i + 1], y + bh / 2, arrow=True)
+
+# 윗줄 끝에서 아랫줄 처음으로
+ymid = yA + bh + (yB - yA - bh) / 2
+fl_line(xs[5] + bw / 2, yA + bh, xs[5] + bw / 2, ymid)
+fl_line(xs[5] + bw / 2, ymid, xs[0] + bw / 2, ymid)
+fl_line(xs[0] + bw / 2, ymid, xs[0] + bw / 2, yB, arrow=True)
+
+tf = textbox(s, M, 6.22, W - 2 * M - 1.1, 0.5)
+write(tf, [("둥근 칸은 갈림길입니다. 보류로 끝나도 운용 모델은 그대로이고, 적용 중 시험에서 막힌 "
+            "후보는 세대로 남아 왜 막혔는지 보고서로 볼 수 있습니다. 예행연습은 세대를 만들지 않습니다.",
+            dict(size=10.5, color=MUTED), dict(space_after=3, line=1.25)),
+           ("[자동 재학습] 을 켜 두면 감시가 기여 w < 1.00 일 때 이 흐름을 스스로 시작하고, 시험을 통과하면 "
+            "바로 승격합니다. 간격(기본 24시간)을 두고 돌며 결과는 auto_retrain_history.txt 에 쌓입니다. "
+            "켜고 끄는 것은 [저장] 으로 확인한 뒤 반영됩니다.",
+            dict(size=10.5, bold=True, color=TEAL), dict(space_after=0, line=1.25))])
+page_num(s, 22)
 
 # =================================================================== 카메라 이동
 s = slide_light(prs)
-title_bar(s, "20  CAMERA SHIFT", "카메라가 밀렸을 때")
+title_bar(s, "23  CAMERA SHIFT", "카메라가 밀렸을 때")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
 write(tf, [("이동은 재서 알려 주기만 합니다. 이미지도 마스크도 자동으로 되돌리지 않습니다.",
@@ -1006,7 +1250,7 @@ tf = textbox(s, M, 2.2, 5.6, 0.3)
 write(tf, [("무엇을 재는가", dict(size=13, bold=True, color=INK), dict(space_after=0))])
 shift_rows = [
     ("RGB", "base_img/base_ref.png 한 장과 위상 상관. 기동할 때 한 번."),
-    ("열화상", "굳혀 둔 64셀 패턴과 대조. 운전 중 30분마다."),
+    ("열화상", "64칸의 느린 EWMA 와 장기 평균의 상관. 0.95 미만이면 누적을 멈춥니다."),
     ("믿을 수 있나", "response 가 0.30 미만이면 '판정 불가'. 거짓말보다 낫습니다."),
 ]
 ys = 2.6
@@ -1060,11 +1304,11 @@ tf = textbox(s, bx + 0.3, 5.66, 4.8, 0.6)
 write(tf, [("그래서 2칸 이상이면 [설정] 화면에 '현장 조준 확인' 을 띄웁니다. "
             "자동 보정이 아니라 사람에게 알리는 용도입니다.",
             dict(size=10.5, bold=True, color=TEAL), dict(space_after=0, line=1.25))])
-page_num(s, 20)
+page_num(s, 23)
 
 # =================================================================== 모델 기여도
 s = slide_light(prs)
-title_bar(s, "21  MODEL CONTRIBUTION", "기존 모델을 얼마나 물려받는가")
+title_bar(s, "24  MODEL CONTRIBUTION", "기존 모델을 얼마나 물려받는가")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
 write(tf, [("몇 칸 밀렸는지가 아니라 지금 몇 점을 내고 있는지로 정합니다. "
@@ -1074,11 +1318,10 @@ write(tf, [("몇 칸 밀렸는지가 아니라 지금 몇 점을 내고 있는�
 tf = textbox(s, M, 2.2, 5.6, 0.3)
 write(tf, [("판단 점수", dict(size=13, bold=True, color=INK), dict(space_after=0))])
 tf = textbox(s, M + 0.04, 2.56, 5.5, 0.8)
-write(tf, [("최근 하루 프레임에서 표본 2,000건을 뽑아 지금 모델로 다시 매긴 "
-            "점수의 중앙값입니다. DB 에 적힌 점수는 그때 돌던 모델의 것이라 "
-            "세대를 갈아 끼운 날이면 여러 모델의 점수가 섞입니다. 순간값 대신 "
-            "중앙값을 쓰는 이유는 따로 있습니다 — 서서히 뜨거워지는 설비가 "
-            "점수를 낮출 때 그 데이터로 재학습하면 경보가 스스로 사라집니다.",
+write(tf, [("판단 구간(다음 장)에서 최대 2,000건을 뽑아 지금 모델로 다시 매긴 점수의 "
+            "중앙값입니다. DB 에 적힌 점수는 그때 돌던 모델의 것이라 쓰지 않습니다. "
+            "순간값 대신 중앙값을 쓰는 것은, 서서히 뜨거워지는 설비의 점수 하락을 "
+            "그대로 재학습하면 경보가 사라지기 때문입니다.",
             dict(size=10.5, color=MUTED), dict(space_after=0, line=1.25))])
 tf = textbox(s, M + 0.04, 3.52, 5.5, 0.3)
 write(tf, [("다음 프레임은 빼고 셉니다", dict(size=11, bold=True, color=INK),
@@ -1095,11 +1338,11 @@ for e in excl:
 bx = M + 6.1
 tf = textbox(s, bx, 2.2, 5.4, 0.3)
 write(tf, [("점수 → 기여 가중치", dict(size=13, bold=True, color=INK), dict(space_after=0))])
-bands = [("점수", "w", "재학습 방식"),
-         ("0.85 이상", "1.00", "평소대로 (웜스타트 + 옛 자료)"),
+bands = [("점수", "w", "동적구성을 켰을 때"),
+         ("0.85 이상", "1.00", "웜스타트 · 옛 자료 w 비율"),
          ("0.70", "0.77", "두 끝 사이는 직선으로 잇습니다"),
-         ("0.50", "0.46", "기여만큼만 옛 자료를 섞습니다"),
-         ("0.20 이하", "0.00", "웜스타트 없이 새로 시작")]
+         ("0.50", "0.46", "웜스타트 · 옛 자료 46%"),
+         ("0.20 이하", "0.00", "새로 초기화 · 새 시기만")]
 yb = 2.62
 for i, (a, b, c) in enumerate(bands):
     hd = (i == 0)
@@ -1112,10 +1355,9 @@ for i, (a, b, c) in enumerate(bands):
     write(tf, [(c, dict(size=10, color=MUTED), dict(space_after=0))])
     yb += 0.32
 
-tf = textbox(s, bx + 0.04, 4.02, 5.3, 0.62)
-write(tf, [("두 끝 사이를 직선으로 이어 0.849 와 0.851 이 딴 학습이 되지 않게 합니다. "
-            "두 끝과 판단 기간·최소 프레임·표본 상한은 [설정] 창의 "
-            "[ 기여도 판단 ] 에서 바꿉니다.",
+tf = textbox(s, bx + 0.04, 4.22, 5.3, 0.42)
+write(tf, [("두 끝 사이는 직선으로 이어 0.849 와 0.851 이 딴 학습이 되지 않게 합니다. "
+            "값은 [설정] 창에서, 기여 문턱은 [재학습] 창의 재생버퍼 동적구성 줄에서 바꿉니다.",
             dict(size=10, color=MUTED), dict(space_after=0, line=1.2))])
 
 card(s, M, 4.7, W - 2 * M, 1.45, fill=RGBColor(0xFD, 0xF3, 0xE3))
@@ -1126,19 +1368,152 @@ tf = textbox(s, M + 0.3, 5.2, 11.0, 0.85)
 write(tf, [("가중치를 물려받지 않을 뿐, 감도 회귀 게이트의 비교 대상으로는 계속 씁니다. "
             "새 모델이 옛 모델보다 둔해지면 승격을 막는 장치인데, 비교 대상이 없으면 "
             "그 장치가 무력해집니다.  또한 모델을 못 믿기로 했으면 그 모델의 점수로 "
-            "학습 표본을 고르지도 않습니다 — 0단계 절대 임계값으로 거릅니다.",
+            "학습 표본을 고르지도 않습니다 — 1단계 절대 임계값으로 거릅니다.",
             dict(size=10.5, color=MUTED), dict(space_after=0, line=1.3))])
 
 card(s, M, 6.28, W - 2 * M, 0.55, fill=RGBColor(0xEC, 0xF6, 0xF4))
 tf = textbox(s, M + 0.34, 6.42, W - 2 * M - 0.68, 0.32)
-write(tf, [("기여 가중치를 낮추려면 [설정] 창에서 계산 기준일을 먼저 지정해야 합니다. "
-            "비어 있으면 옛 시기와 새 시기를 가를 수 없어 가중치가 무시됩니다.",
+write(tf, [("기여 문턱과 w 는 재생버퍼 동적구성을 켰을 때만 쓰입니다. 끄면 늘 웜스타트하고 "
+            "옛/새를 가르지 않습니다. 학습률은 w 와 무관하게 고정입니다.",
             dict(size=11, bold=True, color=TEAL), dict(space_after=0))])
-page_num(s, 21)
+page_num(s, 24)
+
+# =================================================================== 기여도 판단 구간
+s = slide_light(prs)
+title_bar(s, "25  CONTRIBUTION WINDOW", "기여도는 어느 구간을 재는가")
+
+tf = textbox(s, M, 1.72, 11.6, 0.35)
+write(tf, [("지금 모델이 최근 변화를 잘 받아들이는지 보는 구간입니다. "
+            "학습 표본을 뽑는 구간과 같을 필요가 없습니다.",
+            dict(size=13.5, color=MUTED), dict(space_after=0))])
+
+# --- 왼쪽 : 규칙 ---
+tf = textbox(s, M, 2.2, 5.8, 0.3)
+write(tf, [("구간을 정하는 규칙", dict(size=13, bold=True, color=INK), dict(space_after=0))])
+
+win_rules = [
+    ("가장 새 테이블부터 N개",
+     "N 은 [설정] 창의 판단 최소 일수입니다. 날짜별 테이블(results_history_YYYYMMDD)을 "
+     "새것부터 N개 가져옵니다."),
+    ("그중 N일보다 오래된 것은 뺀다",
+     "가장 새 테이블 날짜에서 N-1일보다 앞선 것을 버립니다. 시계가 아니라 테이블 "
+     "이름끼리 견주고, 빈 날이 있으면 N개보다 적게 남습니다."),
+    ("이 구간이 재생 버퍼의 새 시기다",
+     "동적구성을 켜면 재생 버퍼가 이 구간을 새 시기, 그 앞을 옛 시기로 가르고 "
+     "w : 1-w 로 섞습니다. 표본이 모자라면 판단을 보류합니다."),
+]
+yw = 2.6
+for i, (t, d) in enumerate(win_rules):
+    circle(s, M + 0.04, yw, 0.26, TEAL, text=str(i + 1), tsize=11)
+    tf = textbox(s, M + 0.42, yw - 0.04, 5.4, 0.26)
+    write(tf, [(t, dict(size=11.5, bold=True, color=INK), dict(space_after=0))])
+    tf = textbox(s, M + 0.42, yw + 0.24, 5.4, 0.6)
+    write(tf, [(d, dict(size=10, color=MUTED), dict(space_after=0, line=1.2))])
+    yw += 0.82
+
+# --- 오른쪽 : 날짜 테이블 위에서 두 구간이 겹치는 모양 ---
+bx = M + 6.1
+tf = textbox(s, bx, 2.2, 5.6, 0.3)
+write(tf, [("예 - 판단 최소 일수 7, 가장 새 테이블 10-04", dict(size=13, bold=True, color=INK),
+            dict(space_after=0))])
+
+from pptx.enum.dml import MSO_LINE
+
+PUR_BG = RGBColor(0xEE, 0xED, 0xFE)
+PUR_TX = RGBColor(0x3C, 0x34, 0x89)
+GRY_BG = RGBColor(0xE3, 0xE6, 0xEB)
+TEA_BG = RGBColor(0xDD, 0xF1, 0xEA)
+
+cw, n_days = 0.36, 15                  # 09-20 ~ 10-04
+days = ["20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30",
+        "1", "2", "3", "4"]
+
+tf = textbox(s, bx, 2.58, 1.0, 0.22)
+write(tf, [("9월", dict(size=9, color=MUTED), dict(space_after=0))])
+tf = textbox(s, bx + 11 * cw + 0.04, 2.58, 2.0, 0.22)
+write(tf, [("10월", dict(size=9, color=MUTED), dict(space_after=0))])
+
+for i, d in enumerate(days):
+    card(s, bx + i * cw + 0.02, 2.82, cw - 0.04, 0.3, fill=PAPER, radius=0.2)
+    tf = textbox(s, bx + i * cw, 2.85, cw, 0.26, align=PP_ALIGN.CENTER)
+    write(tf, [(d, dict(size=8.5, color=MUTED), dict(space_after=0))])
+
+# 판단 구간의 시작 = 옛/새 시기의 경계
+x_base = bx + 8 * cw
+ln = s.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, Inches(x_base), Inches(2.76),
+                            Inches(x_base), Inches(4.12))
+ln.line.color.rgb = FL_LN
+ln.line.width = Pt(1.25)
+ln.line.dash_style = MSO_LINE.DASH
+
+# 재생 버퍼 : 전체를 훑고 판단 구간을 새 시기, 그 앞을 옛 시기로 가른다(켬일 때)
+card(s, bx, 3.28, 8 * cw - 0.03, 0.34, fill=GRY_BG, radius=0.15)
+tf = textbox(s, bx + 0.08, 3.31, 8 * cw - 0.2, 0.28)
+write(tf, [("재생 버퍼 - 옛 시기 (켬 w)", dict(size=10, bold=True, color=INK),
+            dict(space_after=0))])
+card(s, x_base + 0.03, 3.28, 7 * cw - 0.03, 0.34, fill=TEA_BG, radius=0.15)
+tf = textbox(s, x_base + 0.1, 3.31, 7 * cw - 0.12, 0.28)
+write(tf, [("새 시기 (켬 1-w)", dict(size=10, bold=True, color=TEAL),
+            dict(space_after=0))])
+
+# 기여도 : 가장 최근 N일
+x_ct = bx + 8 * cw
+card(s, x_ct, 3.72, 7 * cw - 0.03, 0.34, fill=PUR_BG, radius=0.15)
+tf = textbox(s, x_ct + 0.08, 3.75, 7 * cw - 0.2, 0.28)
+write(tf, [("기여도 - 최근 N일", dict(size=10, bold=True, color=PUR_TX),
+            dict(space_after=0))])
+tf = textbox(s, bx + 0.02, 3.76, 8 * cw - 0.1, 0.26)
+write(tf, [("기여도는 이 구간을 보지 않음", dict(size=9, color=MUTED),
+            dict(space_after=0))])
+
+# 겹치는 구간
+ov = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x_ct - 0.03), Inches(3.2),
+                        Inches(7 * cw + 0.03), Inches(0.94))
+ov.fill.background()
+ov.line.color.rgb = RGBColor(0x7F, 0x77, 0xDD)
+ov.line.width = Pt(1.5)
+ov.line.dash_style = MSO_LINE.DASH
+ov.shadow.inherit = False
+tf = textbox(s, x_ct - 0.03, 4.17, 7 * cw + 0.03, 0.26, align=PP_ALIGN.CENTER)
+write(tf, [("겹치는 구간 09-28 ~ 10-04 (= 새 시기)", dict(size=9.5, color=PUR_TX),
+            dict(space_after=0))])
+tf = textbox(s, bx, 4.5, 5.5, 0.26)
+write(tf, [("켬 / 끔 = 재생버퍼 동적구성 (기본 끔). 끄면 옛/새를 가르지 않고 전체에서 뽑습니다.", dict(size=9, color=MUTED),
+            dict(space_after=0))])
+
+# --- 아래 : 왜 이렇게 두는가 ---
+cR = (W - 2 * M - 0.3) / 2
+
+card(s, M, 4.95, cR, 1.78, fill=RGBColor(0xEC, 0xF6, 0xF4))
+tf = textbox(s, M + 0.28, 5.1, cR - 0.56, 0.3)
+write(tf, [("재생 버퍼 기간과 같을 필요가 없다", dict(size=12.5, bold=True, color=TEAL),
+            dict(space_after=0))])
+tf = textbox(s, M + 0.28, 5.44, cR - 0.56, 1.25)
+write(tf, [("기여도는 '최근 변화를 받아들이나' 를 재므로 짧고 최근이어야 합니다. "
+            "재생 버퍼는 '무엇을 배울까' 라서 계절·가동 패턴을 잊지 않도록 수집 일수(기본 전체) "
+            "만큼 넓게 뽑습니다.",
+            dict(size=10.5, color=INK), dict(space_after=4, line=1.2)),
+           ("동적구성을 켜면 판단 구간이 재생 버퍼의 새 시기가 되어 w : 1-w 로 섞이고, 끄면 구간과 상관없이 전체에서 뽑습니다.",
+            dict(size=10.5, color=INK), dict(space_after=0, line=1.2))])
+
+rR = M + cR + 0.3
+card(s, rR, 4.95, cR, 1.78, fill=RGBColor(0xFD, 0xF3, 0xE3))
+tf = textbox(s, rR + 0.28, 5.1, cR - 0.56, 0.3)
+write(tf, [("w 는 동적구성을 켰을 때만 쓰인다", dict(size=12.5, bold=True, color=INK),
+            dict(space_after=0))])
+tf = textbox(s, rR + 0.28, 5.44, cR - 0.56, 1.25)
+write(tf, [("재학습은 사람이 [재학습] 창에서 시작하거나, [자동 재학습] 을 켜면 w < 1.00 일 때 감시가 "
+            "시작합니다. 동적구성을 켜면 w 가 웜스타트 여부(w=0 이면 새로 초기화)와 옛 : 새 비율을 "
+            "정하고, 끄면 늘 웜스타트합니다. 학습률은 고정입니다.",
+            dict(size=10.5, color=INK), dict(space_after=4, line=1.2)),
+           ("구간 안에 근거가 모자라면(표본 500건 미만) 판단을 보류하고 w 는 1.00 으로 "
+            "둡니다. 모르는 것을 이유로 모델을 버리지 않기 위해서입니다.",
+            dict(size=10.5, color=INK), dict(space_after=0, line=1.2))])
+page_num(s, 25)
 
 # =================================================================== 22 되돌리기
 s = slide_light(prs)
-title_bar(s, "22  ROLLBACK", "되돌리기 - 무엇으로 돌아가는가")
+title_bar(s, "26  ROLLBACK", "되돌리기 - 무엇으로 돌아가는가")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
 write(tf, [("감도 시험을 통과한 모델도 현장에서 겪어 보면 아닐 수 있습니다. "
@@ -1149,12 +1524,14 @@ code_block(s, M, 2.2, W - 2 * M, two_col([
     ("[ 재학습 창 ]",                                    "[ generation_history.txt ]"),
     ("[되돌리기] [20260924_145528 (직전) v]",            "09-23 14:51  20260923_145111  승격"),
     ("        [예행연습] [재학습 적용] [닫기]",          "09-24 12:14  20260924_121452  승격"),
-    ("",                                                 "09-24 12:54  20260923_145111  되돌림"),
-    ("[cj_busan_1] 운용에 올라간 세대",                  "09-24 14:55  20260924_145528  승격"),
-    ("   20260923_145111   운용된 적 있음",              "09-24 22:27  20260924_222750  승격"),
-    ("   20260924_121452   운용된 적 있음",              ""),
-    ("   20260924_145528   운용된 적 있음",              "승격과 되돌림을 남깁니다. 목록에"),
-    ("   20260924_222750   운영중",                      "담는 것은 여기 있는 세대뿐입니다."),
+    ("[v] 재생버퍼 동적구성 [0.85][0.20] [저장]",       "09-24 12:54  20260923_145111  되돌림"),
+    ("[v] 자동 재학습 [ 24 ] 시간마다",                  "09-24 14:55  20260924_145528  승격"),
+    ("",                                                 "09-24 22:27  20260924_222750  승격"),
+    ("[cj_busan_1] 운용에 올라간 세대",                  ""),
+    ("   20260923_145111   운용된 적 있음",              "승격과 되돌림을 남깁니다. 목록에"),
+    ("   20260924_121452   운용된 적 있음",              "담는 것은 여기 있는 세대뿐입니다."),
+    ("   20260924_145528   운용된 적 있음",              ""),
+    ("   20260924_222750   운영중",                      ""),
 ]), size=10)
 
 cR = (W - 2 * M - 0.3) / 2
@@ -1172,68 +1549,86 @@ write(tf, [("되돌리기도 승격으로 기록되므로, 늘 한 걸음 뒤로
             dict(size=11, color=INK), dict(space_after=0, line=1.25))])
 
 rR = M + cR + 0.3
-card(s, rR, 5.16, cR, 1.58, fill=RGBColor(0xFD, 0xF1, 0xEC))
+card(s, rR, 5.16, cR, 1.58, fill=RGBColor(0xEC, 0xF6, 0xF4))
 tf = textbox(s, rR + 0.28, 5.32, cR - 0.56, 0.3)
-write(tf, [("되돌리면 칸별 기준선도 함께 치웁니다",
-            dict(size=12.5, bold=True, color=EMBER), dict(space_after=0))])
+write(tf, [("되돌려도 경험 임계값은 그대로 둡니다",
+            dict(size=12.5, bold=True, color=TEAL), dict(space_after=0))])
 tf = textbox(s, rR + 0.28, 5.66, cR - 0.56, 1.0)
-write(tf, [("기준선은 그 모델이 칸마다 내는 오차의 분포입니다. 모델을 갈면 오차 크기가 "
-            "달라져 임계치가 다른 모델 것이 됩니다.",
+write(tf, [("경험 임계값이 세는 것은 모델의 오차가 아니라 칸의 온도 그 자체라, "
+            "모델을 되돌려도 그대로 맞습니다.",
             dict(size=11, color=INK), dict(space_after=5, line=1.25)),
-           ("지우지 않고 보관하므로 되돌릴 수 있습니다. 다시 쌓는 동안에는 0단계 절대 "
-            "임계치만 작동합니다. 되돌린 뒤 [정지] -> [시작] 이 필요합니다.",
+           ("되돌리기는 오토인코더 모델만 세대 단위로 돌립니다. 되돌린 뒤 "
+            "[정지] -> [시작] 이 필요합니다.",
             dict(size=11, bold=True, color=EMBER), dict(space_after=0, line=1.25))])
-page_num(s, 22)
+page_num(s, 26)
 
 # =================================================================== 23 단계 설정
 s = slide_light(prs)
-title_bar(s, "23  STAGE SETTINGS", "단계 전환 조건 바꾸기")
+title_bar(s, "27  STAGE SETTINGS", "설정 창 - 네 묶음")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
-write(tf, [("[설정] 버튼을 누르면 창 아래가 펼쳐집니다. 목록과 같은 토글이라 펼친 채로 "
-            "다른 버튼을 쓸 수 있습니다. 값은 users\\<현장>\\continual_learning.ini 에 저장됩니다.",
+write(tf, [("[설정] 버튼을 누르면 창 아래가 펼쳐집니다. "
+            "값은 users\\<현장>\\continual_learning.ini 에 저장됩니다.",
             dict(size=13.5, color=MUTED), dict(space_after=0))])
 
-# 19줄 x 9pt -> 0.44 + 19 * 0.19375 = 4.12 인치. 2.12 에서 6.24 까지.
-code_block(s, M, 2.12, W - 2 * M, two_col([
-    ("[ 연속학습 조건 ]",                      "[ 현재 진행 ]"),
-    ("기준선 최소 표본수/시간대 [3000][18]",   "0단계 절대임계값   사용 중"),
-    ("재학습 최소 표본수/시간대 [5000][18]",   "   온도 207/222도 · 상승 20/34도/분"),
-    ("계산기준일   [ 2026-09-21 v ]",          "1단계 셀별기준선   집계 중"),
-    ("",                                       "   표본 6,400/3,000 · 시간대 13/18"),
-    ("[ 절대 임계값 (0단계) ]  주의/경보",     "2단계 오토인코더   사용 중"),
-    ("마스크 셀 최고 온도  [ 207 ][ 222 ]",    "   세대 20260925_152357"),
-    ("분당 상승률          [  20 ][  34 ]",    "   모델 2026-09-25 15:23"),
+# 20줄 x 8.0pt · pad 0.16 -> 0.32 + 20 * 0.172 = 3.76 인치. 1.98 에서 5.74 까지.
+code_block(s, M, 1.98, W - 2 * M, two_col([
+    ("[ 1단계 절대 임계값 ]  주의/경보",       "[ 현재 진행 ]"),
+    ("격자 최고 온도      [ 172 ][ 187 ]",    "● 1단계 절대임계값   사용 중"),
+    ("분당 상승률          [  90 ][ 120 ]",    "     온도 172/187도 · 상승 90/120도/분"),
     ("",                                       ""),
-    ("[ 기여도 판단 ]",                        "연속학습          적용됨"),
-    ("판단 기간 (테이블 수)    [    7 ]",      "   최근 승격 2026-09-25 15:23"),
-    ("최소 프레임/표본 상한 [500][2000]",      "   판단 점수 0.960"),
-    ("기여 문턱 (하/상)    [0.20][0.85]",      "   기존 모델 기여 1.00"),
+    ("[ 2단계 전환 조건 ]",                    "● 2단계 경험임계값   사용 중        [임계값]"),
+    ("기준선 최소 표본수  [ 3000 ]",           "     표본 3,001/3,000 · 시간대 21/18"),
+    ("기준선 최소 시간대  [   18 ]",           "     2026-10-01 15:31 DB 에서 되쌓음"),
+    ("",                                       "  [현재부터쌓기] [DB에서되쌓기]"),
+    ("[ 3단계·기여도 ]",                       "● 3단계 오토인코더   사용 중"),
+    ("판단 최소 일수        [    7 ]",      "     세대 20260929_115231"),
+    ("표본 수 (최소/최대)  [500][2000]",          "     모델 2026-09-29 11:48"),
+    ("기여도 점수 0.9468",                     ""),
+    ("현모델 기여도 1.00 · 재학습 불필요",       "  연속학습          현황"),
+    ("기여도 계산 2026-10-05 16:59",           "     최근 승격 2026-09-29 11:52"),
     ("",                                       ""),
-    ("[ 학습 표본 ]",                          ""),
-    ("목표 표본 수 [60000] 정상 판정선 [0.5]", ""),
-    ("가동 판정 온도  [      ] 비우면 자동",   ""),
-    ("[ ] 시기를 나누어 담기",                 ""),
-    ("[ 설정 적용 ]   [ 재학습 ]",             ""),
-]), size=9)
+    ("[ 3단계·재생 버퍼 ]",                    "  운전 상태         전부하 운전"),
+    ("재학습 최소 표본수  [ 5000 ]",           "     최근 전부하 운전 100%"),
+    ("재학습 최대 표본 수 [ 20000 ]",          "     가동 판정 온도 98도 (자동)"),
+    ("재학습 수집 일수    [    0 ]  0 = 전체",  "     가동 7% · 2026-07-02 ~ 2026-10-05"),
+    ("재학습 최소 시간대  [   18 ]",           "     2026-10-05 13:21 기준"),
+]), size=8.0, pad=0.16)
 
-# 쪽 번호가 6.88 에 있으므로 메모는 그 위에서 끝내고 오른쪽 끝을 비운다.
-tf = textbox(s, M, 6.36, 10.4, 0.5)
-write(tf, [("네 묶음을 [설정 적용] 하나로 함께 저장합니다. 값이 하나라도 잘못되면 "
-            "아무것도 쓰지 않고, 저장 뒤 [정지] → [시작] 을 눌러야 반영됩니다.",
-            dict(size=11, color=INK), dict(space_after=4, line=1.2)),
-           ("계산기준일을 바꾸면 셀별 기준선을 버리고 처음부터 다시 쌓습니다 — "
-            "며칠치가 사라지므로 바뀔 때 확인을 묻습니다.",
-            dict(size=11, color=EMBER), dict(space_after=0, line=1.2))])
-page_num(s, 23)
+# --- 등 색 ---
+#
+# 모의 화면에서는 ● 가 모두 같은 색이라, 무슨 뜻인지는 여기서 밝힌다.
+tf = textbox(s, M, 6.42, 1.5, 0.26)
+write(tf, [("등 색", dict(size=11.5, bold=True, color=INK), dict(space_after=0))])
+
+lamps = [(RGBColor(0x00, 0xB4, 0x00), "사용 중"),
+         (RGBColor(0xFF, 0xC8, 0x00), "준비 중 — 차오르는 중"),
+         (RGBColor(0xAA, 0xAA, 0xAA), "꺼짐 · 집계 대기")]
+lx = M + 0.95
+for col, lab in lamps:
+    circle(s, lx, 6.47, 0.15, col)
+    tf = textbox(s, lx + 0.24, 6.44, 2.6, 0.26)
+    write(tf, [(lab, dict(size=10.5, color=INK), dict(space_after=0))])
+    lx += 0.24 + (2.55 if "차오르는" in lab else 1.35)
+
+# 쪽 번호가 오른쪽 아래(6.88)에 있다. 글상자를 그만큼 좁혀 겹치지 않게 한다.
+tf = textbox(s, M, 6.72, W - 2 * M - 1.1, 0.52)
+write(tf, [("메인 창 현장 콤보 앞의 등은 이 셋을 접은 것입니다. 노랑이 하나라도 "
+            "있으면 노랑, 셋 다 회색일 때만 회색, 그 밖에는 초록입니다. "
+            "프로세스가 죽었거나 DB 가 끊기면 그쪽이 이겨 빨강이 됩니다.",
+            dict(size=10.5, color=INK), dict(space_after=4, line=1.2)),
+           ("네 묶음은 [설정 저장] 하나로 함께 저장하고, 값이 하나라도 "
+            "잘못되면 아무것도 쓰지 않습니다. 동적구성·문턱·자동 재학습은 [재학습] 창의 [저장] 으로 저장합니다.",
+            dict(size=10.5, color=MUTED), dict(space_after=0, line=1.2))])
+page_num(s, 27)
 
 
 # =================================================================== 24 학습 표본
 s = slide_light(prs)
-title_bar(s, "24  TRAINING SAMPLE", "학습 표본 - 무엇을 배우는가")
+title_bar(s, "28  TRAINING SAMPLE", "학습 표본 - 무엇을 배우는가")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
-write(tf, [("히스토리 DB 에서 학습에 쓸 프레임을 골라 모읍니다. 앞쪽 [기여도 판단] 이 "
+write(tf, [("히스토리 DB 에서 학습에 쓸 프레임을 골라 모읍니다. 앞쪽 [3단계·기여도] 이 "
             "'기존 모델을 믿을지' 라면, 여기는 '무엇으로 학습할지' 입니다.",
             dict(size=13.5, color=MUTED), dict(space_after=0))])
 
@@ -1241,12 +1636,13 @@ write(tf, [("히스토리 DB 에서 학습에 쓸 프레임을 골라 모읍니�
 tf = textbox(s, M, 2.2, 5.6, 0.3)
 write(tf, [("고르는 차례", dict(size=13, bold=True, color=INK), dict(space_after=0))])
 
-flow = [("날짜 테이블 전체", "results_history_YYYYMMDD 를 모두 훑습니다"),
-        ("정상만 남긴다", "지금 모델로 다시 매긴 점수와 그때 적힌 점수 중 "
-                          "하나만 판정선을 넘으면 받습니다"),
-        ("48칸에 나눠 담는다", "시각(24) x 가동상태(2). 자료가 몰린 시간대에 "
-                              "끌려가지 않게 합니다"),
-        ("목표만큼 꺼낸다", "칸마다 같은 몫씩. 모자라면 복제하지 않고 있는 만큼만")]
+flow = [("날짜 테이블 (수집 일수)", "results_history_YYYYMMDD 를 훑습니다 (수집 일수가 있으면 그 안의 것만)"),
+        ("절대 임계값으로만 거른다", "모델 점수로 거르면 모델이 못 맞히는 "
+                                    "구간이 학습에서 빠져 맹점이 고착됩니다"),
+        ("날짜마다 같은 몫", "하루 몫 = 최대 표본 수 / 일수. 모자란 날의 몫은 "
+                            "다른 날로 넘깁니다"),
+        ("하루 안은 48칸에 고르게", "시각(24) x 가동상태(2). 모자라면 복제하지 않고 "
+                                    "있는 만큼만")]
 yf = 2.58
 for i, (t, d) in enumerate(flow):
     circle(s, M + 0.04, yf, 0.26, TEAL, text=str(i + 1), tsize=11)
@@ -1259,14 +1655,13 @@ for i, (t, d) in enumerate(flow):
 # --- 오른쪽 : 설정 ---
 bx = M + 6.1
 tf = textbox(s, bx, 2.2, 5.4, 0.3)
-write(tf, [("[설정] 창에서 정합니다", dict(size=13, bold=True, color=INK),
+write(tf, [("[설정] · [재학습] 창에서 정합니다", dict(size=13, bold=True, color=INK),
             dict(space_after=0))])
 
 rows = [("항목", "기본", "무엇"),
-        ("목표 표본 수", "60000", "이만큼 모읍니다"),
-        ("정상 판정선", "0.5", "이 점수 위만 학습에"),
-        ("가동 판정 온도", "자동", "비우면 자료에서 잡습니다"),
-        ("시기 나누어 담기", "끔", "켜면 칸이 시기별로 늘어납니다")]
+        ("재학습 최대 표본 수", "60000", "최대 이만큼 모읍니다"),
+        ("재학습 수집 일수", "0", "최근 N일 테이블만 훑음, 0 = 전체"),
+        ("동적구성 ([재학습] 창)", "끔", "켜면 옛:새 = w:1-w, 끄면 전체에서")]
 yb = 2.62
 for i, (a, b, c) in enumerate(rows):
     hd = (i == 0)
@@ -1279,32 +1674,30 @@ for i, (a, b, c) in enumerate(rows):
     write(tf, [(c, dict(size=10, color=MUTED), dict(space_after=0))])
     yb += 0.34
 
-tf = textbox(s, bx + 0.04, 4.42, 5.3, 0.62)
-write(tf, [("가동 판정 온도를 비우면 앞쪽 2,000건 최고온도의 중앙값으로 잡습니다. "
-            "그 2,000건은 판정선이 아직 없어 모두 정지로 들어갑니다. 현장에서 아는 "
-            "값이 있으면 적는 편이 낫습니다.",
+tf = textbox(s, bx + 0.04, 4.55, 5.3, 0.62)
+write(tf, [("가동 판정 온도는 입력하지 않습니다. 재학습이 모은 프레임의 마스크 셀 "
+            "최고 온도 분포를 가동/정지 두 덩어리로 가르는 자리(두 덩어리 사이의 "
+            "한가운데)를 스스로 잡고, [설정] 창 [현재 진행] 의 운전 상태 아래에 값과 가동 비율, 계산 기간을 보여 줍니다. "
+            "재학습이나 예행연습을 하기 전에는 '계산 전'으로 보입니다.",
             dict(size=10, color=MUTED), dict(space_after=0, line=1.2))])
 
-# --- 아래 : 시기 나누기. 카드 하나로 합친다 (쪽 번호가 6.88) ---
+# --- 아래 : 표본이 고르게 뽑히는 방식 (쪽 번호가 6.88) ---
 card(s, M, 5.38, W - 2 * M, 1.30, fill=RGBColor(0xEC, 0xF6, 0xF4))
 tf = textbox(s, M + 0.3, 5.50, 11.0, 0.3)
-write(tf, [("시기는 날짜를 적는 것이 아니라 자료가 끊긴 자리로 나뉩니다",
+write(tf, [("날짜마다 같은 몫이고, 하루 안에서는 시각과 가동 상태를 고르게 뽑습니다",
             dict(size=12, bold=True, color=TEAL), dict(space_after=0))])
 tf = textbox(s, M + 0.3, 5.82, 11.4, 0.78)
-write(tf, [("자료가 7일 이상 끊기면 그 앞뒤를 다른 시기로 봅니다. 설비를 고치거나 "
-            "카메라를 옮겨 한동안 멈춘 자리가 저절로 경계가 됩니다. 끊긴 적이 없는 "
-            "현장은 시기가 하나라 켜도 칸이 그대로입니다 — 어느 현장에 켜 두어도 "
-            "부작용이 없습니다.",
+write(tf, [("하루에 프레임이 몇 건 쌓였든 하루의 비중은 같습니다. 그날 몫 안에서는 시각 24 x "
+            "가동 상태 2 = 48칸이 같은 몫을 받고, 칸 안에서는 모든 프레임이 같은 확률입니다.",
             dict(size=10.5, color=INK), dict(space_after=4, line=1.2)),
-           ("끄면 자료가 많은 시기가 그만큼 많이 뽑힙니다. 칸 안에서는 모든 프레임이 "
-            "같은 확률이라 비율이 그대로 보존되어, 두 달 전 자료가 표본의 대부분을 "
-            "차지할 수 있습니다.",
+           ("기간이 길수록 하루의 몫이 작아집니다(180일이면 하루 약 110건). 오래된 자료의 "
+            "비중을 줄이려면 재학습 수집 일수로 기간을 자르거나 재생버퍼 동적구성을 쓰십시오.",
             dict(size=10.5, color=EMBER), dict(space_after=0, line=1.2))])
-page_num(s, 24)
+page_num(s, 28)
 
 # =================================================================== 22 안전 규칙
 s = slide_dark(prs)
-title_bar(s, "25  SAFETY RULES", "연속 학습의 안전 규칙", dark=True)
+title_bar(s, "29  SAFETY RULES", "연속 학습의 안전 규칙", dark=True)
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
 write(tf, [("적응(무엇이 정상인가 배우기)과 탐지(이상을 알리기)는 반드시 분리되어야 합니다.",
@@ -1336,14 +1729,14 @@ tf = textbox(s, M + 0.3, 6.36, W - 2 * M - 0.6, 0.32)
 write(tf, [("kict1 사례 — 카메라가 틀어진 뒤 모든 프레임이 이상으로 판정되어, "
             "재생 버퍼가 비고 재학습이 자동 보류되었습니다. 규칙 1이 동작한 것입니다.",
             dict(size=11, bold=True, color=TEAL), dict(space_after=0))])
-page_num(s, 25, dark=True)
+page_num(s, 29, dark=True)
 
 # =================================================================== 22 시운전 도입
 s = slide_light(prs)
-title_bar(s, "26  COMMISSIONING", "신규 현장 도입 절차")
+title_bar(s, "30  COMMISSIONING", "신규 현장 도입 절차")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
-write(tf, [("오토인코더는 그 현장을 본 적이 있어야 만들 수 있습니다. 첫날부터 2단계로 "
+write(tf, [("오토인코더는 그 현장을 본 적이 있어야 만들 수 있습니다. 첫날부터 3단계로 "
             "시작하려면 시운전 기간을 학습 기간으로 함께 쓰십시오.",
             dict(size=13.5, color=MUTED), dict(space_after=0))])
 
@@ -1352,17 +1745,17 @@ phases = [
         "카메라 설치, 배선 점검",
         "env.ini · continual_learning.ini · db_secrets.ini 작성",
         "ABS_TEMP · ABS_RISE 지정",
-    ], "0단계 경보 즉시 동작"),
-    ("D+0~1", "기준선 누적", AMBER, [
+    ], "1단계 경보 즉시 동작"),
+    ("D+0~1", "경험 임계값 누적", AMBER, [
         "하루를 한 바퀴 돌 때까지 대기",
         "표본 3,000건 + 시간대 18개",
         "주야 변화를 모두 관측",
-    ], "1단계 채점 시작"),
+    ], "2단계 채점 시작"),
     ("D+1~3", "첫 모델", TEAL, [
         "nightly_retrain.py 실행",
         "감도 회귀 시험 통과 시 승격",
         "predict_machine 재시작",
-    ], "2단계 시작"),
+    ], "3단계 시작"),
     ("D+3~", "정식 가동", RGBColor(0x3D, 0x6B, 0xA8), [
         "세 단계가 함께 동작",
         "필요할 때 재학습",
@@ -1422,16 +1815,16 @@ write(tf, [("시운전 기간과 겹쳐 쓰십시오",
             dict(size=13, bold=True, color=TEAL), dict(space_after=0))])
 tf = textbox(s, rx9 + 0.3, 5.54, cw9 - 0.6, 1.1)
 write(tf, [("현장 배선과 시험 운전에 어차피 며칠이 듭니다. 카메라를 먼저 올려 두면 "
-            "그 기간에 학습이 끝나, 정식 가동 시점에는 이미 2단계로 시작할 수 있습니다.",
+            "그 기간에 학습이 끝나, 정식 가동 시점에는 이미 3단계로 시작할 수 있습니다.",
             dict(size=11, color=INK), dict(space_after=6, line=1.25)),
            ("시운전 중 설비를 세워 두면 '정지 상태' 만 배웁니다. 가동과 정지를 "
             "모두 겪게 하십시오.",
             dict(size=11, color=TEAL), dict(space_after=0, line=1.25))])
-page_num(s, 26)
+page_num(s, 30)
 
 # =================================================================== 23 문제 해결
 s = slide_dark(prs)
-title_bar(s, "27  TROUBLESHOOTING", "자주 겪는 문제", dark=True)
+title_bar(s, "31  TROUBLESHOOTING", "자주 겪는 문제", dark=True)
 
 probs = [
     ("점수가 계속 같은 값", "현장 서버의 파일이 갱신되지 않는 경우입니다.",
@@ -1457,11 +1850,11 @@ for i, (title, cause, fix) in enumerate(probs):
     tf = textbox(s, M + 4.7, y + 0.2, 6.9, 0.58)
     write(tf, [(fix, dict(size=11.5, color=RGBColor(0xC8, 0xD3, 0xE3)), dict(space_after=0, line=1.25))])
     y += 1.0
-page_num(s, 27, dark=True)
+page_num(s, 31, dark=True)
 
 # =================================================================== 19 체크리스트
 s = slide_light(prs)
-title_bar(s, "28  CHECKLIST", "설치 점검표")
+title_bar(s, "32  CHECKLIST", "설치 점검표")
 
 left = [
     "Visual Studio (MFC 포함) 설치",
@@ -1476,7 +1869,7 @@ right = [
     "otg_monitoring.ini 작성 (ROOT_PATH · ANACONDA)",
     "users\\<user>\\env.ini · continual_learning.ini 배치",
     "users\\<user>\\db_secrets.ini 작성",
-    "절대 임계값 ABS_TEMP · ABS_RISE 지정 (0단계)",
+    "절대 임계값 ABS_TEMP · ABS_RISE 지정 (1단계)",
     "Release x64 빌드 후 시작 버튼으로 6개 기동 확인",
     "신규 현장은 시운전 2~3일 후 첫 모델 승격",
 ]
@@ -1500,7 +1893,7 @@ card(s, M, 6.2, W - 2 * M, 0.6, fill=RGBColor(0xEC, 0xF6, 0xF4))
 tf = textbox(s, M + 0.34, 6.36, W - 2 * M - 0.68, 0.32)
 write(tf, [("모두 완료되면 현장 두 곳 합쳐 6개가 기동하고, 상태줄에는 선택한 현장 기준으로 [3] processes | err=0000 이 표시됩니다.",
             dict(size=12.5, bold=True, color=TEAL), dict(space_after=0))])
-page_num(s, 28)
+page_num(s, 32)
 
 # 출력 경로는 인자로 바꿀 수 있다 (PowerPoint 가 원본을 열고 있을 때 임시본 생성용)
 import sys

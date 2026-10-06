@@ -94,15 +94,16 @@ from cv_utils import (
 
 from constants import ERR_CODE, SVR_CMD, LOCAL_HOTLIST_MASK, SVR_HOTLIST_MASK
 
-# 연속 학습 0~1단계. 이 둘은 predict_machine 폴더 안에 있으므로 sys.path[0]
+# 연속 학습 1~2단계. 이 둘은 predict_machine 폴더 안에 있으므로 sys.path[0]
 # (= 이 스크립트의 폴더) 으로 그냥 잡힌다. source 폴더와 달리 경로 조작이
 # 필요 없다.
 from abs_threshold import AbsoluteThreshold, LEVEL_ALARM, LEVEL_WARN, level_name
 from online_baseline import OnlineBaseline, SCENE_SHIFT_MIN
 import stage_status
-import thermal_shift
+import op_state
 import model_contribution
 import artifact_guard
+from auto_retrain import AutoRetrain
 
 
 # ==============================================
@@ -596,19 +597,19 @@ def main_loop(config, sensor_db_config):
     # 설치한 현장은 수 주간 데이터를 모아 오토인코더를 만들기 전까지 감시
     # 자체가 불가능했다. 이제는 준비된 만큼만 쓰고 계속 동작한다.
     #
-    #   0단계  절대 임계값        학습 0건. 설치 즉시.
-    #   1단계  셀별 온라인 통계    수 시간 후. z-score 채점.
-    #   2단계  오토인코더          모델이 준비되면. 셀 간 결합 분포까지.
+    #   1단계  절대 임계값        학습 0건. 설치 즉시.
+    #   2단계  셀별 온라인 통계    수 시간 후. z-score 채점.
+    #   3단계  오토인코더          모델이 준비되면. 셀 간 결합 분포까지.
     #
-    # 0단계는 이후 단계에서도 계속 살아 있다. 학습 기반 판정이 모두 실패해도
+    # 1단계는 이후 단계에서도 계속 살아 있다. 학습 기반 판정이 모두 실패해도
     # 고정된 선 하나는 남아 있어야 하기 때문이다.
     # ------------------------------------------------------------------
 
     abs_guard = AbsoluteThreshold(config)
-    print(f"[STAGE 0] {abs_guard.describe()}")
+    print(f"[STAGE 1] {abs_guard.describe()}")
 
     if not abs_guard.enabled:
-        print("[STAGE 0] 경고 — 절대 임계값이 지정되지 않아 0단계 경보가")
+        print("[STAGE 1] 경고 — 절대 임계값이 지정되지 않아 1단계 경보가")
         print("          동작하지 않습니다. 설비의 정상 가동 온도를 확인해")
         print("          env.ini 의 [CONSTANTS] 에 ABS_TEMP_WARN/ALARM 과")
         print("          ABS_RISE_WARN/ALARM 을 지정하십시오.")
@@ -622,19 +623,19 @@ def main_loop(config, sensor_db_config):
         min_hours=config.get("BASELINE_MIN_HOURS"),
         base_date=config.get("CALC_BASE_DATE"),
     )
-    print(f"[STAGE 1] 셀별 기준선 — {baseline.summary()}")
+    print(f"[STAGE 2] 경험 임계값 — {baseline.summary()}")
 
-    # 열화상 기준 틀어짐 감시. RGB 검사와 별개로 둔다. 두 카메라가 같이
-    # 움직인다는 보장이 없고(kict1 은 열화상만 밀렸다), RGB 검사는 기동할
-    # 때 한 번뿐이라 운전 중에 밀린 것은 잡지 못한다.
-    tshift = thermal_shift.ThermalShiftWatch(
-        config["LOCAL_USER_PATH"], X_GRID, Y_GRID)
+    # 운전 상태. 미리 만들어 둔 군집 중심으로 매 프레임 이름을 붙인다.
+    # 화면에 보여 주기만 하고 채점에는 쓰지 않는다.
+    opst = op_state.OpStates(config["LOCAL_USER_PATH"], INPUT_DIM)
+    print(f"[운전상태] {opst.info}")
+    op_now = None
 
     model = None
     scaler = None
 
     if not os.path.exists(MODEL_PATH) or not os.path.exists(SCALER_PATH):
-        print("[STAGE 2] 오토인코더 없음 — 0~1단계로 동작합니다.")
+        print("[STAGE 3] 오토인코더 없음 — 1~2단계로 동작합니다.")
         print("          데이터가 쌓이면 히스토리 DB로 학습해 배치하십시오.")
     else:
         try:
@@ -647,28 +648,32 @@ def main_loop(config, sensor_db_config):
             # 안 맞는 스케일러를 쓰게 된다. 시작 시점에 한 번 명확히 걸러낸다.
             if getattr(sc, "n_features_in_", None) != INPUT_DIM:
                 # 예전에는 여기서 종료했다. 이제는 오토인코더만 포기하고
-                # 0~1단계로 계속 간다. 짝이 안 맞는 모델로 채점하는 것보다
+                # 1~2단계로 계속 간다. 짝이 안 맞는 모델로 채점하는 것보다
                 # 낫고, 감시를 통째로 멈추는 것보다도 낫다.
                 print(
-                    f"[STAGE 2] scaler 의 n_features_in_="
+                    f"[STAGE 3] scaler 의 n_features_in_="
                     f"{getattr(sc, 'n_features_in_', None)} 가 INPUT_DIM({INPUT_DIM})과 "
-                    f"다릅니다. 오토인코더를 쓰지 않고 0~1단계로 동작합니다."
+                    f"다릅니다. 오토인코더를 쓰지 않고 1~2단계로 동작합니다."
                 )
             else:
                 model, scaler = m, sc
-                print(f"[STAGE 2] 오토인코더 사용 "
+                print(f"[STAGE 3] 오토인코더 사용 "
                       f"(INPUT_DIM={INPUT_DIM}, LATENT_DIM={LATENT_DIM})")
 
         except Exception as e:
-            print(f"[STAGE 2] 오토인코더를 읽지 못해 0~1단계로 동작합니다: {e}")
+            print(f"[STAGE 3] 오토인코더를 읽지 못해 1~2단계로 동작합니다: {e}")
 
     baseline_dirty = 0
     suggested_once = False
     STATUS_PATH = os.path.join(config["LOCAL_USER_PATH"],
                                stage_status.STATUS_FILE_NAME)
     db_rows = db_tables = None
+    db_span = None
     db_counted_at = 0.0
     contrib = None          # (판단 점수, 기여 가중치) - 히스토리 집계와 같은 주기
+    contrib_at = ""         # 위 값을 계산한 시각
+    # [재학습] 창의 "자동 재학습" 이 켜져 있으면 w < 1.00 일 때 재학습을 띄운다.
+    auto_rt = AutoRetrain(config["LOCAL_USER_PATH"], config["USER_ID"])
     status_written_at = 0.0   # 0 이면 첫 프레임에서 바로 한 번 남긴다
     prev_fire_detected = False
 
@@ -732,9 +737,6 @@ def main_loop(config, sensor_db_config):
             else:
                 save_base_image(BASE_IMG_DIR, input_img)
 
-            # 열화상 기준 패턴도 함께 버린다. RGB 기준만 새로 잡고 열화상
-            # 쪽을 두면 보정한 그 순간부터 "밀렸다" 고 계속 짖는다.
-            tshift.reset()
             update_db_error_code(sensor_db_config, ERR_CODE.NO_ERR)
             update_db_main_command(sensor_db_config, SVR_CMD.NO_ACTION)
 
@@ -785,13 +787,13 @@ def main_loop(config, sensor_db_config):
                         baseline_dirty = 0
 
                         _gen = _fp.split("|")[0] or "이름 없음"
-                        print(f"[STAGE 2] 운용 모델이 바뀌어 다시 읽었습니다 - "
+                        print(f"[STAGE 3] 운용 모델이 바뀌어 다시 읽었습니다 - "
                               f"세대 {_gen}")
-                        print(f"[STAGE 1] 셀별 기준선 — {baseline.summary()}")
+                        print(f"[STAGE 2] 경험 임계값 — {baseline.summary()}")
                     else:
                         # 복사 도중이면 여기로 온다. 지문을 갱신하지 않으므로
                         # 다음 차례에 다시 본다.
-                        print(f"[STAGE 2] 새 모델을 아직 읽지 못했습니다 - {_why}")
+                        print(f"[STAGE 3] 새 모델을 아직 읽지 못했습니다 - {_why}")
 
             cur_error_code = read_db_error_code(sensor_db_config)
 
@@ -820,12 +822,16 @@ def main_loop(config, sensor_db_config):
             stage_used = 0
             abs_level = 0
             abs_reason = ""
+            accum_ok, accum_why = False, "확인 전"
+            # 아래 가지를 타지 않으면(오류 코드가 있을 때) 그대로 남는다.
+            # peak -1 은 "재지 못했다" 는 뜻이고 0도와 구별된다.
+            peak_t, rise_t, abs_cell = -1.0, 0.0, -1
 
             if cur_error_code == ERR_CODE.NO_ERR:
                 x_full = extract_mach_area(median_hot, hotlist_mask)
                 x_row = np.asarray(x_full, dtype=np.float64).reshape(-1)
 
-                # --- 0단계. 학습과 무관하게 항상 먼저 본다 ---------------
+                # --- 1단계. 학습과 무관하게 항상 먼저 본다 ---------------
                 abs_level, abs_reason, peak_t, rise_t, abs_cell = abs_guard.check(
                     x_row, hotlist_mask, time.time()
                 )
@@ -899,7 +905,7 @@ def main_loop(config, sensor_db_config):
                     print(f"[기준선] 초과 {exceed:+.1f}도 (셀 {worst})")
 
                 else:
-                    # 0단계. 아직 채점할 근거가 없다. 절대 임계값 경보만
+                    # 1단계. 아직 채점할 근거가 없다. 절대 임계값 경보만
                     # 유효하므로 점수는 -1(미산출)로 둔다. 0.0 으로 두면
                     # "완전 이상" 으로 오해된다.
                     print(f"[기준선] 누적 중 — {baseline.summary()}")
@@ -909,7 +915,7 @@ def main_loop(config, sensor_db_config):
                 if not abs_guard.enabled and not suggested_once:
                     sug = baseline.suggest_temp_thresholds(hotlist_mask)
                     if sug:
-                        print(f"[STAGE 0] 권장 임계값 — 관측된 정상 최고온도 기준으로 "
+                        print(f"[STAGE 1] 권장 임계값 — 관측된 정상 최고온도 기준으로 "
                               f"ABS_TEMP_WARN={sug[0]:.0f}, ABS_TEMP_ALARM={sug[1]:.0f} "
                               f"(env.ini 에 적은 뒤 재시작하십시오)")
                         suggested_once = True
@@ -926,17 +932,6 @@ def main_loop(config, sensor_db_config):
                     print(f"[화면이동] 기준 패턴과의 상관계수 {corr:.3f} "
                           f"(기준 {SCENE_SHIFT_MIN}). 카메라 조준을 확인하십시오.")
 
-                # scene_shift 는 "달라졌다" 까지만 말한다. 몇 칸 밀렸는지는
-                # 말해 주지 못하므로, 사람이 이동보정을 누를지 판단할 근거가
-                # 되지 못한다. 굳혀 둔 기준 패턴과 칸 단위로 맞춰 본다.
-                _now_t0 = time.time()
-                tres = tshift.check(x_row, baseline, _now_t0,
-                                    datetime.now().strftime("%Y-%m-%d %H:%M"))
-                # 밀린 칸 수를 못 밝혀도(mismatch) 학습은 멈춘다. 기준과
-                # 다른 화면을 "요즘의 정상" 으로 흡수하면 안 되는 것은
-                # 방향을 아는지와 무관하다.
-                thermal_ok = tres is None or not (tres["shifted"] or tres["mismatch"])
-
                 # --- 기준선 누적 -----------------------------------------
                 # [안전 규칙] 다음 두 경우는 기준선에 넣지 않는다.
                 #
@@ -950,13 +945,26 @@ def main_loop(config, sensor_db_config):
                 #     고장이 조용히 묻히는 것이 가장 나쁜 결말이다.
                 #     학습은 멈추되 EWMA 는 계속 움직여, 조준을 되돌리면
                 #     경보가 자연히 풀리도록 한다.
-                #  3) 열화상 격자가 칸 단위로 밀린 것으로 보일 때
-                #     2) 와 같은 이유다. 이쪽은 몇 칸인지까지 알 수 있어
-                #     사람이 조치할 수 있는 형태로 남는다.
-                learn_ok = (abs_level == 0) and scene_ok and thermal_ok
+                accum_ok = (abs_level == 0) and scene_ok
+
+                # 왜 멈췄는지 화면에 적어야 한다. 누적이 멈춘 것은 숫자가
+                # 늘지 않는 것으로만 드러나는데, 그것을 알아채려면 몇 분을
+                # 지켜봐야 한다.
+                #
+                # scene_ok 를 "RGB" 라 적지 않는다. 이름이 scene_shift 일
+                # 뿐 RGB 를 보지 않는다 - 열화상 64칸의 느린 EWMA 와 장기
+                # 평균의 상관계수다.
+                if accum_ok:
+                    accum_why = ""
+                elif abs_level != 0:
+                    accum_why = "절대 임계값"
+                else:
+                    accum_why = "열화상 화면 변함"
 
                 _now = datetime.now()
-                if baseline.update(x_row, hour=_now.hour, learn=learn_ok,
+                op_now = opst.classify(x_row)
+
+                if baseline.update(x_row, hour=_now.hour, accum=accum_ok,
                                    day=_now.strftime("%Y-%m-%d")):
                     baseline_dirty += 1
 
@@ -994,6 +1002,8 @@ def main_loop(config, sensor_db_config):
                                 db_rows, db_tables = stage_status.count_history_rows(
                                     _c, history_db_config["database"],
                                     base_date=baseline.base_date)
+                                db_span = stage_status.history_span(
+                                    _c, history_db_config["database"])
                             finally:
                                 _c.close()
                             db_counted_at = _now_t
@@ -1021,19 +1031,32 @@ def main_loop(config, sensor_db_config):
                             finally:
                                 _c.close()
                             contrib = (_sc, model_contribution.weight_for(_sc))
+                            contrib_at = datetime.now().strftime("%Y-%m-%d %H:%M")
                         except Exception as e:
                             print(f"[WARN] 기여 가중치 계산 실패: {e}")
+
+                    try:
+                        auto_rt.tick(None if contrib is None else contrib[1])
+                    except Exception as e:
+                        print(f"[WARN] 자동 재학습 확인 실패: {e}")
 
                     stage_status.write(
                         STATUS_PATH, baseline,
                         model_ready=(model is not None and scaler is not None),
                         user_path=config["LOCAL_USER_PATH"],
                         db_rows=db_rows, db_tables=db_tables,
+                        db_span=db_span,
                         min_retrain=config.get("RETRAIN_MIN_SAMPLES"),
                         stage_used=stage_used,
                         abs_guard=abs_guard,
+                        abs_now=(peak_t, rise_t, abs_level, abs_cell),
+                        accum=(accum_ok, accum_why),
+                        cells=(x_row,
+                               np.asarray(baseline.hi).reshape(-1),
+                               np.asarray(hotlist_mask).reshape(-1)),
                         shift=(shift_x, shift_y, shift_checked_at, shift_inf),
-                        tshift=tshift, contrib=contrib)
+                        contrib=contrib, contrib_at=contrib_at,
+                        op=opst, op_now=op_now)
                     status_written_at = _now_t
 
             people, fall, fire_list = read_people_and_area(sensor_db_config)
@@ -1060,7 +1083,7 @@ def main_loop(config, sensor_db_config):
             )
 
             print(f"[machine_score] {machine_score:.4f} [valid] {valid} "
-                  f"[stage] {stage_used}")
+                  f"[stage] {stage_used + 1}")
 
             update_db_current_status(sensor_db_config, machine_score)
 
@@ -1071,7 +1094,7 @@ def main_loop(config, sensor_db_config):
             FIRE_THRESHOLD = 0.5
 
             # 절대 임계값 경보는 학습 상태와 무관하게 화재 신호로 취급한다.
-            # 0단계(모델도 기준선도 없는 설치 당일)에서 유일하게 동작하는
+            # 1단계(모델도 기준선도 없는 설치 당일)에서 유일하게 동작하는
             # 경보 경로이기도 하다.
             fire_detected = (any(v > FIRE_THRESHOLD for v in fire_list)
                              or abs_level == LEVEL_ALARM)

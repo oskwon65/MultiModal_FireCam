@@ -19,7 +19,8 @@ enum
 {
 	STATUS_OK = 0,      // 정상 (초록)
 	STATUS_WARN = 1,    // 경고 (노랑)
-	STATUS_ERROR = 2    // 오류 (빨강)
+	STATUS_ERROR = 2,   // 오류 (빨강)
+	STATUS_IDLE = 3     // 아직 아무 단계도 서지 않음 (회색)
 };
 
 // CountPythonProcesses()가 스캔할 때마다 찾아낸 python.exe 프로세스 정보
@@ -128,6 +129,14 @@ public:
 	// 설정 창이 스스로 닫혔을 때 버튼 문구를 되돌리기 위해 호출한다.
 	void OnSettingPanelClosed();
 
+	// 이 현장의 predict_machine 이 돌고 있는가.
+	//
+	// 경험 임계값을 밖에서 고쳐 쓰는 일(현재부터쌓기 · DB에서되쌓기)은
+	// 감시가 멈춰 있어야 한다. 돌고 있으면 메모리에 든 기준선을 200건마다
+	// 다시 저장해, 고친 것을 조용히 덮어쓴다. 설정 창이 눌리기 전에
+	// 이것으로 막는다.
+	bool IsPredictRunning(const char* userId);
+
 private:
 	CString m_shownUserId;                 // 현재 목록에 배치된 user ID (콤보박스 선택값)
 	// 행이 선택된 user의 것인가. 화면에 보일지와는 무관하다 - 목록은 모든
@@ -148,6 +157,13 @@ private:
 	CRect m_rcStatusNormal;                // 진행바가 없을 때의 상태줄 자리
 
 	CStatic m_lblTitle, m_lblSign, m_lbStatus_0;
+	// 지금 설비가 어떤 상황인가. 상태줄 바로 아래 한 줄.
+	CStatic m_lblOpNow;
+	// 그 아래 한 줄. 지금 3단계가 쓰고 있는 모델 세대.
+	CStatic m_lblGen;
+	void    UpdateOpState();
+	// 1~3단계 등 셋을 하나로 접은 값. 못 읽으면 -1.
+	int     StageLampLevel() const;
 	CStatic m_lblTimer;
 	CEdit   m_editRestartMin;   // ★ 재시작 주기 입력 CEdit
 	int m_elapsedSeconds;;

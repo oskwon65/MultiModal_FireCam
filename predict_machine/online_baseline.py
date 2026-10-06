@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-셀별 온라인 기준선 (연속 학습 1단계)
+셀별 온라인 기준선 (연속 학습 2단계)
 
 오토인코더는 수 주간의 데이터가 쌓여야 만들 수 있다. 그 전까지 현장이
 무방비로 남는 문제를 없애기 위해, 설치 직후부터 셀마다 정상 범위를 누적해
@@ -50,7 +50,7 @@
 
 마스크 안의 셀 하나하나만 본다. "13번은 뜨거운데 29번은 차다" 처럼 각
 셀은 정상 범위인데 조합이 이상한 경우는 잡지 못한다. 그건 셀 간 결합
-분포를 배우는 오토인코더(2단계)의 몫이다. 이 기준선은 오토인코더를
+분포를 배우는 오토인코더(3단계)의 몫이다. 이 기준선은 오토인코더를
 대체하는 것이 아니라, 준비되기 전까지의 발판이다.
 
 마스크 밖의 셀도 보지 못한다. 그래서 화면 전체가 밀리는 카메라 이동은
@@ -107,6 +107,74 @@ SCENE_EWMA_ALPHA = 0.001
 # 0.57 까지 떨어진다. 두 영역이 확실히 갈려 0.95 면 오경보 없이 잡힌다.
 SCENE_SHIFT_MIN = 0.95
 
+# 고리 버퍼가 들고 있을 수 있는 최대 프레임 수.
+#
+# 창은 최소 표본수와 최소 시간대를 채우는 만큼만 자란다(아래 _evict 참고).
+# 여기 상한은 설비가 멈춰 같은 시각만 들어오는 것처럼, 시간대가 영영 안
+# 차는 경우에 메모리가 무한정 늘지 않게 하는 마지막 그물이다.
+# 5만 x 64 = 3.2 MB (칸마다 1바이트). kict1 5초 주기로 약 2.9일치다.
+MAX_WINDOW = 50000
+
+# 왜 처음부터 다시 쌓고 있는지를 적어 두는 쪽지.
+#
+# 기준선 파일 옆에 둔다. 되돌리기는 기준선 파일을 아예 옮겨 버리므로,
+# 사유를 기준선 안에 적어 두면 함께 사라진다. 따로 남겨야 다음에 올라올
+# 때 "되돌리기로 치웠다" 와 "설치 직후다" 를 가릴 수 있다.
+RESET_NOTE = "baseline_reset.ini"
+
+
+def write_reset_note(user_path, why, at=None):
+    """기준선을 치운 쪽에서 사유를 남긴다. 실패해도 조용히 넘어간다."""
+    import datetime as _dt
+
+    stamp = at or _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with open(os.path.join(user_path, RESET_NOTE), "w",
+                  encoding="utf-8") as f:
+            f.write("[RESET]\n")
+            f.write(f"AT = {stamp}\n")
+            f.write(f"WHY = {why}\n")
+    except OSError:
+        pass
+
+
+def read_reset_note(user_path):
+    """(사유, 시각). 쪽지가 없으면 빈 값 둘."""
+    p = os.path.join(user_path, RESET_NOTE)
+    if not os.path.exists(p):
+        return "", ""
+    why = at = ""
+    try:
+        with open(p, encoding="utf-8") as f:
+            for line in f:
+                k, _, v = line.partition("=")
+                k = k.strip().upper()
+                if k == "WHY":
+                    why = v.strip()
+                elif k == "AT":
+                    at = v.strip()
+    except OSError:
+        return "", ""
+    return why, at
+
+
+def _day_num(day):
+    """'2026-09-27' -> 20260927. 못 읽으면 0(모름)."""
+    if not day:
+        return 0
+    t = str(day).replace("-", "").strip()
+    if len(t) != 8 or not t.isdigit():
+        return 0
+    return int(t)
+
+
+def _day_str(num):
+    """20260927 -> '2026-09-27'. 0 이면 빈 문자열."""
+    n = int(num or 0)
+    if n < 10000101:
+        return ""
+    return f"{n // 10000:04d}-{n // 100 % 100:02d}-{n % 100:02d}"
+
 
 class OnlineBaseline:
     """셀별 정상 범위를 누적하고 초과 정도로 채점한다."""
@@ -118,25 +186,63 @@ class OnlineBaseline:
         self.min_samples = int(min_samples) if min_samples else MIN_SAMPLES
         self.min_hours = int(min_hours) if min_hours else MIN_HOURS_COVERED
 
-        # 계산 기준일 (YYYY-MM-DD). 이 날짜 이전 프레임은 누적하지 않는다.
+        # 계산 기준일은 2단계에서 쓰지 않는다.
         #
-        # 히스토그램에는 표본별 시각이 남지 않으므로 과거 구간만 골라 빼낼 수
-        # 없다. 그래서 기준일이 바뀌면 누적을 버리고 처음부터 다시 쌓는다.
-        # 카메라를 옮겼거나 설비를 바꾼 뒤 "그 전에 배운 것은 잊으라" 고
-        # 지시하는 수단이다. 빈 값이면 제한 없이 계속 쌓는다.
+        # 기준선이 누적이던 때는 잊는 수단이 이것뿐이었다 - 날짜를 바꾸면
+        # 쌓은 것을 버리고 처음부터 다시 쌓았다. 고리 버퍼로 바뀌면서 창이
+        # 스스로 최근 것만 들고 있으므로 지시할 이유가 없어졌다. 오히려
+        # 값을 바꿀 때마다 멀쩡한 최근 창을 버려 2단계가 꺼졌다.
+        #
+        # 인자는 남겨 둔다. 부르는 쪽(predict_machine)이 넘기고 있고, 저장
+        # 파일에도 적혀 있어 갑자기 빼면 옛 파일과 어긋난다. 받아서 적어만
+        # 둘 뿐 판단에 쓰지 않는다. 3단계(재학습 표본)에서는 그대로 쓴다.
         self.base_date = (str(base_date).strip() if base_date else "")
 
         self.n_cells = int(n_cells)
-        self.count = 0
-        self.mean = np.zeros(self.n_cells, dtype=np.float64)
-        self.m2 = np.zeros(self.n_cells, dtype=np.float64)
+
+        # ---- 최근 창(고리 버퍼) ----
+        #
+        # 예전에는 Welford 로 기준일 이후 전부를 평균에 담았다. count 가
+        # 커질수록 새 프레임의 몫이 1/count 로 줄어, 10만 건이 쌓이면 새 값
+        # 하나가 평균을 10만분의 1 움직인다. 시간이 갈수록 굳어서 계절이나
+        # 설비 변화를 못 따라간다. 잊는 방법이 '기준일을 바꿔 통째로 버리기'
+        # 하나뿐이었다.
+        #
+        # 프레임마다 값 자체가 아니라 히스토그램 칸 번호(0~255)를 들고 있다.
+        # 채점에 쓰는 것은 분위수 선(hi)이고 그것은 히스토그램에서 나오므로,
+        # 나가는 프레임의 칸을 -1 하고 들어오는 칸을 +1 하면 창이 그대로
+        # 유지된다. 칸마다 1바이트라 18시간치(kict1 약 13,000건)가 830KB다.
+        #
+        # 합은 정수의 합이라 부동소수 오차가 쌓이지 않는다. 다시 계산해
+        # 바로잡을 필요가 없다.
+        self.ring = np.zeros((0, self.n_cells), dtype=np.uint8)
+        self.ring_hour = np.zeros(0, dtype=np.int8)
+        # 프레임마다의 날짜(YYYYMMDD). 0 은 모름(날짜 없이 올라온 옛 파일).
+        #
+        # started_at 은 처음 넣은 날에 박혀 다시 바뀌지 않는다. 창은 오래된
+        # 것부터 밀어내므로 그 값은 금세 창의 내용보다 길어진다. 창이 실제로
+        # 들고 있는 기간을 말하려면 프레임마다 날짜를 들고 있어야 한다.
+        self.ring_day = np.zeros(0, dtype=np.int32)
+        self._n = 0            # 창에 든 프레임 수
+        self._head = 0         # 다음에 쓸 자리
+        # 지나간 프레임 수. 창은 고정되므로 갱신 주기는 이것으로 잰다.
+        self._seen = 0
+        self.s1 = np.zeros(self.n_cells, dtype=np.float64)   # 칸 번호의 합
+        self.s2 = np.zeros(self.n_cells, dtype=np.float64)   # 제곱의 합
+        self.hour_cnt = np.zeros(24, dtype=np.int64)
+
         # 셀별 온도 히스토그램. 여기서 분위수를 정확히 뽑는다.
         self.hist = np.zeros((self.n_cells, TEMP_BINS), dtype=np.uint32)
         # 히스토그램에서 계산해 둔 분위수 선 (캐시)
         self._hi = np.full(self.n_cells, float(TEMP_BINS - 1), dtype=np.float64)
         self._hi_at = -1
-        # 관측한 시각(0~23) 비트마스크. 커버리지 판정용.
-        self.hours_seen = 0
+
+        # ---- 옛 파일에서 읽은 누적값 ----
+        #
+        # 옛 기준선 파일에는 프레임이 남아 있지 않아 창을 복원할 수 없다.
+        # 그대로 버리면 창이 찰 때까지(cj_busan_1 은 하루 넘게) 2단계가 꺼진다.
+        # 창이 스스로 설 때까지는 옛 값으로 계속 채점한다.
+        self._legacy = None
 
         # 처음 누적한 날짜(YYYY-MM-DD).
         #
@@ -147,13 +253,21 @@ class OnlineBaseline:
         # 최근 프레임의 느린 평균. 화면 이동 감시용.
         self.scene_ewma = np.zeros(self.n_cells, dtype=np.float64)
 
+        # 지금 쌓고 있는 것이 왜 처음부터인가. (사유, 시각) 또는 빈 값.
+        #
+        # 2단계가 "누적 중" 으로 멈춰 있을 때 사람이 가장 먼저 묻는 것이
+        # "왜 처음부터 다시 쌓고 있나" 다. 되돌리기로 치운 것인지, 파일이
+        # 깨진 것인지, 그냥 설치 직후인지에 따라 할 일이 전혀 다르다.
+        self.reset_why = ""
+        self.reset_at = ""
+
     # ------------------------------------------------------------------ 누적
 
-    def update(self, x, hour=None, learn=True, day=None):
+    def update(self, x, hour=None, accum=True, day=None):
         """
         프레임 하나를 반영한다.
 
-        learn=False 면 화면 이동 감시용 EWMA 만 움직이고 기준선(평균·분산·
+        accum=False 면 화면 이동 감시용 EWMA 만 움직이고 기준선(평균·분산·
         히스토그램)은 건드리지 않는다. 카메라가 밀린 것으로 보일 때 쓴다.
 
         EWMA 를 계속 움직이는 이유: 여기서 멈추면 상관계수가 낮은 채로
@@ -176,37 +290,160 @@ class OnlineBaseline:
         else:
             self.scene_ewma += SCENE_EWMA_ALPHA * (x - self.scene_ewma)
 
-        if not learn:
+        if not accum:
             return False
 
-        if self.base_date and day and str(day) < self.base_date:
-            return False
-
-        # 평균·분산 (Welford)
-        self.count += 1
-        delta = x - self.mean
-        self.mean += delta / self.count
-        self.m2 += delta * (x - self.mean)
-
-        # 셀별 온도 히스토그램
-        bins = np.clip(np.rint(x), 0, TEMP_BINS - 1).astype(np.intp)
-        self.hist[np.arange(self.n_cells), bins] += 1
-
-        if hour is not None:
-            self.hours_seen |= (1 << int(hour))
+        bins = np.clip(np.rint(x), 0, TEMP_BINS - 1).astype(np.uint8)
+        self._push(bins, -1 if hour is None else int(hour), _day_num(day))
 
         if not self.started_at and day:
             self.started_at = str(day)
 
         return True
 
+    # ---- 고리 버퍼 ----
+
+    def _grow(self):
+        """자리가 모자라면 넓힌다. 창 크기는 스스로 정해진다."""
+        cap = self.ring.shape[0]
+        new_cap = min(MAX_WINDOW, max(int(self.min_samples), cap * 2, 1024))
+        if new_cap <= cap:
+            return False
+        # 오래된 것부터 차례로 펴서 옮긴다. 자주 있는 일이 아니다.
+        order = [(self._head + i) % cap for i in range(self._n)] if cap else []
+        ring = np.zeros((new_cap, self.n_cells), dtype=np.uint8)
+        hours = np.zeros(new_cap, dtype=np.int8)
+        days = np.zeros(new_cap, dtype=np.int32)
+        for i, k in enumerate(order):
+            ring[i] = self.ring[k]
+            hours[i] = self.ring_hour[k]
+            days[i] = self.ring_day[k]
+        self.ring, self.ring_hour, self.ring_day = ring, hours, days
+        self._head = self._n
+        return True
+
+    @property
+    def window_from(self):
+        """창에 남아 있는 가장 오래된 날 (YYYY-MM-DD). 모르면 빈 문자열."""
+        return _day_str(self._day_edge(min))
+
+    @property
+    def window_to(self):
+        """창에 남아 있는 가장 최근 날."""
+        return _day_str(self._day_edge(max))
+
+    def _day_edge(self, pick):
+        if self._n <= 0 or self.ring_day.size == 0:
+            return 0
+        cap = self.ring.shape[0]
+        tail = (self._head - self._n) % cap
+        if tail + self._n <= cap:
+            seg = self.ring_day[tail:tail + self._n]
+        else:
+            seg = np.concatenate(
+                (self.ring_day[tail:], self.ring_day[:self._head]))
+        seg = seg[seg > 0]
+        if seg.size == 0:
+            return 0
+        return int(pick(seg))
+
+    def _can_evict(self):
+        """
+        가장 오래된 것을 버려도 두 조건이 남는가.
+
+        건수만으로 창을 잡으면 안 된다. kict1 은 5초 주기라 3,000건이
+        4.2시간뿐이고, 18시간대 조건을 영영 못 채운다. 두 조건을 채우는
+        동안은 버리지 않고 창을 늘린다.
+
+        처음에는 '그 시각에 다른 프레임이 남아 있으면 버려도 된다' 로
+        두었는데, 그러면 시간대가 4개뿐이어도 계속 버려 창이 최소 표본수에서
+        자라지 못했다. 고치려던 문제가 그대로 남았다.
+        """
+        if self._n <= self.min_samples:
+            return False
+
+        tail = (self._head - self._n) % self.ring.shape[0]
+        h = int(self.ring_hour[tail])
+        cov = int((self.hour_cnt > 0).sum())
+        if 0 <= h and self.hour_cnt[h] == 1:
+            cov -= 1                         # 이 프레임이 그 시각의 마지막
+        return cov >= self.min_hours
+
+    def _pop_oldest(self):
+        cap = self.ring.shape[0]
+        tail = (self._head - self._n) % cap
+        old = self.ring[tail].astype(np.intp)
+        self.hist[np.arange(self.n_cells), old] -= 1
+        self.s1 -= old
+        self.s2 -= old.astype(np.float64) ** 2
+        h = int(self.ring_hour[tail])
+        if h >= 0:
+            self.hour_cnt[h] -= 1
+        self._n -= 1
+
+    def _push(self, bins, hour, day=0):
+        while self._n >= self.ring.shape[0]:
+            if self._can_evict():
+                self._pop_oldest()
+            elif not self._grow():
+                self._pop_oldest()          # 상한까지 찼다. 오래된 것을 버린다
+        # 창이 넉넉해도 조건을 넘는 만큼은 계속 버린다
+        while self._can_evict():
+            self._pop_oldest()
+
+        cap = self.ring.shape[0]
+        self.ring[self._head] = bins
+        self.ring_hour[self._head] = hour
+        self.ring_day[self._head] = day
+        idx = bins.astype(np.intp)
+        self.hist[np.arange(self.n_cells), idx] += 1
+        self.s1 += idx
+        self.s2 += idx.astype(np.float64) ** 2
+        if hour >= 0:
+            self.hour_cnt[hour] += 1
+        self._head = (self._head + 1) % cap
+        self._n += 1
+        self._seen += 1
+
     # ------------------------------------------------------------------ 상태
+
+    def _use_legacy(self):
+        """
+        지금 옛 누적값으로 채점하는가.
+
+        건수·평균·시간대·히스토그램이 반드시 같은 곳을 봐야 한다. 분위수
+        선은 0.999 * count 를 히스토그램 누적합에 대어 찾으므로, 둘이
+        어긋나면 선이 엉뚱한 자리에 잡힌다. 창 500건과 옛 9,999건을 섞으면
+        5퍼센타일쯤에 선이 서고 정상 온도가 전부 초과로 보인다.
+        """
+        return bool(self._legacy) and not self._ring_ready()
+
+    @property
+    def count(self):
+        """채점에 쓰는 프레임 수."""
+        if self._use_legacy():
+            return int(self._legacy["count"])
+        return self._n
+
+    @property
+    def window(self):
+        """지금 창에 든 프레임 수 (옛 값과 섞이지 않는 순수한 값)."""
+        return self._n
+
+    @property
+    def mean(self):
+        if self._use_legacy():
+            return self._legacy["mean"]
+        if self._n == 0:
+            return np.zeros(self.n_cells, dtype=np.float64)
+        return self.s1 / self._n
 
     @property
     def std(self):
-        if self.count < 2:
+        if self._n < 2:
             return np.full(self.n_cells, MIN_STD, dtype=np.float64)
-        return np.maximum(np.sqrt(self.m2 / (self.count - 1)), MIN_STD)
+        var = (self.s2 - self.s1 ** 2 / self._n) / (self._n - 1)
+        return np.maximum(np.sqrt(np.maximum(var, 0.0)), MIN_STD)
 
     @property
     def hi(self):
@@ -215,37 +452,62 @@ class OnlineBaseline:
 
         매 프레임 계산할 필요가 없으므로 HI_REFRESH_EVERY 건마다 갱신한다.
         """
-        if self.count != self._hi_at and (
-                self._hi_at < 0
-                or self.count - self._hi_at >= HI_REFRESH_EVERY):
+        # 창이 고정되면 count 가 더 이상 늘지 않는다. 지나간 프레임 수로
+        # 잰다. 이걸 count 로 두었다가, 현장이 30도에서 70도로 바뀌어도
+        # 분위수 선이 옛 값에 머무는 것을 시험에서 잡았다.
+        if self._hi_at < 0 or self._seen - self._hi_at >= HI_REFRESH_EVERY:
             self._recompute_hi()
         return self._hi
 
     def _recompute_hi(self):
         if self.count <= 0:
             return
+        hist = self._hist_for_scoring()
         target = HI_QUANTILE * self.count
-        cum = np.cumsum(self.hist, axis=1)
+        cum = np.cumsum(hist, axis=1)
         # 누적도수가 target 을 처음 넘는 칸 = 그 분위수의 온도
         idx = np.argmax(cum >= target, axis=1)
         self._hi = idx.astype(np.float64)
-        self._hi_at = self.count
+        self._hi_at = self._seen
 
     def exceed_ratio(self, cell, temp):
         """해당 셀에서 이 온도 이상이었던 표본의 비율. 판정 근거 확인용."""
         if self.count <= 0:
             return None
+        hist = self._hist_for_scoring()
         b = int(np.clip(round(temp), 0, TEMP_BINS - 1))
-        return float(self.hist[int(cell), b:].sum()) / self.count
+        return float(hist[int(cell), b:].sum()) / self.count
 
     @property
     def hours_covered(self):
-        return bin(self.hours_seen).count("1")
+        if self._use_legacy():
+            return bin(int(self._legacy["hours_seen"])).count("1")
+        return int((self.hour_cnt > 0).sum())
+
+    def _hist_for_scoring(self):
+        """
+        채점에 쓸 히스토그램.
+
+        창이 서면 창의 것, 아직이면 옛 누적값. 옛 값도 없으면 창의 것을
+        그대로 쓴다 - 비어 있을 뿐 None 은 아니다. 이 마지막 갈래를
+        빠뜨려 kict1 이 기준선을 읽다 죽었다.
+        """
+        return self._legacy["hist"] if self._use_legacy() else self.hist
+
+    def _ring_ready(self):
+        """창만으로 채점할 수 있는가."""
+        return (self._n >= self.min_samples
+                and int((self.hour_cnt > 0).sum()) >= self.min_hours)
 
     def is_ready(self):
-        """채점에 쓸 만큼 모였는지."""
-        return (self.count >= self.min_samples
-                and self.hours_covered >= self.min_hours)
+        """채점에 쓸 만큼 모였는지. 창이 아직이면 옛 누적값으로 본다."""
+        if self._ring_ready():
+            return True
+        if self._legacy:
+            return (int(self._legacy["count"]) >= self.min_samples
+                    and bin(int(self._legacy["hours_seen"])).count("1")
+                    >= self.min_hours)
+        return False
 
     # ------------------------------------------------------------------ 채점
 
@@ -331,32 +593,81 @@ class OnlineBaseline:
         # .npz 를 포함시켜 실제 생성 경로를 예측 가능하게 만든다.
         tmp = path + ".tmp.npz"
         # 히스토그램은 64x256 uint32 = 64KB. 압축하면 훨씬 작아진다.
+        # 창을 오래된 것부터 펴서 담는다. 되읽을 때 그대로 밀어 넣으면 된다.
+        cap = self.ring.shape[0]
+        if self._n and cap:
+            order = [(self._head - self._n + i) % cap for i in range(self._n)]
+            ring = self.ring[order]
+            hours = self.ring_hour[order]
+            days = self.ring_day[order]
+        else:
+            ring = np.zeros((0, self.n_cells), dtype=np.uint8)
+            hours = np.zeros(0, dtype=np.int8)
+
+        # 옛 누적값은 제 이름으로 따로 적는다.
+        #
+        # 예전에는 count/mean/hist 칸에 섞어 적었다. count 는 창의 것,
+        # hist 는 옛 것이 되어 되읽으면 앞뒤가 맞지 않았고, 옛 값이라는
+        # 표시가 없어 복원할 수도 없었다.
+        lg = self._legacy or {}
         np.savez_compressed(
             tmp,
             n_cells=self.n_cells,
-            count=self.count,
-            mean=self.mean,
-            m2=self.m2,
-            hist=self.hist,
-            hours_seen=self.hours_seen,
+            ring=ring,
+            ring_hour=hours,
+            ring_day=days,
             scene_ewma=self.scene_ewma,
             base_date=self.base_date,
             started_at=self.started_at,
+            legacy_count=int(lg.get("count", 0)),
+            legacy_mean=lg.get("mean", np.zeros(self.n_cells)),
+            legacy_hist=lg.get("hist",
+                               np.zeros((self.n_cells, TEMP_BINS),
+                                        dtype=np.uint32)),
+            legacy_hours=int(lg.get("hours_seen", 0)),
         )
         # 저장 도중 종료되어 파일이 반만 남는 것을 막는다.
         os.replace(tmp, path)
+
+    def _hours_mask(self):
+        """시각 비트마스크."""
+        if self._use_legacy():
+            return int(self._legacy["hours_seen"])
+        m = 0
+        for h in range(24):
+            if self.hour_cnt[h] > 0:
+                m |= (1 << h)
+        return m
 
     @classmethod
     def load(cls, path, n_cells, min_samples=None, min_hours=None, base_date=None):
         """
         없거나 깨졌거나 격자 크기가 달라졌으면 새로 시작한다.
 
-        계산 기준일이 저장된 것과 다를 때도 새로 시작한다. 기준일을 바꾸는
-        것은 "그 전에 배운 것은 잊으라" 는 지시이기 때문이다.
+        계산 기준일이 달라도 그대로 이어간다. 창이 최근 것만 들고 있어
+        과거를 따로 끊어 낼 이유가 없다.
         """
         obj = cls(n_cells, min_samples, min_hours, base_date)
 
+        # 사유 쪽지는 기준선 파일과 따로 산다. 지금 쌓고 있는 것이 왜
+        # 처음부터인지를 말해 주므로, 성공해서 이어받을 때도 그대로 들고
+        # 간다 - 사유는 "이번 누적이 언제 왜 시작됐나" 이지 "이번에 읽다가
+        # 무슨 일이 있었나" 가 아니다.
+        user_path = os.path.dirname(path)
+        obj.reset_why, obj.reset_at = read_reset_note(user_path)
+
+        def fresh(why):
+            o = cls(n_cells, min_samples, min_hours, base_date)
+            write_reset_note(user_path, why)
+            o.reset_why, o.reset_at = read_reset_note(user_path)
+            return o
+
         if not os.path.exists(path):
+            # 되돌리기가 치웠다면 그쪽이 이미 쪽지를 남겼다. 그 사유가
+            # 우선이다 - 여기서 보이는 것은 "파일이 없다" 뿐이라, 왜
+            # 없는지는 치운 쪽만 안다.
+            if not obj.reset_why:
+                return fresh("파일이 없어 처음부터 (설치 직후)")
             return obj
 
         try:
@@ -364,44 +675,63 @@ class OnlineBaseline:
 
             if int(d["n_cells"]) != n_cells:
                 print(f"[WARN] {path} 의 셀 수가 달라 기준선을 새로 시작합니다.")
-                return obj
+                return fresh(f"격자 칸 수가 달라짐 "
+                             f"({int(d['n_cells'])} → {n_cells})")
 
-            saved_base = str(d["base_date"]) if "base_date" in d.files else ""
             saved_started = str(d["started_at"]) if "started_at" in d.files else ""
 
-            if saved_base != obj.base_date:
-                # 쌓기 시작한 날이 이미 새 기준일 이후면 뺄 과거가 없다.
-                # 그대로 이어가고 기준일만 갈아 끼운다.
-                keep = bool(obj.base_date and saved_started
-                            and saved_started >= obj.base_date)
-                if keep:
-                    print(f"[INFO] 계산 기준일이 바뀌었으나("
-                          f"{saved_base or '없음'} -> {obj.base_date}) "
-                          f"누적 시작일 {saved_started} 이 그 이후라 "
-                          f"기준선을 그대로 이어갑니다.")
-                else:
-                    print(f"[INFO] 계산 기준일이 바뀌어("
-                          f"{saved_base or '없음'} -> {obj.base_date or '없음'}) "
-                          f"기준선을 새로 시작합니다.")
-                    return obj
-
-            obj.count = int(d["count"])
-            obj.mean = d["mean"].astype(np.float64)
-            obj.m2 = d["m2"].astype(np.float64)
-            obj.hist = d["hist"].astype(np.uint32)
-            obj.hours_seen = int(d["hours_seen"])
             obj.scene_ewma = d["scene_ewma"].astype(np.float64)
             obj.started_at = saved_started
+
+            if "ring" in d.files:
+                ring = d["ring"].astype(np.uint8)
+                hours = d["ring_hour"].astype(np.int8)
+                # 옛 파일에는 날짜가 없다. 0(모름)으로 채운다 - 창이 한 바퀴
+                # 돌면 저절로 채워진다.
+                if "ring_day" in d.files:
+                    days = d["ring_day"].astype(np.int32)
+                else:
+                    days = np.zeros(ring.shape[0], dtype=np.int32)
+                for i in range(ring.shape[0]):
+                    obj._push(ring[i], int(hours[i]), int(days[i]))
+
+                # 창이 아직 서지 않았으면 옛 누적값도 되살린다.
+                if ("legacy_count" in d.files
+                        and int(d["legacy_count"]) > 0):
+                    obj._legacy = {
+                        "count": int(d["legacy_count"]),
+                        "mean": d["legacy_mean"].astype(np.float64),
+                        "hist": d["legacy_hist"].astype(np.uint32),
+                        "hours_seen": int(d["legacy_hours"]),
+                    }
+                print(f"[INFO] 기준선 최근 창 {obj.window:,}건 "
+                      f"({obj.hours_covered}시간대)"
+                      + (f" · 옛 누적값 {obj._legacy['count']:,}건 함께"
+                         if obj._legacy else ""))
+            else:
+                # 옛 판. 프레임이 없어 창을 복원할 수 없다. 창이 스스로 설
+                # 때까지 이 누적값으로 채점한다.
+                obj._legacy = {
+                    "count": int(d["count"]),
+                    "mean": d["mean"].astype(np.float64),
+                    "hist": d["hist"].astype(np.uint32),
+                    "hours_seen": int(d["hours_seen"]),
+                }
+                print(f"[INFO] 옛 기준선({obj._legacy['count']:,}건)을 읽었습니다. "
+                      f"최근 창이 찰 때까지 이 값으로 채점합니다.")
             obj._recompute_hi()
 
         except Exception as e:
             print(f"[WARN] 기준선을 읽지 못해 새로 시작합니다: {e}")
-            return cls(n_cells, min_samples, min_hours, base_date)
+            return fresh(f"파일을 읽지 못함 ({type(e).__name__})")
 
         return obj
 
     def summary(self):
-        tail = f" · 기준일 {self.base_date}" if self.base_date else ""
+        # 기준일은 적지 않는다. 2단계와 무관해졌다.
+        tail = ""
+        if self._legacy and not self._ring_ready():
+            tail = f" · 옛 누적값 사용 중(창 {self._n:,}건)" + tail
         return (f"표본 {self.count:,}/{self.min_samples:,}건 · "
                 f"시간대 {self.hours_covered}/{self.min_hours} · "
                 f"{'사용 가능' if self.is_ready() else '누적 중'}{tail}")

@@ -76,6 +76,41 @@ def count_history_rows(conn, db_name, min_score=0.5, base_date=None):
         cur.close()
 
 
+def history_span(conn, db_name):
+    """
+    히스토리 DB 에 날짜 테이블이 몇 개, 어느 날부터 어느 날까지 있는지.
+
+    count_history_rows 의 테이블 수는 계산기준일 이전을 뺀 것이라 DB 전체가
+    아니다. [설정] 창의 "재학습 수집 일수" 옆에 DB 전체 기간을 보여 주려면
+    따로 센다. 테이블 이름만 읽으므로 가볍다.
+
+    반환: (테이블 수, 첫 날 "YYYY-MM-DD", 끝 날). 없으면 (0, "", "").
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = %s
+              AND table_name LIKE 'results_history_%%'
+              AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+            """,
+            (db_name,),
+        )
+        names = [r[0][-8:] for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+    def _d(x):
+        return f"{x[:4]}-{x[4:6]}-{x[6:8]}" if len(x) == 8 and x.isdigit() else ""
+
+    if not names:
+        return 0, "", ""
+    return len(names), _d(names[0]), _d(names[-1])
+
+
 def find_generation(user_path):
     """마지막으로 승격된 모델 세대. 없으면 (None, None)."""
     p = os.path.join(user_path, "current_generation.txt")
@@ -117,6 +152,16 @@ def _esc(v):
     return str(v).replace("\r", " ").replace("\n", " ")
 
 
+def _cells(v, dec=1):
+    """64칸 배열을 쉼표로 이은 한 줄로. 없으면 빈 칸."""
+    if v is None:
+        return ""
+    try:
+        return ",".join(f"{float(x):.{dec}f}" for x in v)
+    except (TypeError, ValueError):
+        return ""
+
+
 def _sf(shift, key, default=""):
     """
     RGB 틀어짐 측정 결과에서 한 항목을 꺼낸다.
@@ -136,50 +181,12 @@ def _sf(shift, key, default=""):
     return f"{float(v):.1f}"
 
 
-def _tstate(tshift):
-    """
-    열화상 틀어짐 상태를 한 글자로 줄인다.
-
-      -1  아직 기준 패턴이 없다 (표본을 모으는 중)
-       0  잴 수는 있었으나 판정할 수 없었다 (화면이 밋밋함)
-       1  틀어지지 않았다
-       2  틀어졌다 (몇 칸인지까지 안다)
-       3  기준 패턴과 안 맞는다 (방향은 못 밝혔다)
-    """
-    if tshift is None or not getattr(tshift, "has_ref", False):
-        return -1
-    res = getattr(tshift, "result", None)
-    if res is None:
-        return 0
-    if res["shifted"]:
-        return 2
-    if res["mismatch"]:
-        return 3
-    return 1
-
-
-def _tv(tshift, key):
-    res = getattr(tshift, "result", None) if tshift is not None else None
-    return "" if res is None else int(res[key])
-
-
-def _tcorr(tshift):
-    res = getattr(tshift, "result", None) if tshift is not None else None
-    if res is None:
-        return ""
-    # 틀어졌다고 볼 때는 그 자리의 상관, 아니면 제자리의 상관을 적는다.
-    return f"{(res['corr'] if res['shifted'] else res['corr0']):.3f}"
-
-
-def _tcorr0(tshift):
-    """제자리 상관. 틀어졌을 때 "원래 자리와는 얼마나 안 맞았나" 가 된다."""
-    res = getattr(tshift, "result", None) if tshift is not None else None
-    return "" if res is None else f"{res['corr0']:.3f}"
-
-
 def write(path, baseline, model_ready, user_path,
           db_rows=None, db_tables=None, min_retrain=None, stage_used=None,
-          abs_guard=None, shift=None, tshift=None, contrib=None):
+          db_span=None,
+          abs_guard=None, abs_now=None, cells=None, accum=None,
+          shift=None, contrib=None, contrib_at=None,
+          op=None, op_now=None):
     """
     현황을 통째로 덮어쓴다.
 
@@ -188,11 +195,16 @@ def write(path, baseline, model_ready, user_path,
     """
     gen_name, gen_time = find_generation(user_path)
 
+    # 파일 열쇠(STAGE0~2, STAGE_USED)의 번호는 0부터이고, 화면과 문서의
+    # 단계 번호는 1부터다. 열쇠 이름은 C++ 이 읽고 있어 그대로 둔다.
+    #   STAGE0 = 1단계 절대 임계값     STAGE1 = 2단계 경험 임계값
+    #   STAGE2 = 3단계 오토인코더      STAGE3 = 재학습 세대 유무(번호 없음)
+    #   STAGE_USED 0/1/2 = 화면의 1/2/3단계
     stage1 = baseline.is_ready()
     stage2 = bool(model_ready)
     stage3 = gen_name is not None
 
-    # 0단계(절대 임계값)는 학습과 무관하게 늘 동작하지만, 임계값이 지정되지
+    # 1단계(절대 임계값)는 학습과 무관하게 늘 동작하지만, 임계값이 지정되지
     # 않으면 판정 자체를 끄고 있다. 그 구분을 화면에서도 볼 수 있어야 한다.
     stage0 = bool(abs_guard is not None and abs_guard.enabled)
 
@@ -207,22 +219,64 @@ def write(path, baseline, model_ready, user_path,
         # 기준일은 사람이 정하는 정책이고, 이쪽은 실제로 언제부터 쌓았는지다.
         # 둘이 다를 수 있어 따로 보여줘야 표본 수를 해석할 수 있다.
         f"STARTED_AT = {_esc(getattr(baseline, 'started_at', ''))}",
+        # 창이 실제로 들고 있는 양 끝. STARTED_AT 은 처음 넣은 날에 박혀
+        # 다시 바뀌지 않으므로, 밀려난 뒤에는 창의 내용보다 길어진다.
+        f"WINDOW_FROM = {_esc(getattr(baseline, 'window_from', ''))}",
+        f"WINDOW_TO = {_esc(getattr(baseline, 'window_to', ''))}",
+        # 지금 쌓고 있는 것이 왜 처음부터인가. 2단계가 "누적 중" 으로 멈춰
+        # 있을 때 사람이 가장 먼저 묻는 것이다.
+        f"RESET_WHY = {_esc(getattr(baseline, 'reset_why', ''))}",
+        f"RESET_AT = {_esc(getattr(baseline, 'reset_at', ''))}",
         "",
         f"STAGE0 = {1 if stage0 else 0}",
         f"ABS_TEMP_WARN = {_t(getattr(abs_guard, 'temp_warn', None))}",
         f"ABS_TEMP_ALARM = {_t(getattr(abs_guard, 'temp_alarm', None))}",
         f"ABS_RISE_WARN = {_t(getattr(abs_guard, 'rise_warn', None))}",
         f"ABS_RISE_ALARM = {_t(getattr(abs_guard, 'rise_alarm', None))}",
+        # 방금 잰 값. 선만 보여 주면 지금이 그 선에서 얼마나 떨어져 있는지
+        # 알 수 없다. PEAK -1 은 재지 못했다는 뜻이다.
+        f"ABS_PEAK = {'' if abs_now is None else f'{abs_now[0]:.1f}'}",
+        f"ABS_RISE = {'' if abs_now is None else f'{abs_now[1]:.1f}'}",
+        f"ABS_LEVEL = {'' if abs_now is None else int(abs_now[2])}",
+        f"ABS_CELL = {'' if abs_now is None else int(abs_now[3])}",
         "",
         f"SAMPLES = {baseline.count}",
         f"MIN_SAMPLES = {baseline.min_samples}",
         f"HOURS = {baseline.hours_covered}",
         f"MIN_HOURS = {baseline.min_hours}",
+        # 칸별 현황. 세 줄 모두 64개, 격자 순서 그대로.
+        #
+        # 점수는 가장 많이 넘은 칸 하나만 돌려주므로, 나머지 63칸이 선에서
+        # 얼마나 떨어져 있는지는 어디에도 남지 않았다. 사람이 "이 칸이
+        # 70도인 것이 이 칸에 높은 것인가" 를 물을 수 있어야 한다.
+        f"CELL_NOW = {_cells(cells[0] if cells else None)}",
+        f"CELL_HI = {_cells(cells[1] if cells else None)}",
+        f"CELL_MASK = {_cells(cells[2] if cells else None, 0)}",
+        # 지금 쌓고 있는가. 멈췄으면 왜 멈췄는가.
+        #
+        # 누적이 멈춘 것은 표본 수가 늘지 않는 것으로만 드러나는데, 그것을
+        # 알아채려면 몇 분을 지켜봐야 한다. 이유까지 적어 둔다.
+        f"ACCUM_OK = {'' if accum is None else (1 if accum[0] else 0)}",
+        f"ACCUM_WHY = {_esc('' if accum is None else accum[1])}",
         "",
         f"STAGE1 = {1 if stage1 else 0}",
         f"STAGE2 = {1 if stage2 else 0}",
         f"STAGE3 = {1 if stage3 else 0}",
         f"STAGE_USED = {-1 if stage_used is None else int(stage_used)}",
+        "",
+        # 운전 상태. 보여 주기만 한다 - 경보에도 학습에도 쓰이지 않는다.
+        #
+        # 이름은 가장 가까운 중심에 무조건 붙으므로, 얼마나 멀리서 붙었는지
+        # (OP_DEV)와 그 상태의 낯선 선(OP_FAR)을 함께 적는다. OP_DEV 가
+        # OP_FAR 을 넘으면 이름은 붙었어도 처음 보는 모양이다.
+        f"OP_STATE = {_esc('' if op is None else op.name_of(op_now))}",
+        f"OP_MIX = {_esc('' if op is None else op.recent_mix())}",
+        f"OP_INFO = {_esc('' if op is None else op.info)}",
+        f"OP_DEV = {'' if op is None or op.last_dev is None else f'{op.last_dev:.1f}'}",
+        f"OP_FAR = {'' if op is None else f'{op.far_of(op_now):.1f}'}",
+        f"OP_ODD = {'' if op is None else f'{100.0 * op.recent_odd():.0f}'}",
+        # OP_MIX 가 걸쳐 있는 시간 (분). 건수로 세므로 폭이 고정이 아니다.
+        f"OP_SPAN = {'' if op is None else f'{op.recent_span_min():.0f}'}",
         "",
         f"GENERATION = {_esc(gen_name or '')}",
         f"GENERATION_AT = {_esc(gen_time or '')}",
@@ -246,17 +300,12 @@ def write(path, baseline, model_ready, user_path,
         f"SHIFT_DY = {_sf(shift, 'dy')}",
         f"SHIFT_RESP = {_sf(shift, 'response')}",
         "",
-        # 열화상 틀어짐. RGB 와 달리 운전 중에도 주기적으로 다시 잰다.
-        # TSHIFT_STATE 로 "기준 없음 / 판정 불가 / 없음 / 밀렸음" 을 가른다.
-        f"TSHIFT_STATE = {_tstate(tshift)}",
-        f"TSHIFT_X = {_tv(tshift, 'dx')}",
-        f"TSHIFT_Y = {_tv(tshift, 'dy')}",
-        f"TSHIFT_CORR = {_tcorr(tshift)}",
-        f"TSHIFT_CORR0 = {_tcorr0(tshift)}",
-        f"TSHIFT_AT = {_esc(getattr(tshift, 'checked_at', '') or '')}",
-        "",
         f"DB_ROWS = {-1 if db_rows is None else int(db_rows)}",
         f"DB_TABLES = {-1 if db_tables is None else int(db_tables)}",
+        # DB 전체 기간. DB_TABLES 는 계산기준일 이전을 뺀 수라 이쪽이 전체다.
+        f"DB_ALL_TABLES = {-1 if not db_span else int(db_span[0])}",
+        f"DB_FIRST = {'' if not db_span else db_span[1]}",
+        f"DB_LAST = {'' if not db_span else db_span[2]}",
         f"MIN_RETRAIN = {-1 if min_retrain is None else int(min_retrain)}",
         "",
         # 재학습이 기존 모델을 얼마나 물려받을지. 칸 수가 아니라 지금 내고
@@ -264,6 +313,8 @@ def write(path, baseline, model_ready, user_path,
         # kict1 은 1.3칸에 0.088 이었다 - 칸 수는 손상을 예측하지 못한다.
         f"DECISION_SCORE = {'' if contrib is None else f'{float(contrib[0]):.4f}' if contrib[0] is not None else ''}",
         f"CONTRIB_W = {'' if contrib is None else f'{float(contrib[1]):.2f}'}",
+        # 위 점수와 가중치를 계산한 시각. 값이 낡았는지 화면에서 알 수 있어야 한다.
+        f"CONTRIB_AT = {_esc(contrib_at or '')}",
     ]
 
     tmp = path + ".tmp"

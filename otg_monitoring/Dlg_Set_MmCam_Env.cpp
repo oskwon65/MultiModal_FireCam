@@ -9,6 +9,12 @@
 #include "MmCam_monitoringDlg.h"
 #include "Dlg_CamPos.h"
 #include "Dlg_Retrain.h"
+#include "Dlg_CellBase.h"
+
+#include <vector>
+
+extern const char* GetAnacondaRootPub();
+extern const char* GetAnacondaEnvPub();
 
 #include <wininet.h>
 #pragma comment(lib, "wininet.lib")
@@ -27,12 +33,11 @@ extern const char* GetMmCamStartPath();
 #define ID_ED_BASE_SAMPLES				2100
 #define ID_ED_BASE_HOURS					2101
 #define ID_ED_AE_SAMPLES					2102
-#define ID_ED_BASE_DATE						2103
 #define ID_ED_AE_HOURS						2104
 #define ID_BTN_SAVE_STAGE					2110
 #define ID_BTN_RETRAIN						2205
 
-// 0단계 절대 임계값
+// 1단계 절대 임계값
 #define ID_ED_ABS_TEMP_W					2120
 #define ID_ED_ABS_TEMP_A					2121
 #define ID_ED_ABS_RISE_W					2122
@@ -53,14 +58,21 @@ extern const char* GetMmCamStartPath();
 #define DEF_CT_BAND_HIGH					"0.85"
 
 // 학습 표본 구성
+// [현재 진행] 2단계 줄 옆의 작은 버튼. 칸별 기준값을 띄운다.
+#define ID_BTN_CELLBASE						2150
+#define ID_BTN_BASE_FRESH					2151
+#define ID_BTN_BASE_REBUILD					2152
+
 #define ID_ED_SP_TARGET						2140
-#define ID_ED_SP_SCORE						2141
 #define ID_ED_SP_RUNTEMP					2142
-#define ID_CHK_SP_ERA						2143
+#define ID_CHK_SP_DYN						2144
+#define ID_ED_SP_DAYS						2145
+
+// DB 기간 조회 스레드가 끝났음을 알리는 메시지
+#define WM_SPAN_DONE						(WM_APP + 41)
 
 // 기본값. replay_buffer.py 의 것과 같아야 한다.
 #define DEF_SP_TARGET						60000
-#define DEF_SP_SCORE						"0.5"
 
 // 임계값은 지정되지 않을 수 있다(신규 현장). 그때 화면에는 빈칸을 보여
 // 주어야 "0으로 설정됨" 과 구분된다.
@@ -79,20 +91,18 @@ extern const char* GetMmCamStartPath();
 // 넘겼지만 새벽 02~07시가 통째로 비어 있었다.
 // retrain/nightly_retrain.py 의 MIN_HOURS_DEFAULT 와 같아야 한다.
 #define DEF_AE_HOURS		18
-// 계산 기준일은 기본값이 없다. 빈 값 = 제한 없이 전체 기간 사용.
-#define DEF_CALC_BASE_DATE	""
-
-// 체크박스를 없앴으므로 "전체 기간" 을 날짜로 나타내야 한다. 이 시스템이
-// 수집을 시작(2025-08)하기 한참 전이라 이 날짜 이후를 쓰면 전체와 같다.
-// 이 값이 그대로 저장되면 env.ini 에는 빈 값(= 전체)으로 적는다.
-#define ALL_PERIOD_Y	2000
-#define ALL_PERIOD_M	1
-#define ALL_PERIOD_D	1
 
 extern std::string ini_read_utf8(const std::string&, const std::string&,
                                  const std::string&, const std::string&);
 extern int  ini_read_int_utf8(const std::string&, const std::string&,
                               const std::string&, int);
+extern long long status_age_seconds(const std::string&);
+extern bool read_history_span(unsigned int timeoutSec, int* nTables,
+                              std::string* first, std::string* last);
+
+// 이 시간 안에 다시 쓰이지 않은 현황 파일은 감시가 멈춘 것으로 본다.
+// 파이썬이 30초마다 쓰므로 두 번을 놓친 셈이다.
+static const long long STATUS_STALE_SEC = 60;
 extern bool ini_write_int_utf8(const std::string&, const std::string&,
                                const std::string&, int);
 extern bool ini_write_utf8(const std::string&, const std::string&,
@@ -121,6 +131,11 @@ BEGIN_MESSAGE_MAP(CDlg_Set_MmCam_Env, CDialogEx)
 	ON_BN_CLICKED(ID_BTN_CLOSE, &CDlg_Set_MmCam_Env::OnBnClickedClose)
 	ON_BN_CLICKED(ID_BTN_SAVE_STAGE, &CDlg_Set_MmCam_Env::OnBnClickedSaveStage)
 	ON_BN_CLICKED(ID_BTN_RETRAIN, &CDlg_Set_MmCam_Env::OnBnClickedRetrain)
+	ON_BN_CLICKED(ID_BTN_CELLBASE, &CDlg_Set_MmCam_Env::OnBnClickedCellBase)
+	ON_BN_CLICKED(ID_BTN_BASE_FRESH, &CDlg_Set_MmCam_Env::OnBnClickedBaseFresh)
+	ON_BN_CLICKED(ID_BTN_BASE_REBUILD, &CDlg_Set_MmCam_Env::OnBnClickedBaseRebuild)
+	ON_WM_CTLCOLOR()
+	ON_MESSAGE(WM_SPAN_DONE, &CDlg_Set_MmCam_Env::OnSpanDone)
 END_MESSAGE_MAP()
 
 extern void update_db_main_command(const char* new_code);
@@ -202,24 +217,37 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 			CRect(nBase_X, ctrl_btn_top - 10, sepRight, ctrl_btn_top - 8), this);
 	}
 
-	m_btnGetMask_Server.Create("서버 Mask 받기", mask_btn_style,
-		CRect(nBase_X, ctrl_btn_top, nBase_X + btn_w, ctrl_btn_top + mask_btn_h),
-		this, ID_BTN_GET_MASK_SVR);
+	// 맨 윗줄은 "카메라가 지금 어떤가" 하나로 묶는다.
+	//
+	// 잰 값이 왼쪽, 손볼 버튼이 오른쪽이다. [서버 Mask 받기] 는 감시 대상을
+	// 서버 것으로 갈아치우는 전혀 다른 일이라 맨 아래로 내렸다.
+	long topRight;
+	{
+		CRect rcC;
+		GetClientRect(&rcC);
+		topRight = rcC.right - nBase_X;
+		if (topRight < nBase_X + 520) topRight = nBase_X + 520;
+	}
 
-	m_btnSetMask_CamPos.Create("카메라 이동보정", mask_btn_style,
-		CRect(nBase_X + btn_w + 10, ctrl_btn_top,
-		      nBase_X + btn_w + 10 + btn_w, ctrl_btn_top + mask_btn_h),
+	// 이 버튼만 30% 작다. 다른 버튼과 줄을 맞추는 자리가 아니라, 잰 값
+	// 옆에 붙어 "이걸 손본다" 는 뜻으로 서 있기 때문이다.
+	const long cam_w = btn_w * 70 / 100;          // 141 -> 98
+	const long cam_h = mask_btn_h * 70 / 100;     // 30 -> 21
+
+	m_btnSetMask_CamPos.Create("카메라 보정", mask_btn_style,
+		CRect(topRight - cam_w, ctrl_btn_top,
+		      topRight, ctrl_btn_top + cam_h),
 		this, ID_BTN_SET_MASK_CAM_POS);
 
-	// 잰 틀어짐 값을 버튼 옆에 적는다. 계산은 이미 하고 있었는데 화면에
-	// 나오지 않아, 지금 밀려 있는지 알 길이 없었다.
+	// 잰 틀어짐 값. 계산은 이미 하고 있었는데 화면에 나오지 않아, 지금
+	// 밀려 있는지 알 길이 없었다.
 	//
 	// 두 줄인 이유는 재는 대상이 둘이기 때문이다. 위는 RGB, 아래는 열화상.
 	// 한 줄로 합치면 어느 카메라가 밀렸는지가 사라지는데, 바로 그 구분이
 	// kict1 에서 두 달을 놓치게 만든 지점이었다.
 	m_lblShift.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
-		CRect(nBase_X + (btn_w + 10) * 2, ctrl_btn_top - 1,
-		      nBase_X + (btn_w + 10) * 2 + 330, ctrl_btn_top - 1 + 36), this);
+		CRect(nBase_X, ctrl_btn_top - 1,
+		      topRight - cam_w - 14, ctrl_btn_top - 1 + 56), this);
 
 	LoadHeader();
 
@@ -241,7 +269,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 글자가 17 에서 20 으로 커진 만큼 넓힌다. 그대로 두면 "기준선 최소
 	// 표본수" 같은 라벨이 잘린다.
 	const long lbl_w = 184, ed_w = 92, row_h = 31;
-	const long stage_top = ctrl_btn_top + mask_btn_h + 16;
+	const long stage_top = ctrl_btn_top + mask_btn_h + 36;
 	long y = stage_top;
 
 	// 위쪽 마스크 버튼과 성격이 다른 구역이라 선으로 가른다.
@@ -256,76 +284,38 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 			CRect(nBase_X, y - 8, sepRight, y - 6), this);
 	}
 
-	m_capStage.Create("[ 연속학습 조건 ]",
-		WS_CHILD | WS_VISIBLE | SS_LEFT,
-		CRect(nBase_X, y, nBase_X + 520, y + 22), this);
-	y += 26;
-
+	// 두 칸으로 가른다.
+	//
+	// 한 칸에 2단계 관문과 재학습 관문이 섞여 있었고, 이름은 '연속학습
+	// 조건' 이라 전체 구조의 이름을 한 칸에 붙인 꼴이었다. 나머지 세
+	// 묶음은 저마다 하는 일을 말하는데 여기만 포괄적이었다.
 	struct Row { CStatic* lbl; CEdit* ed; const char* text; UINT id; };
-	Row rows[] = {
-		{ &m_lblBaseSamples, &m_edBaseSamples, "기준선 최소 표본수",  ID_ED_BASE_SAMPLES },
-		{ &m_lblBaseHours,   &m_edBaseHours,   "기준선 최소 시간대",  ID_ED_BASE_HOURS     },
-		{ &m_lblAeSamples,   &m_edAeSamples,   "재학습 최소 표본수",  ID_ED_AE_SAMPLES    },
-		{ &m_lblAeHours,     &m_edAeHours,     "재학습 최소 시간대",  ID_ED_AE_HOURS       },
+
+	auto drawRows = [&](const Row* rr, int n)
+	{
+		for (int i = 0; i < n; ++i)
+		{
+			rr[i].lbl->Create(rr[i].text, WS_CHILD | WS_VISIBLE | SS_LEFT,
+				CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
+
+			rr[i].ed->Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP
+				| ES_NUMBER | ES_RIGHT,
+				CRect(nBase_X + lbl_w + 10, y, nBase_X + lbl_w + 10 + ed_w,
+				      y + 22), this, rr[i].id);
+
+			y += row_h;
+		}
 	};
 
-	const int nRows = (int)(sizeof(rows) / sizeof(rows[0]));
-
-	for (int i = 0; i < nRows; ++i)
-	{
-		rows[i].lbl->Create(rows[i].text, WS_CHILD | WS_VISIBLE | SS_LEFT,
-			CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
-
-		rows[i].ed->Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP
-			| ES_NUMBER | ES_RIGHT,
-			CRect(nBase_X + lbl_w + 10, y, nBase_X + lbl_w + 10 + ed_w, y + 22),
-			this, rows[i].id);
-
-		y += row_h;
-	}
-
-	// 계산 기준일은 달력에서 고른다.
-	//
-	// 직접 타이핑하게 두면 2026-13-45 같은 값이나 오타가 들어오고, 형식을
-	// 검사해 막아도 사용자는 무엇이 틀렸는지 알기 어렵다. 달력은 애초에
-	// 잘못된 날짜를 고를 수 없다.
-	//
-	// 체크박스(DTS_SHOWNONE)는 쓰지 않는다. 체크를 풀면 날짜가 흐리게
-	// 표시되어 지금 어느 날짜가 잡혀 있는지 읽기 어려웠다. 항상 선택된
-	// 날짜를 또렷하게 보여준다.
-	//
-	// 대신 "전체 기간" 을 표현할 자리가 없어진다. 그 경우는 데이터가
-	// 시작되기 전 날짜를 고르면 된다. 기준일은 "이 날짜 이전을 버린다" 는
-	// 뜻이므로, 충분히 이른 날짜는 전체를 쓰는 것과 같다.
-	m_lblBaseDate.Create("계산기준일",
-		WS_CHILD | WS_VISIBLE | SS_LEFT,
-		CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
-
-	m_dtBaseDate.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER
-		| DTS_SHORTDATEFORMAT,
-		// "2026-09-21" 열 글자와 드롭다운 단추가 들어갈 만큼.
-		//
-		// 예전에 25% 줄여 두었는데 글꼴이 17 에서 20 으로 커지면서 날짜가
-		// 잘렸다. 글자 폭에 맞춰 잡아야 글꼴을 또 바꿔도 깨지지 않는다.
-		// 한 글자를 대략 글꼴 높이의 0.62배로 보고, 단추 몫 24px 을 더한다.
-		CRect(nBase_X + lbl_w + 10, y,
-		      nBase_X + lbl_w + 10 + (UI_FONT_SIZE * 62 / 100) * 10 + 24,
-		      y + row_h - 5),
-		this, ID_ED_BASE_DATE);
-
-	// 지역 설정에 따라 표시 형식이 달라지면 env.ini 에 쓰는 값과 화면이
-	// 어긋나 보인다. 저장 형식과 똑같이 맞춘다.
-	m_dtBaseDate.SetFormat(_T("yyyy-MM-dd"));
-
-	y += row_h;
-
-	y += 10;
-
 	// -------------------------------------------------------------
-	// 0단계 절대 임계값
+	// 1단계 절대 임계값
 	//
-	// 학습과 무관하게 늘 동작하는 안전망이라 설비마다 값이 전혀 다르다.
-	// kict1 은 정상 가동 중 마스크 셀이 197도까지 오르고, cj_busan_1 은
+	// 맨 위에 둔다. 학습과 무관하게 늘 동작하는 유일한 안전망이라,
+	// 2·3단계가 아직 서지 않은 현장에서는 이것만이 경보를 낸다.
+	// 아래쪽에 두었더니 설치할 때 지나치기 쉬웠다.
+	//
+	// 설비마다 값이 전혀 다르다.
+	// kict1 은 정상 가동 중 격자 최고가 197도까지 오르고, cj_busan_1 은
 	// 정상 가동의 99%가 12도/분을 넘는다. 추측한 기본값은 쉬지 않고 경보를
 	// 울리므로 현장에서 직접 넣어야 한다.
 	//
@@ -336,7 +326,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	const long ed2_x1 = nBase_X + lbl_w + 10;
 	const long ed2_x2 = ed2_x1 + ed2_w + 10;
 
-	m_capAbs.Create("[ 절대 임계값 (0단계) ]   주의 / 경보",
+	m_capAbs.Create("[ 1단계 절대 임계값 ]   주의 / 경보",
 		WS_CHILD | WS_VISIBLE | SS_LEFT,
 		CRect(nBase_X, y, nBase_X + 330, y + 22), this);
 	y += 26;
@@ -344,7 +334,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	struct ARow { CStatic* lbl; CEdit* w; CEdit* a; const char* text; UINT idw; UINT ida; };
 	ARow arows[] = {
 		{ &m_lblAbsTemp, &m_edAbsTempWarn, &m_edAbsTempAlarm,
-		  "마스크 셀 최고 온도 (도)", ID_ED_ABS_TEMP_W, ID_ED_ABS_TEMP_A },
+		  "격자 최고 온도 (도)", ID_ED_ABS_TEMP_W, ID_ED_ABS_TEMP_A },
 		{ &m_lblAbsRise, &m_edAbsRiseWarn, &m_edAbsRiseAlarm,
 		  "분당 상승률 (도/분)",      ID_ED_ABS_RISE_W, ID_ED_ABS_RISE_A },
 	};
@@ -367,6 +357,19 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 
 	y += 10;
 
+	m_capStage.Create("[ 2단계 전환 조건 ]   경험 임계값으로 채점을 시작할 때",
+		WS_CHILD | WS_VISIBLE | SS_LEFT,
+		CRect(nBase_X, y, nBase_X + 520, y + 22), this);
+	y += 26;
+
+	Row rows1[] = {
+		{ &m_lblBaseSamples, &m_edBaseSamples, "기준선 최소 표본수", ID_ED_BASE_SAMPLES },
+		{ &m_lblBaseHours,   &m_edBaseHours,   "기준선 최소 시간대", ID_ED_BASE_HOURS   },
+	};
+	drawRows(rows1, 2);
+
+	y += 10;
+
 	// -------------------------------------------------------------
 	// 기여도 판단 기준
 	//
@@ -376,16 +379,17 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	//   테이블 N개 -> 셋을 거름 -> 표본 M건 -> 지금 모델로 다시 매김
 	//   -> 중앙값 -> w = (점수 - 하) / (상 - 하)
 	//
-	// 위 [연속학습 조건] 과 헷갈리기 쉬운데 다른 것이다. 저쪽은 '무엇으로
-	// 학습할지'(표본 6만 건, 시간대 18개), 이쪽은 '기존 모델을 믿을지' 다.
+	// 아래 [재생 버퍼] 와 헷갈리기 쉬운데 다른 것이다. 저쪽은 '무엇으로
+	// 학습할지', 이쪽은 '기존 모델을 믿을지' 다. 여기서 나온 w 를 아래
+	// 재생버퍼 동적구성과 기여 문턱이 쓴다.
 	//
-	// 판단 기간을 화면에 올린 이유가 있다. 짧으면 설비 상태를 골고루 담지
+	// 판단 최소 일수를 화면에 올린 이유가 있다. 짧으면 설비 상태를 골고루 담지
 	// 못한다. cj_busan_1 을 테이블 2개로 재 보니 가동 프레임이 0.3% 뿐이라,
 	// 0.922 라는 점수가 사실은 "멈춘 설비를 잘 맞힌다" 는 뜻이었다. 7개로
 	// 늘리면 가동이 74.7% 가 된다. 현장 가동 주기에 따라 달라지는 값이라
 	// 코드에 박아 둘 수 없다.
 	// -------------------------------------------------------------
-	m_capContrib.Create("[ 기여도 판단 ]   재학습이 기존 모델을 얼마나 물려받는가",
+	m_capContrib.Create("[ 3단계·기여도 ]   현 모델이 최근 데이터를 잘 측정하는지",
 		WS_CHILD | WS_VISIBLE | SS_LEFT,
 		CRect(nBase_X, y, nBase_X + 520, y + 22), this);
 	y += 26;
@@ -393,18 +397,15 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	{
 		const DWORD est_n = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP
 			| ES_NUMBER | ES_RIGHT;
-		// 문턱 두 칸은 ES_NUMBER 를 뺀다. 걸어 두면 소수점을 찍을 수 없다.
-		const DWORD est_f = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP
-			| ES_RIGHT;
 
-		m_lblCtWindow.Create("판단 기간 (테이블 수)",
+		m_lblCtWindow.Create("판단 최소 일수",
 			WS_CHILD | WS_VISIBLE | SS_LEFT,
 			CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
 		m_edCtWindow.Create(est_n,
 			CRect(ed2_x1, y, ed2_x1 + ed2_w, y + 22), this, ID_ED_CT_WINDOW);
 		y += row_h;
 
-		m_lblCtFrames.Create("최소 프레임 / 표본 상한",
+		m_lblCtFrames.Create("표본 수 (최소 / 최대)",
 			WS_CHILD | WS_VISIBLE | SS_LEFT,
 			CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
 		m_edCtMinFrames.Create(est_n,
@@ -413,89 +414,63 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 			CRect(ed2_x2, y, ed2_x2 + ed2_w, y + 22), this, ID_ED_CT_MAX_SAMPLES);
 		y += row_h;
 
-		m_lblCtBand.Create("기여 문턱 (하 / 상)",
+		// 지금 모델의 기여도와 그것을 계산한 일시. 입력하는 값이 아니라 감시가 구해 둔
+		// 결과라 읽기 전용으로 입력칸 바로 아래에 둔다(LoadStageStatus 가 고친다).
+		m_lblCtStatus.Create("기여도 점수   계산 전",
 			WS_CHILD | WS_VISIBLE | SS_LEFT,
-			CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
-		m_edCtBandLow.Create(est_f,
-			CRect(ed2_x1, y, ed2_x1 + ed2_w, y + 22), this, ID_ED_CT_BAND_LOW);
-		m_edCtBandHigh.Create(est_f,
-			CRect(ed2_x2, y, ed2_x2 + ed2_w, y + 22), this, ID_ED_CT_BAND_HIGH);
-		y += row_h;
+			CRect(nBase_X, y + 3, nBase_X + 340, y + 3 + 70), this);
+		y += 74;
 	}
 
 	y += 10;
 
+	m_capStage2.Create("[ 3단계·재생 버퍼 ]   재학습이 무엇을 모아 배울지",
+		WS_CHILD | WS_VISIBLE | SS_LEFT,
+		CRect(nBase_X, y, nBase_X + 520, y + 22), this);
+	y += 26;
+
+	Row rows2[] = {
+		{ &m_lblAeSamples, &m_edAeSamples, "재학습 최소 표본수", ID_ED_AE_SAMPLES },
+		{ &m_lblSpTarget,  &m_edSpTarget,  "재학습 최대 표본 수", ID_ED_SP_TARGET },
+		{ &m_lblSpDays,    &m_edSpDays,    "재학습 수집 일수", ID_ED_SP_DAYS },
+		{ &m_lblAeHours,   &m_edAeHours,   "재학습 최소 시간대", ID_ED_AE_HOURS   },
+	};
+	drawRows(rows2, 3);
+
+	// 수집 일수 바로 아래에 뜻과 DB 전체 기간을 적는다. 0 이 "수집하지 않음" 으로
+	// 읽히기 쉽고, 지금 DB 가 며칠치인지 알아야 일수를 정할 수 있다. 값은 감시가
+	// 남기는 stage_status.ini 에서 읽어 2초마다 고친다(LoadStageStatus).
+	m_lblSpDaysHint.Create("0 = 전체",
+		WS_CHILD | WS_VISIBLE | SS_LEFT,
+		CRect(nBase_X + 24, y - 8, nBase_X + 24 + 340, y - 8 + 20), this);
+	y += 16;
+	drawRows(rows2 + 3, 1);
+
 	// -------------------------------------------------------------
-	// 학습 표본 구성
+	// 재생 버퍼 (이어서)
 	//
-	// 무엇을 배울지 정한다. 바로 위 [기여도 판단] 은 '기존 모델을 믿을지',
-	// 여기는 '무엇으로 학습할지' 다.
+	// 위 네 줄에 이어 재생 버퍼를 어떻게 구성할지를 정한다. 기여도(아래 패널)는
+	// '기존 모델을 믿을지' 이고 여기는 '무엇으로 학습할지' 다.
+	//
+	// 정상 판정선(모델 점수)은 두지 않는다. 모델이 못 배운 정상 상태와
+	// 진짜 이상을 구분하지 못해, 모델이 틀린 자리가 표본에서 빠지고 다음
+	// 세대도 똑같이 틀렸다. 이제 절대 임계값과 칸별 분위수로 거른다.
 	//
 	// 가동 판정 온도를 비워 두면 재생버퍼가 앞쪽 2,000건 최고온도의
 	// 중앙값으로 스스로 잡는다. 그 방식은 훑기 시작한 시간대에 끌려가고,
 	// 그 2,000건 자체는 판정선이 아직 없어 전부 정지로 들어간다. 현장에서
 	// 아는 값이 있으면 적어 두는 편이 낫다.
-	//
-	// [시기를 나누어 담기] 는 자료가 끊겼던 현장을 위한 것이다. 칸이
-	// (시각 x 가동상태) 에서 (시각 x 가동상태 x 시기) 로 늘어난다. 끄면
-	// 자료가 많은 시기가 그만큼 많이 뽑힌다 - 칸 안에서는 모두 같은
-	// 확률이라 비율이 그대로 보존되기 때문이다. 시기는 날짜를 적는 것이
-	// 아니라 자료가 7일 이상 끊긴 자리로 저절로 나뉜다. 끊긴 적이 없는
-	// 현장은 시기가 하나라 켜도 아무 차이가 없다.
 	// -------------------------------------------------------------
-	m_capSample.Create("[ 학습 표본 ]   무엇을 배울지",
-		WS_CHILD | WS_VISIBLE | SS_LEFT,
-		CRect(nBase_X, y, nBase_X + 520, y + 22), this);
-	y += 26;
-
-	{
-		const DWORD est_n = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP
-			| ES_NUMBER | ES_RIGHT;
-		// 점수와 온도는 소수라 ES_NUMBER 를 걸 수 없다.
-		const DWORD est_f = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP
-			| ES_RIGHT;
-
-		m_lblSpTarget.Create("목표 표본 수",
-			WS_CHILD | WS_VISIBLE | SS_LEFT,
-			CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
-		m_edSpTarget.Create(est_n,
-			CRect(ed2_x1, y, ed2_x1 + ed2_w, y + 22), this, ID_ED_SP_TARGET);
-		y += row_h;
-
-		m_lblSpScore.Create("정상 판정선",
-			WS_CHILD | WS_VISIBLE | SS_LEFT,
-			CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
-		m_edSpScore.Create(est_f,
-			CRect(ed2_x1, y, ed2_x1 + ed2_w, y + 22), this, ID_ED_SP_SCORE);
-		y += row_h;
-
-		m_lblSpRunTemp.Create("가동 판정 온도 (도)",
-			WS_CHILD | WS_VISIBLE | SS_LEFT,
-			CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
-		m_edSpRunTemp.Create(est_f,
-			CRect(ed2_x1, y, ed2_x1 + ed2_w, y + 22), this, ID_ED_SP_RUNTEMP);
-		// 빈칸이 무슨 뜻인지 옆에 적는다. 비워 두는 것이 정상적인 선택인데
-		// 아무 말이 없으면 채워야 하는 칸으로 보인다.
-		m_lblSpHint.Create("비우면 자동", WS_CHILD | WS_VISIBLE | SS_LEFT,
-			CRect(ed2_x2, y + 3, ed2_x2 + 160, y + 3 + 20), this);
-		y += row_h;
-
-		m_chkSpEra.Create("시기를 나누어 담기",
-			WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-			CRect(nBase_X, y + 2, nBase_X + 260, y + 2 + 20),
-			this, ID_CHK_SP_ERA);
-		y += row_h;
-	}
+	// 재생버퍼 동적구성과 기여 문턱은 [재학습] 창으로 옮겼다.
+	y += 10;
 
 	// 적용 버튼 하나로 네 묶음을 함께 저장한다.
 	//
 	// 처음에는 묶음마다 버튼을 두었는데, 화면에 적용 버튼이 둘이면 어느
 	// 것을 눌러야 하는지 매번 판단해야 하고 한쪽만 누르고 끝내기도 쉽다.
 	//
-	// 캡션이 "저장" 이 아닌 이유: 파일에 쓰는 것으로 끝이 아니라 파이썬을
-	// 다시 기동해야 실제로 반영된다. "저장" 이라고 하면 눌렀으니 됐다고
-	// 여기기 쉽다.
-	m_btnSaveStage.Create("설정 적용", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+	// 파일에 쓰는 것으로 끝이 아니라 파이썬을 다시 기동해야 실제로 반영된다.
+	m_btnSaveStage.Create("설정 저장", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
 		CRect(nBase_X, y + 6, nBase_X + btn_w, y + 6 + 26),
 		this, ID_BTN_SAVE_STAGE);
 
@@ -504,6 +479,17 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	m_btnRetrain.Create("재학습", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
 		CRect(nBase_X + btn_w + 10, y + 6, nBase_X + btn_w * 2 + 10, y + 6 + 26),
 		this, ID_BTN_RETRAIN);
+
+	// 서버 Mask 받기.
+	//
+	// 맨 윗줄에 [카메라 이동보정] 과 나란히 있었는데, 둘은 하는 일이
+	// 전혀 다르다. 저쪽은 같은 선택을 밀린 만큼 옮기는 것이고, 이쪽은
+	// 감시 대상(어느 칸을 볼지) 자체를 서버 것으로 갈아치운다. 자주
+	// 누를 일도 아니라 맨 아래로 내렸다.
+	m_btnGetMask_Server.Create("서버 Mask 받기", mask_btn_style | WS_TABSTOP,
+		CRect(nBase_X + (btn_w + 10) * 2, y + 6,
+		      nBase_X + (btn_w + 10) * 2 + btn_w, y + 6 + 26),
+		this, ID_BTN_GET_MASK_SVR);
 
 	// 설정 영역의 끝을 긋는다. 위쪽 두 구분선과 짝을 이뤄 영역이 어디서
 	// 끝나는지 분명해진다.
@@ -520,6 +506,10 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 			CRect(nBase_X, y + 42, sepRight, y + 44), this);
 	}
 
+	// 이 영역이 실제로 필요로 하는 높이. 메인 창이 고정값 대신 이 값으로 펼친다.
+	// 항목을 늘릴 때마다 고정값을 고쳐야 했고, 잊으면 맨 아래 버튼이 잘렸다.
+	m_nContentH = (int)(y + 44 + 12);
+
 	// -------------------------------------------------------------
 	// 현재 진행 상황 — 설정란 오른편
 	//
@@ -527,7 +517,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 진행 상황을 나란히 두어 한눈에 비교하게 한다.
 	//
 	// 메인 창 너비가 678 이라 오른편에 300 남짓 쓸 수 있다. 그런데
-	// "1단계 사용 중  표본 12,345/3,000 · 시간대 20/18" 은 한 줄로 400 이
+	// "2단계 사용 중  표본 12,345/3,000 · 시간대 20/18" 은 한 줄로 400 이
 	// 넘어 잘린다. 그래서 단계마다 두 줄로 적는다. 컨트롤을 6개로 늘리는
 	// 대신 라벨 하나를 두 줄 높이로 만들고 \r\n 으로 줄을 나눈다.
 	// -------------------------------------------------------------
@@ -549,30 +539,99 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	m_capNow.Create("[ 현재 진행 ]", WS_CHILD | WS_VISIBLE | SS_LEFT,
 		CRect(col2_x, stage_top, col2_x + col2_w, stage_top + 22), this);
 
-	// 0단계(절대 임계값)도 늘 동작하므로 함께 보여준다. 네 항목이 되면서
+	// 1단계(절대 임계값)도 늘 동작하므로 함께 보여준다. 네 항목이 되면서
 	// 간격을 62 -> 54 로 줄였다.
 	long ny = stage_top + 26;
-	CStatic* stg[4] = { &m_lblStage0, &m_lblStage1, &m_lblStage2, &m_lblStage3 };
+	CStatic* stg[5] = { &m_lblStage0, &m_lblStage1, &m_lblStage2, &m_lblStage3,
+		&m_lblOpState };
 	// 칸마다 줄 수가 다르다. 한 값으로 두면 긴 칸의 마지막 줄이 잘린다.
 	//
-	//   0 절대임계값   제목 · 온도/상승률                  2줄
-	//   1 셀별기준선   제목 · 표본/시간대                  2줄
+	//   0 절대임계값   제목 · 온도/상승률 · 지금 잰 값     3줄
+	//   1 경험임계값   제목 · 표본/시간대 · 언제부터 왜    4줄 (사유가 접힌다)
 	//   2 오토인코더   제목 · 세대 · 모델 파일 시각        3줄
 	//   3 연속학습     제목 · 재학습 가능 · 점수 · 기여    4줄
-	static const long STAGE_H[4] = { 52, 52, 78, 108 };
+	//   4 운전 상태     제목 · 최근 구성 · 가동 판정 온도    5줄
+	static const long STAGE_H[5] = { 78, 102, 78, 60, 104 };
+	const long STAGE1_TEXT_H = 68;       // 2단계 글상자 높이(세 줄). 나머지는 버튼 줄(위 0 · 아래 8)
 	const long STAGE_GAP = 8;
 
-	for (int i = 0; i < 4; ++i)
+	// 단계마다 등을 하나씩 단다.
+	//
+	// 1~3단계에만 붙인다. 연속학습과 운전 상태는 켜지고 꺼지는 것이 아니라
+	// 상황을 적는 칸이라, 등을 달면 뜻이 없는 색이 하나 더 는다. 다섯 칸의
+	// 글 시작 자리는 모두 같은 만큼 밀어 줄을 맞춘다.
+	const long LAMP_W = 20;
+	long stage1_y = ny;
+
+	for (int i = 0; i < 5; ++i)
 	{
+		if (i < 3)
+		{
+			m_lampStage[i].Create("●", WS_CHILD | WS_VISIBLE | SS_LEFT,
+				CRect(col2_x, ny - 1, col2_x + LAMP_W, ny + 21), this);
+		}
+
+		if (i == 1) stage1_y = ny;      // 버튼은 글상자 뒤에 만든다
+
+		// 2단계 글상자는 [임계값] 버튼 자리까지 폭이 넓다. 글이 바뀌어 다시 그려지면 버튼을
+		// 덮으므로, 글을 고친 뒤 LoadStageStatus 가 버튼을 다시 그린다.
 		stg[i]->Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
-			CRect(col2_x, ny, col2_x + col2_w, ny + STAGE_H[i]), this);
+			CRect(col2_x + LAMP_W, ny, col2_x + col2_w,
+				ny + (i == 1 ? STAGE1_TEXT_H : STAGE_H[i])), this);
 		ny += STAGE_H[i] + STAGE_GAP;
+	}
+
+	// 2단계 줄 끝에 칸별 기준값을 여는 작은 버튼.
+	//
+	// 이 칸은 표본 수밖에 말하지 못한다. "어느 칸이 선에 가까운가" 는
+	// 격자로 봐야 하는데, 좁은 칸에 64개를 넣을 수는 없다.
+	//
+	// 글상자를 만든 뒤에 만든다. 새로 만든 형제가 z 순서에서 위에 서므로,
+	// 먼저 만들면 2단계 글상자가 버튼을 덮어 보이지도 눌리지도 않았다.
+	{
+		const long bw = 64;
+		m_btnCellBase.Create("임계값", WS_CHILD | WS_VISIBLE | WS_TABSTOP
+			| BS_PUSHBUTTON,
+			CRect(col2_x + col2_w - bw, stage1_y - 2,
+			      col2_x + col2_w, stage1_y + 20), this, ID_BTN_CELLBASE);
+
+		// 경험 임계값을 손으로 다시 세우는 두 가지 길. 2단계 글 바로 아래에 둔다.
+		//
+		// 둘 다 쓰던 것을 _retired_baseline 으로 옮기므로 되돌릴 수 있지만,
+		// 감시가 돌고 있으면 메모리에 든 기준선이 200건마다 다시 저장되어
+		// 고친 것을 덮어쓴다. 눌렀을 때 그 상태면 막는다.
+		const long bw1 = 118, bw2 = 128, gap = 8;
+		const long bx = col2_x + LAMP_W;
+		const long by = stage1_y + STAGE1_TEXT_H;
+
+		m_btnBaseFresh.Create("현재부터쌓기", WS_CHILD | WS_VISIBLE | WS_TABSTOP
+			| BS_PUSHBUTTON, CRect(bx, by, bx + bw1, by + 26), this,
+			ID_BTN_BASE_FRESH);
+
+		m_btnBaseRebuild.Create("DB에서되쌓기", WS_CHILD | WS_VISIBLE | WS_TABSTOP
+			| BS_PUSHBUTTON,
+			CRect(bx + bw1 + gap, by, bx + bw1 + gap + bw2, by + 26), this,
+			ID_BTN_BASE_REBUILD);
 	}
 
 	LoadStageSettings();
 	LoadAbsSettings();
 	LoadContribSettings();
 	LoadSampleSettings();
+	// 오른쪽 열이 왼쪽 입력 열보다 길면 아래 구분선이 열을 가로지른다.
+	{
+		const long need = ny + 4;
+		CRect rs;
+		m_sepBottom.GetWindowRect(&rs);
+		ScreenToClient(&rs);
+		if (rs.top < need)
+		{
+			m_sepBottom.SetWindowPos(NULL, rs.left, need, rs.Width(), rs.Height(),
+				SWP_NOZORDER);
+			m_nContentH = (int)(need + 2 + 12);
+		}
+	}
+
 	LoadStageStatus();
 
 	// 다이알로그와 하위개체까지 Font 지정 효과 전달하기 위함
@@ -582,6 +641,81 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 }
 
 //---------------------------------------------------------
+
+// 현황 파일의 UTF-8 한글을 화면 부호(CP_ACP)로 옮긴다.
+//
+// stage_status.ini 는 UTF-8 이고 이 빌드는 MBCS 다. ini_read_utf8 은 파일
+// 바이트를 그대로 돌려주므로, 숫자·날짜·세대 이름처럼 ASCII 인 값은 문제가
+// 없었다. 운전 상태가 그 파일에서 읽는 첫 한글이다.
+static CStringA StatusUtf8(const std::string& u)
+{
+	if (u.empty()) return CStringA();
+
+	const int wn = MultiByteToWideChar(CP_UTF8, 0, u.c_str(), -1, nullptr, 0);
+	if (wn <= 0) return CStringA(u.c_str());     // UTF-8 이 아니면 그대로
+
+	CStringW w;
+	MultiByteToWideChar(CP_UTF8, 0, u.c_str(), -1, w.GetBuffer(wn), wn);
+	w.ReleaseBuffer();
+
+	const int an = WideCharToMultiByte(CP_ACP, 0, w, -1, nullptr, 0,
+		nullptr, nullptr);
+	if (an <= 0) return CStringA(u.c_str());
+
+	CStringA a;
+	WideCharToMultiByte(CP_ACP, 0, w, -1, a.GetBuffer(an), an, nullptr, nullptr);
+	a.ReleaseBuffer();
+	return a;
+}
+
+// 글이 그대로면 다시 쓰지 않는다.
+//
+// [현재 진행] 은 2초마다 다시 읽는다. 값이 같은데도 매번 쓰면 글자가
+// 쉬지 않고 깜빡여 읽을 수 없다.
+static void SetIfChanged(CStatic& w, const CStringA& s)
+{
+	if (!w.GetSafeHwnd()) return;
+
+	CString cur;
+	w.GetWindowText(cur);
+	if (cur.Compare(s) != 0) w.SetWindowTextA(s);
+}
+
+// 단계 등의 색.
+//
+// 메인 창 현장 콤보 앞의 표식과 같은 색을 쓴다. 두 화면이 다른 색으로
+// 같은 말을 하면 하나를 더 외워야 한다.
+HBRUSH CDlg_Set_MmCam_Env::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
+{
+	HBRUSH hbr = CDialogEx::OnCtlColor(pDC, pWnd, nCtlColor);
+
+	for (int i = 0; i < 3; ++i)
+	{
+		if (!m_lampStage[i].GetSafeHwnd()) continue;
+		if (pWnd->GetSafeHwnd() != m_lampStage[i].GetSafeHwnd()) continue;
+
+		COLORREF c;
+		switch (m_lampLevel[i])
+		{
+		case 2:  c = RGB(0, 180, 0);     break;   // 사용 중
+		case 1:  c = RGB(255, 200, 0);   break;   // 준비 중
+		default: c = RGB(170, 170, 170); break;   // 꺼짐 · 확인 전
+		}
+		pDC->SetTextColor(c);
+		pDC->SetBkMode(TRANSPARENT);
+		return (HBRUSH)GetStockObject(NULL_BRUSH);
+	}
+	return hbr;
+}
+
+// 등을 새 값으로 바꾼다. 달라졌을 때만 다시 그린다 - 2초마다 부르므로
+// 그냥 Invalidate 하면 쉬지 않고 깜빡인다.
+static void SetLamp(CStatic& w, int& cur, int want)
+{
+	if (cur == want) return;
+	cur = want;
+	if (w.GetSafeHwnd()) w.Invalidate();
+}
 
 std::string CDlg_Set_MmCam_Env::StageIniPath() const
 {
@@ -602,7 +736,7 @@ std::string CDlg_Set_MmCam_Env::LearnIniPath() const
 // continual_learning.ini 에서 읽고, 없으면 env.ini 에서 찾는다.
 //
 // 현장 PC 가 아직 옮기기 전일 수 있다. 그때 기본값으로 떨어지면 화면에
-// 엉뚱한 값이 뜨고, 그대로 [설정 적용] 을 누르면 실제 설정이 바뀐다.
+// 엉뚱한 값이 뜨고, 그대로 [설정 저장] 을 누르면 실제 설정이 바뀐다.
 std::string CDlg_Set_MmCam_Env::LearnRead(const char* key,
                                           const char* def) const
 {
@@ -637,26 +771,6 @@ void CDlg_Set_MmCam_Env::LoadStageSettings()
 
 	s.Format("%d", LearnReadInt("RETRAIN_MIN_HOURS", DEF_AE_HOURS));
 	m_edAeHours.SetWindowTextA(s);
-
-	// 저장된 기준일이 있으면 그 날짜를, 없으면 오늘을 보여준다.
-	//
-	// 오늘을 띄우면 다른 항목만 고치고 [적용] 을 눌렀을 때 기준일이 오늘로
-	// 박혀 그동안 쌓은 기준선이 날아갈 수 있다. 그래서 적용 단계에서
-	// 기준일이 바뀌는 경우 한 번 물어본다 (OnBnClickedSaveStage 참고).
-	const std::string d = LearnRead("CALC_BASE_DATE", DEF_CALC_BASE_DATE);
-
-	int yy = 0, mm = 0, dd = 0;
-	if (d.size() == 10 && sscanf_s(d.c_str(), "%d-%d-%d", &yy, &mm, &dd) == 3
-		&& yy >= 1970 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31)
-	{
-		CTime t(yy, mm, dd, 0, 0, 0);
-		m_dtBaseDate.SetTime(&t);
-	}
-	else
-	{
-		CTime today = CTime::GetCurrentTime();
-		m_dtBaseDate.SetTime(&today);
-	}
 }
 
 //---------------------------------------------------------
@@ -670,6 +784,98 @@ void CDlg_Set_MmCam_Env::LoadStageSettings()
 // 예전 문구는 "감시를 돌리면 표시됩니다" 였는데, 이미 돌리고 있는
 // 사용자에게는 사실과 어긋나는 안내였다. 파일이 없는 이유가 "안 돌려서"
 // 인지 "아직 안 써서" 인지 여기서는 알 수 없으므로, 둘 다 맞는 말로 적는다.
+// 2단계 글 바로 아래에 [현재부터쌓기] [DB에서되쌓기] 를 붙인다. 글이 두 줄일 때와 세 줄일
+// 때 높이가 달라, 고정 위치로 두면 짧은 쪽에서 위 여백이 커진다.
+static void PlaceBaseButtons(CWnd* parent, CStatic& lbl, CButton& b1, CButton& b2)
+{
+	if (!lbl.GetSafeHwnd() || !b1.GetSafeHwnd() || !b2.GetSafeHwnd()) return;
+
+	CString txt;
+	lbl.GetWindowText(txt);
+	CRect rc;
+	lbl.GetClientRect(&rc);
+
+	int textH;
+	{
+		CClientDC dc(&lbl);
+		CFont* f = lbl.GetFont();
+		CFont* old = f ? dc.SelectObject(f) : NULL;
+		CRect m(0, 0, rc.Width(), 0);
+		dc.DrawText(txt, &m, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+		textH = m.Height();
+		if (old) dc.SelectObject(old);
+	}
+
+	CRect rl;
+	lbl.GetWindowRect(&rl);
+	parent->ScreenToClient(&rl);
+
+	// 글상자를 글 높이로 줄인다. 글상자가 버튼보다 먼저 만들어져 z 순서가 위라,
+	// 고정 높이(68)로 두면 글이 짧을 때 버튼 위로 겹쳐 글을 고칠 때마다 버튼을 덮었다.
+	if (rl.Height() != textH)
+	{
+		lbl.SetWindowPos(NULL, 0, 0, rl.Width(), textH,
+			SWP_NOMOVE | SWP_NOZORDER);
+		parent->InvalidateRect(CRect(rl.left, rl.top + min(textH, rl.Height()),
+			rl.right, rl.top + max(textH, rl.Height()) + 30));
+	}
+
+	CButton* bs[2] = { &b1, &b2 };
+	for (int i = 0; i < 2; ++i)
+	{
+		CRect rb;
+		bs[i]->GetWindowRect(&rb);
+		parent->ScreenToClient(&rb);
+		bs[i]->SetWindowPos(NULL, rb.left, rl.top + textH + 2, 0, 0,
+			SWP_NOSIZE | SWP_NOZORDER);
+	}
+}
+
+// 가동 판정 온도 두 줄. 재학습이 자동으로 잡아 남긴 값이라 감시가 멈춰 있어도 보인다.
+static CStringA RunTempText()
+{
+	const std::string ap = std::string(GetMmCamStartPath()) + "users" + "\\" + gUserID
+		+ "\\" "retrain_auto.ini";
+	const std::string rt = ini_read_utf8(ap, "AUTO", "RUN_TEMP", "");
+
+	CStringA t;
+	if (rt.empty())
+		return "    가동 판정 온도 계산 전";
+
+	const std::string pct = ini_read_utf8(ap, "AUTO", "RUN_PCT", "");
+	const std::string at  = ini_read_utf8(ap, "AUTO", "AT", "");
+	std::string per = ini_read_utf8(ap, "AUTO", "PERIOD", "");
+
+	// 기간은 "20260702 ~ 20261005" 로 남아 있다. 날짜마다 20260702 -> 2026-07-02 로 푼다.
+	for (size_t i = 0; i + 8 <= per.size(); )
+	{
+		bool digits = (i == 0 || !isdigit((unsigned char)per[i - 1]));
+		for (size_t k = 0; digits && k < 8; ++k)
+			digits = isdigit((unsigned char)per[i + k]) != 0;
+		if (digits && (i + 8 == per.size() || !isdigit((unsigned char)per[i + 8])))
+		{
+			per.insert(i + 6, "-");
+			per.insert(i + 4, "-");
+			i += 10;
+		}
+		else
+			++i;
+	}
+
+	t.Format("    가동 판정 온도 %s도 (자동)", rt.c_str());
+	if (!pct.empty() || !per.empty())
+	{
+		t += "\r\n    ";
+		if (!pct.empty())
+			t.AppendFormat("가동 %s%%", pct.c_str());
+		if (!per.empty())
+			t.AppendFormat("%s%s", pct.empty() ? "" : " · ", per.c_str());
+	}
+	if (!at.empty())
+		t.AppendFormat("\r\n    %s 기준", at.c_str());
+	return t;
+}
+
 void CDlg_Set_MmCam_Env::LoadStageStatus()
 {
 	const std::string st =
@@ -677,12 +883,95 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 
 	const std::string updated = ini_read_utf8(st, "STATUS", "UPDATED_AT", "");
 
+	const CStringA runTxt = RunTempText();
+
+	// 마지막 기록이 낡았으면 파일에 남은 값을 믿지 않는다. 프로세스가 죽어도
+	// 마지막 값이 남아 등이 계속 초록으로 보였다.
+	const long long age = updated.empty() ? -1 : status_age_seconds(updated);
+	const bool stale = !updated.empty() && (age < 0 || age > STATUS_STALE_SEC);
+
+	// [3단계·기여도] 아래의 현모델 기여도와 계산 일시. 감시가 멈춰 있으면 값을 믿지 않는다.
+	{
+		CStringA h = "기여도 점수   계산 전";
+		if (!updated.empty() && !stale)
+		{
+			const std::string ds = ini_read_utf8(st, "STATUS", "DECISION_SCORE", "");
+			const std::string cw = ini_read_utf8(st, "STATUS", "CONTRIB_W", "");
+			if (!ds.empty() && !cw.empty())
+			{
+				// 기여는 점수에 비례하는 연속값이다. 말로만 "기여 축소" 라고 하면 0.62 와
+				// 0.13 이 구별되지 않는다. 옛 자료 비중을 그대로 적는다.
+				const double w = atof(cw.c_str());
+				CStringA how;
+				if (w >= 1.0)      how = "재학습 불필요";
+				else if (w <= 0.0) how = "새로 시작";
+				else               how.Format("옛 자료 %.0f%%", w * 100.0);
+
+				// 기여도 점수는 지금 모델로 판단 구간을 다시 채점한 중앙값이고, 현모델
+				// 기여도(w)는 그 점수를 문턱으로 환산한 값이다.
+				h.Format("기여도 점수 %s\r\n현모델 기여도 %s · %s",
+					ds.c_str(), cw.c_str(), (LPCSTR)how);
+
+				// 이 점수와 기여도를 계산한 시각. 감시가 약 10분마다 다시 구한다.
+				const std::string cat = ini_read_utf8(st, "STATUS", "CONTRIB_AT", "");
+				if (!cat.empty())
+					h.AppendFormat("\r\n기여도 계산 %s", cat.c_str());
+			}
+		}
+		SetIfChanged(m_lblCtStatus, h);
+	}
+
+	// 재학습 수집 일수 아래의 DB 전체 기간. 먼저 DB 에서 직접 읽은 값을 쓰고,
+	// 아직 못 읽었으면 감시가 남긴 값으로 대신한다(감시가 멈춰 있으면 믿지 않는다).
+	{
+		CStringA h = "0 = 전체";
+		if (m_spanOk)
+		{
+			h.Format("0 = 전체 · DB %d일 (%s ~ %s)", m_spanTables,
+				(LPCSTR)m_spanFirst.Mid(5), (LPCSTR)m_spanLast.Mid(5));
+		}
+		else if (m_spanBusy)
+		{
+			h = "0 = 전체 · DB 확인 중";
+		}
+		else if (!updated.empty() && !stale)
+		{
+			const int n = ini_read_int_utf8(st, "STATUS", "DB_ALL_TABLES", -1);
+			const std::string f = ini_read_utf8(st, "STATUS", "DB_FIRST", "");
+			const std::string l = ini_read_utf8(st, "STATUS", "DB_LAST", "");
+			if (n > 0 && f.size() >= 10 && l.size() >= 10)
+				h.Format("0 = 전체 · DB %d일 (%s ~ %s)", n,
+					f.substr(5).c_str(), l.substr(5).c_str());
+		}
+		SetIfChanged(m_lblSpDaysHint, h);
+	}
+	RequestSpan(false);
+
+	if (stale) {
+		CStringA down;
+		down.Format("감시 중단\r\n    마지막 기록 %s", updated.c_str());
+		SetIfChanged(m_lblShift, "RGB 틀어짐 : 확인 전");
+		SetIfChanged(m_lblStage0, "1단계 절대임계값   " + down);
+		SetIfChanged(m_lblStage1, "2단계 경험임계값   " + down);
+		PlaceBaseButtons(this, m_lblStage1, m_btnBaseFresh, m_btnBaseRebuild);
+		SetIfChanged(m_lblStage2, "3단계 오토인코더   " + down);
+		SetIfChanged(m_lblStage3, "연속학습   " + down);
+		SetIfChanged(m_lblOpState, "운전 상태   확인 전" "\r\n" + runTxt);
+		for (int i = 0; i < 3; ++i)
+			SetLamp(m_lampStage[i], m_lampLevel[i], 0);
+		return;
+	}
+
 	if (updated.empty()) {
-		m_lblShift.SetWindowTextA("RGB 틀어짐 : 확인 전\r\n열화상 틀어짐 : 확인 전");
-		m_lblStage0.SetWindowTextA("0단계 절대임계값   집계 대기\r\n    감시 시작 후 첫 기록까지 잠시 걸립니다");
-		m_lblStage1.SetWindowTextA("1단계 셀별기준선   집계 대기");
-		m_lblStage2.SetWindowTextA("2단계 오토인코더   집계 대기");
-		m_lblStage3.SetWindowTextA("연속학습   집계 대기");
+		SetIfChanged(m_lblShift, "RGB 틀어짐 : 확인 전");
+		SetIfChanged(m_lblStage0, "1단계 절대임계값   집계 대기\r\n    감시 시작 후 첫 기록까지 잠시 걸립니다");
+		SetIfChanged(m_lblStage1, "2단계 경험임계값   집계 대기");
+		PlaceBaseButtons(this, m_lblStage1, m_btnBaseFresh, m_btnBaseRebuild);
+		SetIfChanged(m_lblStage2, "3단계 오토인코더   집계 대기");
+		SetIfChanged(m_lblStage3, "연속학습   집계 대기");
+		SetIfChanged(m_lblOpState, "운전 상태   확인 전" "\r\n" + runTxt);
+		for (int i = 0; i < 3; ++i)
+			SetLamp(m_lampStage[i], m_lampLevel[i], 0);
 		return;
 	}
 
@@ -697,10 +986,7 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	const int db_rows = ini_read_int_utf8(st, "STATUS", "DB_ROWS", -1);
 	const int min_rtr = ini_read_int_utf8(st, "STATUS", "MIN_RETRAIN", -1);
 	const std::string gen_at = ini_read_utf8(st, "STATUS", "GENERATION_AT", "");
-	const std::string bdate  = ini_read_utf8(st, "STATUS", "BASE_DATE", "");
-	// 기준일은 사람이 정하는 정책이고, 누적 시작일은 실제로 쌓기 시작한 날이다.
-	// 둘이 다를 수 있어 따로 보여줘야 표본 수를 해석할 수 있다.
-	const std::string sdate  = ini_read_utf8(st, "STATUS", "STARTED_AT", "");
+
 
 	CStringA t;
 
@@ -744,8 +1030,12 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 			line.Format("RGB 틀어짐 : 판정 불가 (기준과 다른 장면)   (%s 기동 시)",
 				sat.c_str());
 		else if (atoi(sx.c_str()) == 0 && atoi(sy.c_str()) == 0)
-			line.Format("RGB 틀어짐 : %s   (0칸 · %s 기동 시 측정%s)",
-				px.IsEmpty() ? "없음" : (LPCSTR)px, sat.c_str(), old_way);
+			// 짧게 쓴다. 이 줄이 접히면 아래 열화상 줄이 상자 밖으로
+			// 밀려 나가, 2단계가 왜 멈췄는지 화면에서 사라졌다.
+			line.Format("RGB 틀어짐 : 없음   (0칸 · %s · %s%s)",
+				px.IsEmpty() ? "-" : (LPCSTR)px,
+				sat.size() > 11 ? sat.substr(11).c_str() : sat.c_str(),
+				old_way);
 		else
 		{
 			// 이동은 자동으로 보정하지 않는다. 되돌려도 score 가 0.088 에서
@@ -761,50 +1051,16 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 				atoi(sx.c_str()), atoi(sy.c_str()), sat.c_str(), old_way, warn);
 		}
 
-		sh = line + "\r\n";
-
-		// 열화상. TSHIFT_STATE 가 상태를 가른다.
-		//  -1 기준 패턴을 아직 못 굳혔다 (표본을 모으는 중)
-		//   0 화면이 밋밋해 판정할 수 없었다
-		//   1 틀어지지 않았다
-		//   2 틀어졌다 — 몇 칸인지까지 안다
-		//   3 기준 패턴과 안 맞는다 — 방향은 못 밝혔다
-		//
-		// 3 을 따로 두는 이유. kict1 의 실제 사고가 3 이었다. 칸 수를 못
-		// 밝혔다고 "이상 없음" 으로 적으면 그 사고가 그대로 묻힌다.
-		const int tstate = ini_read_int_utf8(st, "STATUS", "TSHIFT_STATE", -1);
-		const std::string tx = ini_read_utf8(st, "STATUS", "TSHIFT_X", "");
-		const std::string ty = ini_read_utf8(st, "STATUS", "TSHIFT_Y", "");
-		const std::string tc = ini_read_utf8(st, "STATUS", "TSHIFT_CORR", "");
-		const std::string tc0 = ini_read_utf8(st, "STATUS", "TSHIFT_CORR0", "");
-		const std::string tat = ini_read_utf8(st, "STATUS", "TSHIFT_AT", "");
-
-		if (tstate < 0)
-			line = "열화상 틀어짐 : 기준 패턴 준비 중";
-		else if (tstate == 0)
-			line = "열화상 틀어짐 : 판정 불가 (화면 온도차 부족)";
-		else if (tstate == 1)
-			line.Format("열화상 틀어짐 : 없음   (일치도 %s · %s 측정)",
-				tc.c_str(), tat.c_str());
-		else if (tstate == 2)
-			line.Format("열화상 틀어짐 : 가로 %+d칸 · 세로 %+d칸   (일치도 %s · %s 측정)",
-				atoi(tx.c_str()), atoi(ty.c_str()), tc.c_str(), tat.c_str());
-		else
-			// 문자열 상수는 CP949 로 저장된다. em dash(U+2014) 는 CP949 에
-			// 없어 C4566 이 난다. 가운뎃점은 있다.
-			line.Format("열화상 화면 불일치 : 일치도 %s · 조준 확인 필요   (%s 측정)",
-				tc0.c_str(), tat.c_str());
-
-		sh += line;
-		m_lblShift.SetWindowTextA(sh);
+		sh = line;
+		SetIfChanged(m_lblShift, sh);
 	}
 
-	// 0단계 — 학습과 무관하게 늘 동작한다. 다만 임계값을 지정하지 않으면
+	// 1단계 — 학습과 무관하게 늘 동작한다. 다만 임계값을 지정하지 않으면
 	// 판정 자체가 꺼져 있으므로 그 구분을 보여준다.
 	const int s0 = ini_read_int_utf8(st, "STATUS", "STAGE0", 0);
 	if (s0)
 	{
-		t.Format("0단계 절대임계값   사용 중\r\n    온도 %s/%s도 · 상승 %s/%s도/분",
+		t.Format("1단계 절대임계값   사용 중\r\n    온도 %s/%s도 · 상승 %s/%s도/분",
 			ini_read_utf8(st, "STATUS", "ABS_TEMP_WARN", "-").c_str(),
 			ini_read_utf8(st, "STATUS", "ABS_TEMP_ALARM", "-").c_str(),
 			ini_read_utf8(st, "STATUS", "ABS_RISE_WARN", "-").c_str(),
@@ -812,18 +1068,96 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	}
 	else
 	{
-		t.Format("0단계 절대임계값   꺼짐\r\n    env.ini 에 ABS_TEMP · ABS_RISE 미지정");
+		t.Format("1단계 절대임계값   꺼짐\r\n    env.ini 에 ABS_TEMP · ABS_RISE 미지정");
 	}
-	m_lblStage0.SetWindowTextA(t);
+
+	// 지금 잰 값. 선만 보여 주면 지금이 그 선에서 얼마나 떨어져 있는지
+	// 알 수 없다. 선을 너무 높게 잡아 평생 걸리지 않는 상태가 바로 그렇게
+	// 숨는다 - cj_busan_1 은 경보선 187도에 관측 최고가 146도였다.
+	if (s0)
+	{
+		const std::string pk = ini_read_utf8(st, "STATUS", "ABS_PEAK", "");
+		const std::string rs = ini_read_utf8(st, "STATUS", "ABS_RISE", "");
+		const int lv = ini_read_int_utf8(st, "STATUS", "ABS_LEVEL", 0);
+
+		if (!pk.empty() && atof(pk.c_str()) >= 0.0)
+		{
+			CStringA now;
+			now.Format("\r\n    지금 %.0f도 · %+.1f도/분   %s",
+				atof(pk.c_str()), atof(rs.c_str()),
+				lv >= 2 ? "경보" : (lv == 1 ? "주의" : "정상"));
+			t += now;
+		}
+		else
+		{
+			t += "\r\n    지금 측정 전";
+		}
+	}
+	SetIfChanged(m_lblStage0, t);
+
+	// 1단계는 중간이 없다. 네 값이 있으면 켜지고 없으면 꺼진다.
+	SetLamp(m_lampStage[0], m_lampLevel[0], s0 ? 2 : 0);
 
 	// 단계 번호만으로는 그것이 무엇인지 알 수 없다. 이름을 함께 적는다.
 	// 좁은 열에 맞추려고 두 줄로 나눈다. 첫 줄은 이름과 상태, 둘째 줄은 근거.
 	//
-	// 1단계는 채점에 쓰이는 중인지까지 구분한다. 준비됐어도 2단계가 있으면
+	// 2단계는 채점에 쓰이는 중인지까지 구분한다. 준비됐어도 3단계가 있으면
 	// 둘이 함께 쓰이므로 "사용 중" 이 맞다.
-	t.Format("1단계 셀별기준선   %s\r\n    표본 %d/%d · 시간대 %d/%d",
-		s1 ? "사용 중" : "누적 중", samples, min_smp, hours, min_hr);
-	m_lblStage1.SetWindowTextA(t);
+	// 쌓고 있는가를 상태와 함께 적는다.
+	//
+	// "사용 중" 만으로는 누적이 멈춘 것이 드러나지 않는다. 표본 수가 늘지
+	// 않는 것으로만 알 수 있어, 알아채려면 몇 분을 지켜봐야 했다.
+	CStringA stop;
+	{
+		const std::string lo = ini_read_utf8(st, "STATUS", "ACCUM_OK", "");
+		const CStringA lw = StatusUtf8(
+			ini_read_utf8(st, "STATUS", "ACCUM_WHY", ""));
+		if (lo == "0")
+			stop.Format(" · 누적 멈춤 (%s)",
+				lw.IsEmpty() ? "사유 미상" : (LPCSTR)lw);
+	}
+
+	t.Format("2단계 경험임계값   %s%s\r\n    표본 %d/%d · 시간대 %d/%d",
+		s1 ? "사용 중" : "누적 중", (LPCSTR)stop,
+		samples, min_smp, hours, min_hr);
+
+	// 왜 처음부터 쌓고 있는가.
+	//
+	// "누적 중" 만 보고는 설치 직후인지, 되돌리기로 치운 것인지, 파일이
+	// 깨져 다시 시작한 것인지 알 수 없다. 셋은 할 일이 전혀 다르다 -
+	// 앞은 기다리면 되고, 뒤는 사람이 손을 대야 한다.
+	{
+		const CStringA why = StatusUtf8(
+			ini_read_utf8(st, "STATUS", "RESET_WHY", ""));
+		const CStringA at = StatusUtf8(
+			ini_read_utf8(st, "STATUS", "RESET_AT", ""));
+		const CStringA from = StatusUtf8(
+			ini_read_utf8(st, "STATUS", "STARTED_AT", ""));
+
+		// 사유가 없는 것과 "사유가 없음을 확인했다" 는 다르다. 쪽지를
+		// 남기기 전에 시작된 누적이면 왜 그때 처음부터였는지 알 길이
+		// 없으므로, 모른다고 적는다.
+		CStringA line;
+		if (!why.IsEmpty() && !at.IsEmpty())
+			line.Format("\r\n    %s %s", (LPCSTR)at, (LPCSTR)why);
+		else if (!why.IsEmpty())
+			line.Format("\r\n    %s", (LPCSTR)why);
+		else if (!from.IsEmpty())
+			line.Format("\r\n    %s 부터 이어 쌓는 중 (초기화 기록 없음)",
+				(LPCSTR)from);
+		else
+			line = "\r\n    초기화 기록 없음";
+
+		t += line;
+	}
+	SetIfChanged(m_lblStage1, t);
+	PlaceBaseButtons(this, m_lblStage1, m_btnBaseFresh, m_btnBaseRebuild);
+	if (m_btnCellBase.GetSafeHwnd()) m_btnCellBase.RedrawWindow();
+
+	// 2단계는 중간이 있다. 아직 모자라도 쌓고 있으면 노랑이다 - 꺼진
+	// 것과 차오르는 중인 것은 할 일이 다르다.
+	SetLamp(m_lampStage[1], m_lampLevel[1],
+		s1 ? 2 : (samples > 0 ? 1 : 0));
 
 	// 지금 쓰고 있는 세대와 모델 파일의 시각을 적는다.
 	//
@@ -840,64 +1174,65 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	{
 		const std::string gen = ini_read_utf8(st, "STATUS", "GENERATION", "");
 		const std::string mat = ini_read_utf8(st, "STATUS", "MODEL_AT", "");
-		t.Format("2단계 오토인코더   사용 중\r\n    세대 %s\r\n    모델 %s",
+		t.Format("3단계 오토인코더   사용 중\r\n    세대 %s\r\n    모델 %s",
 			gen.empty() ? "-" : gen.c_str(),
 			mat.empty() ? "-" : mat.c_str());
 	}
 	else
 	{
-		t.Format("2단계 오토인코더   없음\r\n    모델 파일이 아직 없습니다\r\n");
+		t.Format("3단계 오토인코더   없음\r\n    모델 파일이 아직 없습니다\r\n");
 	}
-	m_lblStage2.SetWindowTextA(t);
+	SetIfChanged(m_lblStage2, t);
+
+	// 3단계도 중간이 있다. 모델은 없지만 재학습에 쓸 자료가 차오르는 중이면
+	// 노랑이다 (DB 행 수를 최소 재학습 조건과 견준다).
+	SetLamp(m_lampStage[2], m_lampLevel[2],
+		s2 ? 2 : (db_rows > 0 ? 1 : 0));
 
 	if (s3 && !gen_at.empty())
-		t.Format("연속학습   적용됨\r\n    최근 승격 %s", gen_at.c_str());
+		t.Format("연속학습   현황\r\n    최근 승격 %s", gen_at.c_str());
 	else if (db_rows >= 0 && min_rtr > 0)
 		t.Format("연속학습   대기\r\n    재학습 가능 %d/%d건", db_rows, min_rtr);
 	else
 		t.Format("연속학습   대기\r\n    아직 재학습 이력이 없습니다");
 
-	// 재학습이 기존 모델을 얼마나 물려받을지.
+	SetIfChanged(m_lblStage3, t);
+
+	// 운전 상태.
 	//
-	// 카메라가 몇 칸 밀렸는지로는 모델이 쓸 만한지 알 수 없다. 실측에서
-	// 3칸을 밀어도 score 가 0.890 이었고, kict1 은 1.3칸 밀린 상태로
-	// 0.088 이었다. 그래서 지금 내고 있는 점수로 정한다.
+	// 단계가 아니라 "지금 설비가 어떤 상황인가" 다. 미리 만들어 둔 군집
+	// 중심(users/<현장>/op_states.json)으로 매 프레임 이름을 붙인 것이고,
+	// 경보에도 학습에도 쓰이지 않는다.
 	{
-		const std::string ds = ini_read_utf8(st, "STATUS", "DECISION_SCORE", "");
-		const std::string cw = ini_read_utf8(st, "STATUS", "CONTRIB_W", "");
-		if (!ds.empty() && !cw.empty())
-		{
-			// 기여는 이제 네 단계가 아니라 점수에 비례하는 연속값이다.
-			// 말로만 "기여 축소" 라고 하면 0.62 와 0.13 이 구별되지 않는다.
-			// 옛 자료 비중을 그대로 적는다.
-			const double w = atof(cw.c_str());
-			CStringA how;
-			if (w >= 1.0)      how = "평소대로 이어감";
-			else if (w <= 0.0) how = "새로 시작";
-			else               how.Format("옛 자료 %.0f%%", w * 100.0);
-			// 한 줄에 다 넣으면 열 폭을 넘어 잘린다. 두 줄로 나눈다.
-			CStringA c2;
-			c2.Format("\r\n    판단 점수 %s"
-			          "\r\n    기존 모델 기여 %s · %s",
-				ds.c_str(), cw.c_str(), (LPCSTR)how);
-			t += c2;
-		}
+		const CStringA opn = StatusUtf8(ini_read_utf8(st, "STATUS", "OP_STATE", ""));
+		const CStringA opm = StatusUtf8(ini_read_utf8(st, "STATUS", "OP_MIX", ""));
+		const CStringA opi = StatusUtf8(ini_read_utf8(st, "STATUS", "OP_INFO", ""));
+
+		CStringA o;
+		if (!opn.IsEmpty())
+			o.Format("운전 상태   %s\r\n    최근 %s", (LPCSTR)opn,
+				opm.IsEmpty() ? "-" : (LPCSTR)opm);
+		else if (!opi.IsEmpty())
+			o.Format("운전 상태   없음\r\n    %s", (LPCSTR)opi);
+		else
+			o = "운전 상태   확인 전";
+		o += "\r\n";
+		o += runTxt;
+		SetIfChanged(m_lblOpState, o);
 	}
-	m_lblStage3.SetWindowTextA(t);
 
-	// 기준일과 갱신 시각은 상단 안내줄에 함께 보여준다.
+	// 갱신 시각은 상단 안내줄에 함께 보여준다. 기준선 창의 기간과 건수는 [2단계
+	// 경험임계값] 칸의 "표본 N/3,000" 과 겹쳐서 여기에는 적지 않는다.
 	CStringA head;
-	CStringA sfrom;
-	if (!sdate.empty() && sdate != bdate)
-		sfrom.Format(" (누적 %s~)", sdate.c_str());
-
-	head.Format("[%s]  기준일 %s%s  ·  현황 %s  ·  현재 채점 %s",
+	head.Format("[%s]  ·  현황 %s  ·  현재 채점 %s",
 		gUserID.c_str(),
-		bdate.empty() ? "전체" : bdate.c_str(),
-		(LPCSTR)sfrom,
 		updated.c_str(),
-		used < 0 ? "-" : (used == 2 ? "2단계" : (used == 1 ? "1단계" : "0단계")));
-	m_cap_0.SetWindowTextA(head);
+		used < 0 ? "-" : (used == 2 ? "3단계" : (used == 1 ? "2단계" : "1단계")));
+
+	// 머리줄은 결과 메시지와 자리를 함께 쓴다. 방금 [설정 저장] 이 남긴
+	// 글이 2초 만에 지워지면 무엇이 저장됐는지 읽을 틈이 없다.
+	if (GetTickCount() >= m_msgHoldUntil)
+		SetIfChanged(m_cap_0, head);
 }
 
 //---------------------------------------------------------
@@ -909,25 +1244,14 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 {
 	if (gUserID.empty()) {
-		m_cap_0.SetWindowTextA("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
 		return;
 	}
 
-	CString a, b, c, d;
+	CString a, b, c;
 	m_edBaseSamples.GetWindowTextA(a);
 	m_edBaseHours.GetWindowTextA(b);
 	m_edAeSamples.GetWindowTextA(c);
-	// 달력에는 늘 날짜가 들어 있다. 다만 "전체 기간" 표시용으로 쓰는
-	// 아주 이른 날짜라면 env.ini 에는 빈 값으로 적는다. 그래야 파이썬 쪽이
-	// 지금처럼 "제한 없음" 으로 동작하고, 기준일이 바뀌었다고 오해해
-	// 기준선을 헛되이 버리는 일도 없다.
-	CTime dt;
-	if (m_dtBaseDate.GetTime(dt) == GDT_VALID)
-	{
-		const CTime all(ALL_PERIOD_Y, ALL_PERIOD_M, ALL_PERIOD_D, 0, 0, 0);
-		if (dt > all) d = dt.Format("%Y-%m-%d");
-	}
-
 	const int base_samples = atoi(a);
 	const int base_hours   = atoi(b);
 	const int ae_samples   = atoi(c);
@@ -937,23 +1261,23 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	// 터무니없는 값이 들어가면 감시가 영영 시작되지 않거나(너무 큼),
 	// 아무것도 못 배운 상태로 채점을 시작한다(너무 작음). 여기서 막는다.
 	if (base_samples < 100 || base_samples > 1000000) {
-		m_cap_0.SetWindowTextA("[ERROR] 기준선 최소 표본은 100 ~ 1,000,000 사이여야 합니다.");
+		Msg("[ERROR] 기준선 최소 표본은 100 ~ 1,000,000 사이여야 합니다.");
 		return;
 	}
 	if (base_hours < 1 || base_hours > 24) {
-		m_cap_0.SetWindowTextA("[ERROR] 기준선 최소 시간대는 1 ~ 24 사이여야 합니다.");
+		Msg("[ERROR] 기준선 최소 시간대는 1 ~ 24 사이여야 합니다.");
 		return;
 	}
 	if (ae_samples < 1000 || ae_samples > 1000000) {
-		m_cap_0.SetWindowTextA("[ERROR] 재학습 최소 표본은 1,000 ~ 1,000,000 사이여야 합니다.");
+		Msg("[ERROR] 재학습 최소 표본은 1,000 ~ 1,000,000 사이여야 합니다.");
 		return;
 	}
 	if (ae_hours < 1 || ae_hours > 24) {
-		m_cap_0.SetWindowTextA("[ERROR] 재학습 최소 시간대는 1 ~ 24 사이여야 합니다.");
+		Msg("[ERROR] 재학습 최소 시간대는 1 ~ 24 사이여야 합니다.");
 		return;
 	}
 
-	// --- 0단계 절대 임계값 -----------------------------------------
+	// --- 1단계 절대 임계값 -----------------------------------------
 	// 버튼 하나로 두 묶음을 함께 저장하므로 여기서 같이 검사한다.
 	CString at, aa, ar, arA;
 	m_edAbsTempWarn.GetWindowTextA(at);
@@ -961,14 +1285,14 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	m_edAbsRiseWarn.GetWindowTextA(ar);
 	m_edAbsRiseAlarm.GetWindowTextA(arA);
 
-	// 네 칸을 모두 비우면 0단계를 끈다. 일부만 비우는 것은 어중간한 상태라
+	// 네 칸을 모두 비우면 1단계를 끈다. 일부만 비우는 것은 어중간한 상태라
 	// 막는다 — 온도만 넣고 상승률을 비우면 어느 쪽이 의도인지 알 수 없다.
 	const bool bAbsAllEmpty = at.IsEmpty() && aa.IsEmpty() && ar.IsEmpty() && arA.IsEmpty();
 	const bool bAbsAnyEmpty = at.IsEmpty() || aa.IsEmpty() || ar.IsEmpty() || arA.IsEmpty();
 
 	if (!bAbsAllEmpty && bAbsAnyEmpty) {
-		m_cap_0.SetWindowTextA("[ERROR] 절대 임계값 네 칸을 모두 채우거나 모두 비우십시오. "
-			"모두 비우면 0단계 경보가 꺼집니다.");
+		Msg("[ERROR] 절대 임계값 네 칸을 모두 채우거나 모두 비우십시오. "
+			"모두 비우면 1단계 경보가 꺼집니다.");
 		return;
 	}
 
@@ -978,140 +1302,80 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 
 		// 격자 온도는 0~255 범위다(utils.Conv_LWIR_to_64_Vector 와 같은 기준).
 		if (tw < 1 || tw > 255 || ta < 1 || ta > 255) {
-			m_cap_0.SetWindowTextA("[ERROR] 온도는 1 ~ 255 도 사이여야 합니다.");
+			Msg("[ERROR] 온도는 1 ~ 255 도 사이여야 합니다.");
 			return;
 		}
 		if (rw < 1 || rw > 500 || ra < 1 || ra > 500) {
-			m_cap_0.SetWindowTextA("[ERROR] 상승률은 1 ~ 500 도/분 사이여야 합니다.");
+			Msg("[ERROR] 상승률은 1 ~ 500 도/분 사이여야 합니다.");
 			return;
 		}
 		// 주의선이 경보선보다 높으면 주의가 영영 뜨지 않는다.
 		if (tw >= ta || rw >= ra) {
-			m_cap_0.SetWindowTextA("[ERROR] 주의선은 경보선보다 낮아야 합니다.");
+			Msg("[ERROR] 주의선은 경보선보다 낮아야 합니다.");
 			return;
 		}
 	}
 
 	// --- 기여도 판단 기준 -------------------------------------------
 	// 여기 값이 틀리면 기여도가 통째로 멈추거나(기간 0) 4건의 중앙값으로
-	// 모델을 버릴지 정하게 된다(최소 프레임 1). 범위를 좁게 막는다.
-	CString cw, cf, cs, cbl, cbh;
+	// 모델을 버릴지 정하게 된다(최소 표본 1). 범위를 좁게 막는다.
+	CString cw, cf, cs;
 	m_edCtWindow.GetWindowTextA(cw);
 	m_edCtMinFrames.GetWindowTextA(cf);
 	m_edCtMaxSamples.GetWindowTextA(cs);
-	m_edCtBandLow.GetWindowTextA(cbl);
-	m_edCtBandHigh.GetWindowTextA(cbh);
 
 	const int ct_window  = atoi(cw);
 	const int ct_frames  = atoi(cf);
 	const int ct_samples = atoi(cs);
-	const double ct_low  = atof(cbl);
-	const double ct_high = atof(cbh);
 
 	// 날짜 테이블 수. 60 이면 두 달이라 "지금도 맞는가" 를 묻는 뜻이 사라진다.
 	if (ct_window < 1 || ct_window > 60) {
-		m_cap_0.SetWindowTextA("[ERROR] 판단 기간은 1 ~ 60 (날짜 테이블 수) 사이여야 합니다.");
+		Msg("[ERROR] 판단 최소 일수는 1 ~ 60 (날짜 테이블 수) 사이여야 합니다.");
 		return;
 	}
 	if (ct_frames < 10 || ct_frames > 1000000) {
-		m_cap_0.SetWindowTextA("[ERROR] 최소 프레임은 10 ~ 1,000,000 사이여야 합니다.");
+		Msg("[ERROR] 기여도 최소 표본은 10 ~ 1,000,000 사이여야 합니다.");
 		return;
 	}
 	if (ct_samples < 100 || ct_samples > 1000000) {
-		m_cap_0.SetWindowTextA("[ERROR] 표본 상한은 100 ~ 1,000,000 사이여야 합니다.");
+		Msg("[ERROR] 표본 상한은 100 ~ 1,000,000 사이여야 합니다.");
 		return;
 	}
-	// 상한이 최소보다 작으면, 판단에 쓰기로 한 최소치보다 적은 프레임으로
+	// 상한이 최소보다 작으면, 판단에 쓰기로 한 최소치보다 적은 표본으로
 	// 점수를 매기게 된다. 앞뒤가 맞지 않는다.
 	if (ct_samples < ct_frames) {
-		m_cap_0.SetWindowTextA("[ERROR] 표본 상한이 최소 프레임보다 작습니다.");
-		return;
-	}
-	// 문턱. 점수는 exp(-mse*10) 이라 0 ~ 1 범위다.
-	if (ct_low <= 0.0 || ct_low >= 1.0 || ct_high <= 0.0 || ct_high > 1.0) {
-		m_cap_0.SetWindowTextA("[ERROR] 기여 문턱은 0 초과 1 이하여야 합니다.");
-		return;
-	}
-	if (ct_low >= ct_high) {
-		m_cap_0.SetWindowTextA("[ERROR] 기여 문턱의 '하' 는 '상' 보다 낮아야 합니다.");
+		Msg("[ERROR] 기여도 최대 표본이 최소 표본보다 작습니다.");
 		return;
 	}
 
 	// --- 학습 표본 구성 ---------------------------------------------
-	CString sp_t, sp_s, sp_r;
+	CString sp_t, sp_d;
 	m_edSpTarget.GetWindowTextA(sp_t);
-	m_edSpScore.GetWindowTextA(sp_s);
-	m_edSpRunTemp.GetWindowTextA(sp_r);
+	m_edSpDays.GetWindowTextA(sp_d);
 
-	const int    sp_target = atoi(sp_t);
-	const double sp_score  = atof(sp_s);
-	const int    sp_era    = (m_chkSpEra.GetCheck() == BST_CHECKED) ? 1 : 0;
+	const int sp_target = atoi(sp_t);
+	const int sp_days   = sp_d.IsEmpty() ? 0 : atoi(sp_d);
 
 	// 목표가 너무 작으면 시간대와 가동상태를 다 덮지 못하고, 너무 크면
 	// 모으는 데만 오래 걸린다. 48칸에 최소 스무 건씩은 들어가야 한다.
 	if (sp_target < 1000 || sp_target > 1000000) {
-		m_cap_0.SetWindowTextA("[ERROR] 목표 표본 수는 1,000 ~ 1,000,000 사이여야 합니다.");
+		Msg("[ERROR] 재학습 최대 표본 수는 1,000 ~ 1,000,000 사이여야 합니다.");
 		return;
 	}
-	// 점수는 exp(-mse*10) 이라 0 ~ 1 범위다. 0 으로 두면 이상 프레임까지
-	// 학습에 들어가므로 막는다.
-	if (sp_score <= 0.0 || sp_score >= 1.0) {
-		m_cap_0.SetWindowTextA("[ERROR] 정상 판정선은 0 초과 1 미만이어야 합니다.");
+	// 0 은 전체. 너무 짧으면 시각 x 가동상태 48칸을 채우지 못한다.
+	if (sp_days < 0 || sp_days > 3650) {
+		Msg("[ERROR] 재학습 수집 일수는 0(전체) 또는 1 ~ 3650 사이여야 합니다.");
 		return;
-	}
-	// 가동 판정 온도는 비울 수 있다. 비우면 자료에서 스스로 잡는다.
-	if (!sp_r.IsEmpty()) {
-		const double rt = atof(sp_r);
-		if (rt <= 0.0 || rt > 255.0) {
-			m_cap_0.SetWindowTextA("[ERROR] 가동 판정 온도는 1 ~ 255 도 사이여야 합니다. "
-				"비우면 자료에서 스스로 잡습니다.");
-			return;
-		}
 	}
 
 	// 쓰는 곳은 continual_learning.ini 하나다. env.ini 에 옛 값이 남아 있어도 파이썬과
 	// C++ 모두 continual_learning.ini 를 먼저 보므로 이쪽이 이긴다.
 	const std::string ini = LearnIniPath();
 
-	const std::string prev_date = LearnRead("CALC_BASE_DATE", "");
-	const std::string new_date  = (const char*)CStringA(d);
-
-	// 기준일이 바뀌면 셀별 기준선을 버리고 처음부터 다시 쌓는다. 며칠치
-	// 누적이 사라지는 일이라 그냥 진행하지 않고 한 번 물어본다.
-	//
-	// 지정된 값이 없을 때 달력에 오늘이 떠 있으므로, 다른 항목만 고치고
-	// [적용] 을 눌러도 기준일이 오늘로 바뀌는 상황이 생긴다. 그 경우를
-	// 사용자가 알아채지 못한 채 지나가게 두면 안 된다.
-	if (prev_date != new_date)
-	{
-		const std::string st = std::string(GetMmCamStartPath())
-			+ "users\\" + gUserID + "\\stage_status.ini";
-		const int samples = ini_read_int_utf8(st, "STATUS", "SAMPLES", -1);
-
-		CStringA q;
-		q.Format("계산기준일을 %s -> %s 로 바꿉니다.\r\n\r\n"
-			"셀별 기준선을 버리고 처음부터 다시 쌓습니다.\r\n",
-			prev_date.empty() ? "전체" : prev_date.c_str(),
-			new_date.empty() ? "전체" : new_date.c_str());
-
-		if (samples > 0) {
-			CStringA add;
-			add.Format("지금까지 쌓인 표본 %d건이 사라집니다.\r\n", samples);
-			q += add;
-		}
-		q += "\r\n진행할까요?";
-
-		if (AfxMessageBox(q, MB_YESNO | MB_ICONWARNING) != IDYES) {
-			m_cap_0.SetWindowTextA("[취소] 아무것도 바꾸지 않았습니다.");
-			return;
-		}
-	}
-
 	bool ok = ini_write_int_utf8(ini, "CONSTANTS", "BASELINE_MIN_SAMPLES", base_samples)
 		&& ini_write_int_utf8(ini, "CONSTANTS", "BASELINE_MIN_HOURS", base_hours)
 		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_SAMPLES", ae_samples)
 		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_MIN_HOURS", ae_hours)
-		&& ini_write_utf8(ini, "CONSTANTS", "CALC_BASE_DATE", new_date)
 		&& ini_write_utf8(ini, "CONSTANTS", "ABS_TEMP_WARN",  (const char*)CStringA(at))
 		&& ini_write_utf8(ini, "CONSTANTS", "ABS_TEMP_ALARM", (const char*)CStringA(aa))
 		&& ini_write_utf8(ini, "CONSTANTS", "ABS_RISE_WARN",  (const char*)CStringA(ar))
@@ -1119,22 +1383,13 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 		&& ini_write_int_utf8(ini, "CONSTANTS", "CONTRIB_WINDOW_TABLES", ct_window)
 		&& ini_write_int_utf8(ini, "CONSTANTS", "CONTRIB_MIN_FRAMES", ct_frames)
 		&& ini_write_int_utf8(ini, "CONSTANTS", "CONTRIB_MAX_SAMPLES", ct_samples)
-		// 문턱은 적은 그대로 쓴다. 숫자로 돌려 다시 찍으면 0.850000 이 된다.
-		&& ini_write_utf8(ini, "CONSTANTS", "CONTRIB_BAND_LOW", (const char*)CStringA(cbl))
-		&& ini_write_utf8(ini, "CONSTANTS", "CONTRIB_BAND_HIGH", (const char*)CStringA(cbh))
 		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_TARGET_SAMPLES", sp_target)
-		&& ini_write_utf8(ini, "CONSTANTS", "RETRAIN_NORMAL_MIN_SCORE", (const char*)CStringA(sp_s))
 		// 빈칸 그대로 쓴다. 파이썬 쪽이 빈칸을 '자동' 으로 읽는다.
-		&& ini_write_utf8(ini, "CONSTANTS", "RETRAIN_RUN_TEMP", (const char*)CStringA(sp_r))
-		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_ERA_BALANCE", sp_era);
+		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_BUFFER_DAYS", sp_days);
 
 	CStringA msg;
 	if (ok) {
 		// 파이썬 프로세스는 기동할 때 설정을 읽는다. 저장만으로는 반영되지 않는다.
-		// 기준일이 바뀌면 기준선 누적을 버리고 처음부터 다시 쌓는다.
-		// 며칠치 누적이 사라지는 일이라 화면에 분명히 알린다.
-		const char* warn = (prev_date != new_date)
-			? "  *기준일이 바뀌어 셀별 기준선을 새로 시작합니다*" : "";
 		CStringA absPart;
 		if (bAbsAllEmpty)
 			absPart = "임계값 꺼짐";
@@ -1143,29 +1398,24 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 				(const char*)CStringA(at), (const char*)CStringA(aa),
 				(const char*)CStringA(ar), (const char*)CStringA(arA));
 
-		// 기여도 판단 기준도 한 토막으로 덧붙인다. 다섯 항목을 다 적으면
-		// 줄이 길어지므로 "기간/최소/상한 · 문턱" 꼴로 압축한다.
+		// 기여도 판단 기준도 한 토막으로 덧붙인다. "기간/최소/상한" 꼴로 압축한다.
 		CStringA ctPart;
-		ctPart.Format("기여 %d개/%d/%d·%s~%s",
-			ct_window, ct_frames, ct_samples,
-			(const char*)CStringA(cbl), (const char*)CStringA(cbh));
+		ctPart.Format("기여 %d개/%d/%d", ct_window, ct_frames, ct_samples);
 
 		CStringA spPart;
-		spPart.Format("표본 %d/%s/%s%s",
-			sp_target, (const char*)CStringA(sp_s),
-			sp_r.IsEmpty() ? "자동" : (const char*)CStringA(sp_r),
-			sp_era ? "·시기분할" : "");
+		CStringA daysPart;
+		if (sp_days > 0) daysPart.Format("·최근%d일", sp_days);
+		spPart.Format("표본 최대 %d%s", sp_target, (LPCSTR)daysPart);
 
-		msg.Format("[적용 완료] 1단계 %d건/%d시간대, 2단계 %d건, 기준일 %s, %s, %s, %s%s"
+		msg.Format("[저장 완료] 2단계 %d건/%d시간대, 3단계 %d건, %s, %s, %s"
 			"   -  '정지' 후 '시작'을 눌러야 반영됩니다.",
 			base_samples, base_hours, ae_samples,
-			new_date.empty() ? "전체" : new_date.c_str(),
-			(const char*)absPart, (const char*)ctPart, (const char*)spPart, warn);
+			(const char*)absPart, (const char*)ctPart, (const char*)spPart);
 	}
 	else {
 		msg.Format("[ERROR] continual_learning.ini 를 쓰지 못했습니다: %s", ini.c_str());
 	}
-	m_cap_0.SetWindowTextA(msg);
+	Msg(msg);
 }
 
 //---------------------------------------------------------
@@ -1192,14 +1442,14 @@ void CDlg_Set_MmCam_Env::OnBnClickedButtonChangeMask()
 	dlg.m_bAdjust = TRUE;   // 버튼을 누른 뜻이 보통 "켜겠다" 이므로 미리 켜 둔다
 
 	if (dlg.DoModal() != IDOK) {
-		m_cap_0.SetWindowTextA("[취소] 아무것도 바꾸지 않았습니다.");
+		Msg("[취소] 아무것도 바꾸지 않았습니다.");
 		return;
 	}
 
 	if (dlg.m_bAdjust)
 	{
 		update_db_main_command("ADJST-MG");
-		m_cap_0.SetWindowTextA("[전달] 카메라 위치 보정을 켰습니다 (ADJST-MG). "
+		Msg("[전달] 카메라 위치 보정을 켰습니다 (ADJST-MG). "
 			"'정지' 후 '시작' 시 검사하며, 밀렸으면 Mask 를 함께 옮깁니다. "
 			"이동량이 2칸 이상이면 조정할 수 없습니다.");
 	}
@@ -1207,7 +1457,7 @@ void CDlg_Set_MmCam_Env::OnBnClickedButtonChangeMask()
 	{
 		// 넣어 둔 명령을 거둔다. 켠 뒤 마음이 바뀌었을 때 되돌릴 길이 있어야 한다.
 		update_db_main_command("NOACTION");
-		m_cap_0.SetWindowTextA("[전달] 카메라 위치 보정을 껐습니다 (NOACTION). "
+		Msg("[전달] 카메라 위치 보정을 껐습니다 (NOACTION). "
 			"이동이 감지되어도 Mask 를 옮기지 않고 오류로만 기록합니다.");
 	}
 }
@@ -1261,7 +1511,7 @@ static bool UrlExists(const std::string& url)
 void CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask()
 {
 	if (gUserID.empty()) {
-		m_cap_0.SetWindowTextA("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
 		return;
 	}
 
@@ -1273,7 +1523,7 @@ void CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask()
 	const std::string root_url =
 		ini_read_utf8(StageIniPath(), "NETWORK", "ROOT_URL", "");
 	if (root_url.empty()) {
-		m_cap_0.SetWindowTextA("[ERROR] env.ini 의 [NETWORK] ROOT_URL 이 비어 있습니다.");
+		Msg("[ERROR] env.ini 의 [NETWORK] ROOT_URL 이 비어 있습니다.");
 		return;
 	}
 
@@ -1281,12 +1531,12 @@ void CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask()
 	while (!url.empty() && (url.back() == '/' || url.back() == ' ')) url.pop_back();
 	url += "/" + gUserID + "/hotlist_mask_svr.ini";
 
-	m_cap_0.SetWindowTextA("서버에 격자 마스크가 있는지 확인 중...");
+	Msg("서버에 격자 마스크가 있는지 확인 중...");
 	if (!UrlExists(url)) {
 		CStringA msg;
 		msg.Format("[중단] 서버에서 마스크를 찾지 못했습니다. 지우지 않았습니다.\r\n%s",
 			url.c_str());
-		m_cap_0.SetWindowTextA(msg);
+		Msg(msg);
 		return;
 	}
 
@@ -1302,7 +1552,7 @@ void CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask()
 			url.c_str());
 
 		if (AfxMessageBox(q, MB_YESNO | MB_ICONQUESTION) != IDYES) {
-			m_cap_0.SetWindowTextA("[취소] 마스크를 그대로 두었습니다.");
+			Msg("[취소] 마스크를 그대로 두었습니다.");
 			return;
 		}
 
@@ -1315,12 +1565,12 @@ void CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask()
 			CStringA msg;
 			msg.Format("[ERROR] 마스크를 지우지 못했습니다 (err %lu): %s",
 				::GetLastError(), local_mask.c_str());
-			m_cap_0.SetWindowTextA(msg);
+			Msg(msg);
 			return;
 		}
 	}
 
-	m_cap_0.SetWindowTextA("[완료] 로컬 마스크를 지웠습니다. "
+	Msg("[완료] 로컬 마스크를 지웠습니다. "
 		"'정지' 후 '시작'을 누르면 서버에서 새로 받습니다.");
 }
 
@@ -1373,9 +1623,214 @@ void CDlg_Set_MmCam_Env::LoadHeader()
 	m_cap_0.SetWindowTextA(tmsg.c_str());
 }
 
+// 칸별 기준값 창을 띄운다.
+//
+// [현재 진행] 2단계 칸은 표본 수와 시간대밖에 말하지 못한다. 어느 칸이
+// 선에 가까운지는 8x8 격자로 봐야 알 수 있다.
+void CDlg_Set_MmCam_Env::OnBnClickedCellBase()
+{
+	if (gUserID.empty())
+	{
+		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		return;
+	}
+
+	CDlg_CellBase dlg(this);
+	dlg.DoModal();
+}
+
+// ---------------------------------------------------------
+// 경험 임계값을 손으로 다시 세운다
+//
+// 두 버튼이 같은 틀을 쓴다. 다른 것은 돌리는 스크립트와 확인 문구뿐이다.
+//
+// 감시가 돌고 있으면 막는다. predict_machine 은 기준선을 메모리에 들고
+// 200건마다 파일에 다시 쓰므로, 돌려 둔 채로 고치면 조용히 덮어쓰고
+// 아무 일도 없었던 것처럼 보인다.
+//
+// 콘솔 창을 띄워 그대로 보여 준다. 두 도구 모두 무엇을 몇 건 읽어 어떻게
+// 되었는지 찍으므로, 그 글을 사람이 읽는 것이 요약을 다시 만드는 것보다
+// 낫다.
+// ---------------------------------------------------------
+void CDlg_Set_MmCam_Env::RunBaseTool(const char* title, const char* script,
+                                     const char* args, const char* warn)
+{
+	if (gUserID.empty())
+	{
+		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		return;
+	}
+
+	CMmCammonitoringDlg* main = dynamic_cast<CMmCammonitoringDlg*>(GetParent());
+	if (main != nullptr && main->IsPredictRunning(gUserID.c_str()))
+	{
+		CStringA m;
+		m.Format("감시가 돌고 있어 할 수 없습니다.\r\n\r\n"
+			"predict_machine 이 경험 임계값을 메모리에 들고 있어, 지금 "
+			"고치면 200건 뒤에 덮어씁니다.\r\n\r\n"
+			"[목록] 에서 %s 의 predict_machine 을 멈춘 뒤 다시 누르십시오.",
+			gUserID.c_str());
+		AfxMessageBox(CString(m), MB_OK | MB_ICONWARNING);
+		return;
+	}
+
+	// 지금 무엇을 버리는지 보여 주고 묻는다.
+	const std::string st = StageIniPath();
+	const int samples = ini_read_int_utf8(st, "STATUS", "SAMPLES", 0);
+	const int hours = ini_read_int_utf8(st, "STATUS", "HOURS", 0);
+	const CStringA wf = StatusUtf8(
+		ini_read_utf8(st, "STATUS", "WINDOW_FROM", ""));
+	const CStringA wt = StatusUtf8(
+		ini_read_utf8(st, "STATUS", "WINDOW_TO", ""));
+
+	CStringA q;
+	q.Format("[%s] 의 경험 임계값을 다시 세웁니다.\r\n\r\n"
+		"    지금  표본 %d건 · 시간대 %d%s%s%s\r\n\r\n"
+		"%s\r\n\r\n"
+		"쓰던 것은 지우지 않고 model_generations\\_retired_baseline 에 "
+		"옮기므로 되돌릴 수 있습니다.\r\n\r\n진행할까요?",
+		gUserID.c_str(), samples, hours,
+		wf.IsEmpty() ? "" : " (창 ", wf.IsEmpty() ? "" : (LPCSTR)wf,
+		wf.IsEmpty() ? "" : (" ~ " + wt + ")"), warn);
+
+	if (AfxMessageBox(CString(q), MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2)
+	    != IDYES)
+		return;
+
+	CStringA cmd;
+	cmd.Format("cmd.exe /c call \"%sScripts\\activate.bat\" %s "
+		"&& cd /d \"%s\" && set PYTHONIOENCODING=utf-8 "
+		"&& python %s \"%s\"%s & echo. & pause",
+		GetAnacondaRootPub(), GetAnacondaEnvPub(),
+		GetMmCamStartPath(), script, gUserID.c_str(), args);
+
+	STARTUPINFOA si = { sizeof(si) };
+	PROCESS_INFORMATION pi = { 0 };
+	std::vector<char> line(cmd.GetString(), cmd.GetString() + cmd.GetLength() + 1);
+
+	if (!CreateProcessA(nullptr, line.data(), nullptr, nullptr, FALSE,
+		CREATE_NEW_CONSOLE, nullptr, GetMmCamStartPath(), &si, &pi))
+	{
+		Msg("[ERROR] 도구를 실행하지 못했습니다.");
+		return;
+	}
+	CloseHandle(pi.hThread);
+	CloseHandle(pi.hProcess);
+
+	CStringA done;
+	done.Format("%s 를 시작했습니다. 창에서 결과를 확인하십시오.\r\n\r\n"
+		"끝난 뒤 [시작] 으로 감시를 다시 켜야 반영됩니다.", title);
+	Msg(done);
+}
+
+void CDlg_Set_MmCam_Env::OnBnClickedBaseFresh()
+{
+	RunBaseTool("현재부터쌓기", "retrain\\nightly_retrain.py",
+		" --reset-baseline",
+		"지금까지 쌓은 것을 비우고 이 순간부터 다시 쌓습니다. 조건을 "
+		"채울 때까지(30초 주기면 하루 남짓) 2단계가 꺼집니다.\r\n"
+		"마스크를 다시 떴거나 카메라를 옮겼을 때 쓰십시오.");
+}
+
+void CDlg_Set_MmCam_Env::OnBnClickedBaseRebuild()
+{
+	RunBaseTool("DB에서되쌓기", "retrain\\rebuild_baseline.py", "",
+		"히스토리 DB 에 이미 적힌 지난 프레임으로 한 번에 다시 쌓습니다. "
+		"2단계가 바로 섭니다.\r\n"
+		"다만 화면 틀어짐은 가리지 못합니다 - DB 에는 격자만 남습니다. "
+		"카메라를 옮긴 적이 있으면 쓰지 마십시오.");
+}
+
+// ---------------------------------------------------------
+// 히스토리 DB 전체 기간 조회.
+//
+// UI 스레드에서 DB 에 붙으면 DB 가 느리거나 꺼져 있을 때 창이 멈춘다. 별도 스레드가
+// 짧은 제한 시간(2초)으로 읽고 결과를 메시지로 돌려준다. 실패하면 조용히 남겨 두고
+// 창은 영향받지 않는다. 결과는 5분 동안 보관한다 - 2초 타이머마다 부르지 않는다.
+// ---------------------------------------------------------
+struct SpanResult
+{
+	bool ok = false;
+	int  tables = 0;
+	std::string first, last, user;
+};
+
+struct SpanCtx
+{
+	HWND        hwnd;
+	std::string user;
+};
+
+static UINT SpanThreadProc(LPVOID p)
+{
+	SpanCtx* ctx = (SpanCtx*)p;
+	SpanResult* r = new SpanResult();
+	r->user = ctx->user;
+	r->ok = read_history_span(2, &r->tables, &r->first, &r->last);
+	const HWND hwnd = ctx->hwnd;
+	delete ctx;
+
+	// 창이 이미 닫혔으면 받을 곳이 없다. 결과를 버린다.
+	if (!::IsWindow(hwnd) || !::PostMessage(hwnd, WM_SPAN_DONE, 0, (LPARAM)r))
+		delete r;
+	return 0;
+}
+
+void CDlg_Set_MmCam_Env::RequestSpan(bool force)
+{
+	if (m_spanBusy) return;
+
+	// 현장이 바뀌면 이전 현장의 값은 버린다.
+	if (m_spanUser != gUserID.c_str())
+	{
+		m_spanOk = false;
+		force = true;
+		m_spanUser = gUserID.c_str();      // 실패해도 5분 동안은 다시 시도하지 않는다
+	}
+
+	const DWORD now = GetTickCount();
+	if (!force && m_spanAt != 0 && (now - m_spanAt) < 300000)
+		return;
+
+	m_spanBusy = true;
+	m_spanAt = now;
+
+	SpanCtx* ctx = new SpanCtx{ GetSafeHwnd(), gUserID };
+	if (!AfxBeginThread(SpanThreadProc, ctx))
+	{
+		delete ctx;
+		m_spanBusy = false;
+	}
+}
+
+LRESULT CDlg_Set_MmCam_Env::OnSpanDone(WPARAM, LPARAM lp)
+{
+	SpanResult* r = (SpanResult*)lp;
+	m_spanBusy = false;
+	if (r)
+	{
+		// 조회하는 사이 현장이 바뀌었으면 버린다.
+		if (r->ok && r->user == gUserID && r->tables > 0)
+		{
+			m_spanOk = true;
+			m_spanTables = r->tables;
+			m_spanFirst = r->first.c_str();
+			m_spanLast = r->last.c_str();
+			m_spanUser = r->user.c_str();
+		}
+		delete r;
+	}
+	LoadStageStatus();
+	return 0;
+}
+
 void CDlg_Set_MmCam_Env::RefreshAll()
 {
+	// 창을 열 때는 5분 보관을 무시하고 다시 읽는다.
+	RequestSpan(true);
+
 	// 현장(콤보박스)이 바뀌었을 수도 있으므로 제목줄부터 다시 만든다.
+	m_msgHoldUntil = 0;         // 다른 현장의 결과 메시지를 붙들 이유가 없다
 	LoadHeader();
 	LoadStageSettings();
 	LoadAbsSettings();
@@ -1384,9 +1839,31 @@ void CDlg_Set_MmCam_Env::RefreshAll()
 	LoadStageStatus();
 }
 
+// 2초마다. 입력칸은 건드리지 않는다.
+//
+// [현재 진행] 은 "지금 무엇이 돌고 있는가" 인데 창을 열 때만 읽으면
+// 띄워 둔 채로는 몇 분 전 값이 그대로 남는다. 다만 RefreshAll 을 그대로
+// 쓸 수는 없다 - 그쪽은 설정 입력칸까지 다시 채우므로, 사람이 고치던
+// 숫자가 2초마다 되돌려진다.
+void CDlg_Set_MmCam_Env::RefreshStatus()
+{
+	LoadStageStatus();
+}
+
+// 사람에게 하는 말. 머리줄 자리를 쓰되 잠시 붙들어 둔다.
+//
+// 머리줄은 2초마다 다시 쓰이므로, 그냥 적으면 [설정 저장] 결과가 눈에
+// 들어오기도 전에 사라진다.
+void CDlg_Set_MmCam_Env::Msg(const char* s)
+{
+	if (!m_cap_0.GetSafeHwnd()) return;
+	m_cap_0.SetWindowTextA(s);
+	m_msgHoldUntil = GetTickCount() + MSG_HOLD_MS;
+}
+
 //---------------------------------------------------------
 
-// 0단계 임계값을 continual_learning.ini 에서 읽어 넣는다.
+// 1단계 임계값을 continual_learning.ini 에서 읽어 넣는다.
 //
 // 지정되지 않은 값은 빈칸으로 둔다. 0 을 적으면 "0도에서 경보" 로 읽혀
 // 미지정과 구분되지 않는다.
@@ -1403,7 +1880,7 @@ void CDlg_Set_MmCam_Env::LoadAbsSettings()
 	for (const Item& it : items)
 	{
 		// 적힌 그대로 보여준다. 빈칸은 빈칸으로 둔다 - 네 칸을 모두 비우면
-		// 0단계를 끄는 것이라, 비어 있음과 0 을 구별해야 한다.
+		// 1단계를 끄는 것이라, 비어 있음과 0 을 구별해야 한다.
 		it.ed->SetWindowTextA(LearnRead(it.key, "").c_str());
 	}
 }
@@ -1426,11 +1903,6 @@ void CDlg_Set_MmCam_Env::LoadContribSettings()
 
 	t.Format("%d", LearnReadInt("CONTRIB_MAX_SAMPLES", DEF_CT_MAX_SAMPLES));
 	m_edCtMaxSamples.SetWindowTextA(t);
-
-	// 문턱은 소수라 문자열로 읽어 적은 그대로 보여준다. 0.85 를 숫자로
-	// 돌려 다시 찍으면 0.850000 같은 꼴이 된다.
-	m_edCtBandLow.SetWindowTextA(LearnRead("CONTRIB_BAND_LOW", DEF_CT_BAND_LOW).c_str());
-	m_edCtBandHigh.SetWindowTextA(LearnRead("CONTRIB_BAND_HIGH", DEF_CT_BAND_HIGH).c_str());
 }
 
 //---------------------------------------------------------
@@ -1445,9 +1917,8 @@ void CDlg_Set_MmCam_Env::LoadSampleSettings()
 	t.Format("%d", LearnReadInt("RETRAIN_TARGET_SAMPLES", DEF_SP_TARGET));
 	m_edSpTarget.SetWindowTextA(t);
 
-	m_edSpScore.SetWindowTextA(LearnRead("RETRAIN_NORMAL_MIN_SCORE", DEF_SP_SCORE).c_str());
-	m_edSpRunTemp.SetWindowTextA(LearnRead("RETRAIN_RUN_TEMP", "").c_str());
-	m_chkSpEra.SetCheck(LearnReadInt("RETRAIN_ERA_BALANCE", 0) ? 1 : 0);
+	t.Format("%d", LearnReadInt("RETRAIN_BUFFER_DAYS", 0));
+	m_edSpDays.SetWindowTextA(t);
 }
 
 //---------------------------------------------------------
@@ -1461,7 +1932,7 @@ void CDlg_Set_MmCam_Env::LoadSampleSettings()
 void CDlg_Set_MmCam_Env::OnBnClickedRetrain()
 {
 	if (gUserID.empty()) {
-		m_cap_0.SetWindowTextA("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
 		return;
 	}
 

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-절대 임계값 안전망 (연속 학습 0단계)
+절대 임계값 안전망 (연속 학습 1단계)
 
 학습이 전혀 없는 상태 — 카메라를 설치한 바로 그 순간 — 에도 동작해야 하는
 최소한의 감지 계층이다. 통상적인 열화상 화재 감지기가 하는 일과 같다.
 
-  · 마스크 셀의 최대 온도가 임계값을 넘는가
+  · 격자 64칸의 최대 온도가 임계값을 넘는가
   · 분당 상승률이 임계값을 넘는가
 
 [중요] 이 계층은 어떤 단계에서도 학습하지 않고 적응하지 않는다.
@@ -27,7 +27,7 @@ import numpy as np
 # 절대 온도 임계값에는 기본값을 두지 않는다 (None = 사용 안 함).
 #
 # 처음에는 80/110 도를 기본값으로 두었는데, kict1 실측을 보니 정상 가동
-# 중에도 마스크 셀이 197도까지 올라간다. 그 기본값이면 설비가 돌 때마다
+# 중에도 격자 최고가 197도까지 올라간다. 그 기본값이면 설비가 돌 때마다
 # 경보가 울리고, 이 경보는 SMS 발송까지 연결되어 있다. 울리는 경보를
 # 사람이 무시하기 시작하면 경보 장치가 아니라 소음이 된다.
 #
@@ -81,7 +81,7 @@ class AbsoluteThreshold:
         self.rise_warn = _f("ABS_RISE_WARN", DEFAULT_RISE_WARN)
         self.rise_alarm = _f("ABS_RISE_ALARM", DEFAULT_RISE_ALARM)
 
-        # (시각, 마스크 셀 최대 온도) 이력. 상승률 계산용.
+        # (시각, 격자 최대 온도) 이력. 상승률 계산용.
         self._hist = deque()
 
     def check(self, x, mask, now_sec):
@@ -90,6 +90,24 @@ class AbsoluteThreshold:
 
         level 은 LEVEL_NORMAL / LEVEL_WARN / LEVEL_ALARM.
         판정 불가(입력 이상)면 level 은 NORMAL, peak 는 -1 로 돌려준다.
+
+        [왜 64칸 전부를 보는가]
+
+        2·3단계는 마스크 안만 본다. 설비가 놓인 자리의 평소를 배우는 것이
+        일이기 때문이다. 1단계까지 그러면 마스크 밖에서 시작한 불은 어느
+        단계도 잡지 못한다. 마스크 밖을 보는 것은 화면 이동 감시뿐인데,
+        그쪽은 64칸 패턴의 상관계수라 카메라가 밀렸는지를 볼 뿐 온도를
+        보지 않는다. kict1 은 2026-07-13 에 화면이 밀렸을 때 가장
+        뜨거워진 칸이 마스크 밖이라 채점에 걸리지 않았다.
+
+        1단계는 학습과 무관한 안전망이므로 여기만은 격자 전체를 본다.
+
+        넓혀도 임계값은 그대로 둔다. 두 현장의 전체 기간을 다시 재 보니
+        64칸 전체 최고가 마스크 안 최고와 같았고(cj_busan_1 147도,
+        kict1 196도) 지금 선을 넘는 프레임은 0건이다.
+
+        mask 는 판정에 쓰지 않는다. 가장 뜨거운 칸이 마스크 밖일 때 사유에
+        적어 주는 데만 쓴다 - 그 경우가 바로 전에는 못 보던 것이다.
         """
         x = np.asarray(x, dtype=np.float64).reshape(-1)
         sel = np.asarray(mask, dtype=np.int32).reshape(-1) == 1
@@ -97,9 +115,9 @@ class AbsoluteThreshold:
         if x.size != sel.size or not sel.any() or not np.all(np.isfinite(x)):
             return LEVEL_NORMAL, "", -1.0, 0.0, -1
 
-        idx = np.flatnonzero(sel)
-        peak = float(x[idx].max())
-        worst = int(idx[int(np.argmax(x[idx]))])
+        worst = int(np.argmax(x))
+        peak = float(x[worst])
+        where = "" if sel[worst] else " · 마스크 밖"
 
         rise = self._update_rise(peak, now_sec)
 
@@ -108,16 +126,20 @@ class AbsoluteThreshold:
 
         if self.temp_alarm is not None and peak >= self.temp_alarm:
             level = LEVEL_ALARM
-            reason = f"절대온도 {peak:.0f}도 (경보선 {self.temp_alarm:.0f})"
+            reason = (f"절대온도 {peak:.0f}도 "
+                      f"(경보선 {self.temp_alarm:.0f}){where}")
         elif self.rise_alarm is not None and rise >= self.rise_alarm:
             level = LEVEL_ALARM
-            reason = f"급상승 {rise:.1f}도/분 (경보선 {self.rise_alarm:.1f})"
+            reason = (f"급상승 {rise:.1f}도/분 "
+                      f"(경보선 {self.rise_alarm:.1f}){where}")
         elif self.temp_warn is not None and peak >= self.temp_warn:
             level = LEVEL_WARN
-            reason = f"절대온도 {peak:.0f}도 (주의선 {self.temp_warn:.0f})"
+            reason = (f"절대온도 {peak:.0f}도 "
+                      f"(주의선 {self.temp_warn:.0f}){where}")
         elif self.rise_warn is not None and rise >= self.rise_warn:
             level = LEVEL_WARN
-            reason = f"상승 {rise:.1f}도/분 (주의선 {self.rise_warn:.1f})"
+            reason = (f"상승 {rise:.1f}도/분 "
+                      f"(주의선 {self.rise_warn:.1f}){where}")
 
         return level, reason, peak, rise, worst
 

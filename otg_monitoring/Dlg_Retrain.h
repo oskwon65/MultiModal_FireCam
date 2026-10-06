@@ -50,6 +50,10 @@ public:
     afx_msg void OnBnClickedDryRun();
     afx_msg void OnBnClickedApply();
     afx_msg void OnBnClickedRollback();
+    afx_msg void OnBnClickedDyn();
+    afx_msg void OnBnClickedAuto();
+    afx_msg void OnEnChangeMix();
+    afx_msg void OnBnClickedMixSave();
     afx_msg void OnDestroy();
     afx_msg void OnTimer(UINT_PTR nIDEvent);
     afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS);
@@ -73,6 +77,30 @@ private:
     std::vector<std::string> m_cboStamps;  // 목록 순서대로의 세대 이름
     std::vector<bool> m_cboServed;         // 그 세대가 운용된 적 있는가
     CStatic  m_lblHead, m_lblState;
+
+    // 재생버퍼 동적구성과 기여 문턱. 학습을 돌릴 때 쓰는 값이라 단추 줄 아래에 둔다.
+    // 고친 값은 [저장] 을 눌러 확인한 뒤에만 continual_learning.ini 에 쓴다. 자동 재학습은
+    // 감시가 그 파일을 읽어 따르므로 고치자마자 바뀌면 곤란하다. 저장하지 않은 변경이 있으면
+    // 학습 단추는 막고, 닫을 때는 묻는다.
+    CButton  m_chkDyn;
+    CEdit    m_edBandHigh, m_edBandLow;
+    CStatic  m_lblBand;
+    CButton  m_btnMixSave;
+    bool     m_mixDirty = false;     // 저장하지 않은 변경이 있는가
+    void SetMixDirty(bool dirty);
+    bool BandValid(CStringA& err) const;
+    void LoadMixSettings();
+    bool SaveMixSettings();            // 값이 틀리면 사유를 상태줄에 적고 false
+    void UpdateBandEnable();
+
+    // 자동 재학습. 감시(predict_machine/auto_retrain.py)가 읽는 값이라, 학습을 돌리는 단추와
+    // 상관없이 켜고 끄는 즉시 continual_learning.ini 에 쓴다.
+    CButton  m_chkAuto;
+    CEdit    m_edAutoHours;
+    CStatic  m_lblAuto;
+    void LoadAutoSettings();
+    bool SaveAutoSettings();
+    void UpdateAutoEnable();
     CFont    m_font, m_fontMono;
 
     // 진행 표식.

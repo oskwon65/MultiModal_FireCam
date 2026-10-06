@@ -208,3 +208,36 @@ bool ini_write_int_utf8(const std::string& path,
 {
     return ini_write_utf8(path, section, key, std::to_string(value));
 }
+
+// stage_status.ini 의 UPDATED_AT("YYYY-MM-DD HH:MM:SS", 현지 시각)이 지금으로부터
+// 몇 초 전인지 돌려준다. 읽을 수 없으면 -1.
+//
+// 파이썬은 30초마다 이 파일을 다시 쓴다. 프로세스가 죽으면 마지막 값이 그대로
+// 남아, 화면이 죽은 감시의 단계 등을 계속 초록으로 보여 준다. 낡았는지는 이
+// 시각으로만 알 수 있다.
+long long status_age_seconds(const std::string& updated_at)
+{
+    int Y = 0, M = 0, D = 0, h = 0, m = 0, s = 0;
+    if (sscanf_s(updated_at.c_str(), "%d-%d-%d %d:%d:%d", &Y, &M, &D, &h, &m, &s) != 6)
+        return -1;
+
+    SYSTEMTIME st = {};
+    st.wYear = (WORD)Y; st.wMonth = (WORD)M; st.wDay = (WORD)D;
+    st.wHour = (WORD)h; st.wMinute = (WORD)m; st.wSecond = (WORD)s;
+
+    FILETIME ft_then, ft_now;
+    if (!SystemTimeToFileTime(&st, &ft_then))
+        return -1;
+
+    SYSTEMTIME now;
+    GetLocalTime(&now);
+    SystemTimeToFileTime(&now, &ft_now);
+
+    ULARGE_INTEGER a, b;
+    a.LowPart = ft_then.dwLowDateTime; a.HighPart = ft_then.dwHighDateTime;
+    b.LowPart = ft_now.dwLowDateTime;  b.HighPart = ft_now.dwHighDateTime;
+
+    // 100ns 단위 -> 초. 시계가 뒤로 간 경우는 0 으로 본다.
+    if (b.QuadPart < a.QuadPart) return 0;
+    return (long long)((b.QuadPart - a.QuadPart) / 10000000ULL);
+}

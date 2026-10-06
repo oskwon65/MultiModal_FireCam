@@ -43,6 +43,7 @@ extern std::string read_app_config_string(const char* section, const char* key, 
 extern std::string normalize_dir_path(std::string path);
 extern const char* GetMmCamRootPath();
 extern const char* GetAppConfigPath();
+extern long long status_age_seconds(const std::string&);
 
 static bool        g_MmCam_env_loaded = false;
 static std::string g_anaconda_env = DEFAULT_ANACONDA_ENV_NAME;
@@ -81,6 +82,28 @@ static void LoadMmCamEnvFromIni()
 static const char* GetAnacondaEnv() { LoadMmCamEnvFromIni(); return g_anaconda_env.c_str(); }
 static const char* GetAnacondaRoot() { LoadMmCamEnvFromIni(); return g_anaconda_root.c_str(); }
 const char* GetMmCamStartPath() { LoadMmCamEnvFromIni(); return g_MmCam_start_path.c_str(); }
+
+// stage_status.ini 는 UTF-8 이고 이 빌드는 MBCS 다. 그 파일에서 읽은 한글을
+// 화면 부호로 옮긴다. 숫자나 날짜는 ASCII 라 그냥 두어도 됐다.
+static CStringA Utf8ToAcp(const char* u)
+{
+    if (!u || !*u) return CStringA();
+
+    const int wn = MultiByteToWideChar(CP_UTF8, 0, u, -1, nullptr, 0);
+    if (wn <= 0) return CStringA(u);
+
+    CStringW w;
+    MultiByteToWideChar(CP_UTF8, 0, u, -1, w.GetBuffer(wn), wn);
+    w.ReleaseBuffer();
+
+    const int an = WideCharToMultiByte(CP_ACP, 0, w, -1, nullptr, 0, nullptr, nullptr);
+    if (an <= 0) return CStringA(u);
+
+    CStringA a;
+    WideCharToMultiByte(CP_ACP, 0, w, -1, a.GetBuffer(an), an, nullptr, nullptr);
+    a.ReleaseBuffer();
+    return a;
+}
 
 // 재학습 창이 같은 conda 환경으로 파이썬을 띄우려면 이 둘이 필요하다.
 // 정적 함수라 다른 번역 단위에서 못 쓰므로 공개판을 따로 둔다.
@@ -181,7 +204,8 @@ static_assert(PROC_ROW_COUNT <= (IDC_BTN_STOP_LAST - IDC_BTN_STOP_BASE + 1),
 // 프로세스 행 레이아웃 (픽셀)
 //   목록은 전용 글꼴(PROC_ROW_FONT)을 쓰고, 행 높이를 글꼴 높이에 거의 붙여
 //   줄 사이 여백을 최소화한다. (PROC_ROW_HEIGHT - PROC_ROW_CTRL_H = 줄 사이 여백)
-#define PROC_ROW_TOP_Y      94
+// 상태줄 아래에 운전 상태·학습 모델 두 줄이 들어가면서 94 에서 내렸다.
+#define PROC_ROW_TOP_Y      140
 #define PROC_ROW_HEIGHT     23
 #define PROC_ROW_CTRL_H     23
 #define PROC_ROW_LABEL_X    20
@@ -214,9 +238,9 @@ static_assert(PROC_ROW_COUNT <= (IDC_BTN_STOP_LAST - IDC_BTN_STOP_BASE + 1),
 
 // 설정 영역이 차지하는 높이(px). Dlg_Set_MmCam_Env 의 내용이 들어갈 만큼.
 // 그쪽 배치를 바꾸면 이 값도 같이 맞춰야 한다.
-// 연속학습 조건에 '2단계 최소 시간대' 가 들어가 한 행(27px) 늘었다.
+// 연속학습 조건에 '3단계 최소 시간대' 가 들어가 한 행(27px) 늘었다.
 // 410 으로 두면 아래 구분선까지 6px 밖에 안 남아 빠듯하다.
-#define SETTING_AREA_H      735
+#define SETTING_AREA_H      804
 // 목록과 설정 영역 사이 간격
 #define AREA_GAP            8
 
@@ -606,6 +630,25 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
     m_lblTimer.Create("00:00:00", WS_CHILD | WS_VISIBLE | SS_LEFT,
         CRect(nBase_X_Msg + 495, nBase_Y_Msg, nBase_X_Msg + 605, nBase_Y_Msg + 24), this);
 
+    // 운전 상태.
+    //
+    // 단계가 아니라 "지금 설비가 어떤 상황인가" 다. predict_machine 이
+    // 미리 만들어 둔 군집 중심으로 매 프레임 이름을 붙여 stage_status.ini
+    // 에 적은 것을 여기서 읽어 온다. 경보에도 학습에도 쓰이지 않는다.
+    m_lblOpNow.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        CRect(nBase_X_Msg, nBase_Y_Msg + 26, nBase_X_Msg + 605,
+              nBase_Y_Msg + 26 + 22), this);
+
+    // 지금 3단계가 쓰고 있는 모델.
+    //
+    // 세대 이름은 승격할 때 적어 둔 것이고 파일 시각은 실제로 적재된
+    // 파일의 것이다. 둘이 어긋나면 산출물이 뒤바뀐 것이다 - 2026-09-25
+    // cj_busan_1 이 그 상태로 이틀을 돌았다. 모델은 기동할 때 한 번만
+    // 읽으므로, 파일만 바꿔 놓고 재시작하지 않은 것도 여기서 드러난다.
+    m_lblGen.Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        CRect(nBase_X_Msg, nBase_Y_Msg + 48, nBase_X_Msg + 605,
+              nBase_Y_Msg + 48 + 22), this);
+
     // '시작' 진행바. 평상시에는 숨겨 두고 기동하는 동안만 상태줄 자리에
     // 나타난다. 기동에 20초 안팎이 걸리는데 그동안 화면이 그대로면 눌린
     // 것인지 알 수 없어 다시 누르게 된다.
@@ -627,7 +670,8 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
         GetWindowRect(&rcWnd);
 
         m_wndChromeH = rcWnd.Height() - rcClient.Height();   // 캡션+테두리 높이
-        m_baseWndH   = rcWnd.Height();
+        // 운전 상태·학습 모델 두 줄이 늘어난 만큼 접힌 높이도 키운다.
+        m_baseWndH   = rcWnd.Height() + 48;
 
         LayoutProcessRows();      // 선택된 user 기준으로 배치 + 창 높이 계산
         ShowProcessRows(false);   // 접은 상태로 시작
@@ -664,6 +708,24 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
 // python.exe 프로세스 수 카운트
 // ('시작' 버튼으로 실행한 프로세스(m_startedPids)의 자식으로 한정)
 // ---------------------------------------------------------
+// 이 현장의 predict_machine 이 돌고 있는가.
+//
+// 지금 목록을 다시 훑는다. 타이머가 2초마다 갱신하지만, 이 값으로 되돌릴
+// 수 없는 일을 결정하므로 묵은 값을 쓰지 않는다.
+bool CMmCammonitoringDlg::IsPredictRunning(const char* userId)
+{
+    if (userId == nullptr || *userId == '\0') return false;
+
+    CountPythonProcesses();
+    for (const auto& info : m_lastPyProcesses)
+    {
+        if (info.cmdLine.Find("predict_machine") < 0) continue;
+        if (info.cmdLine.Find(CString(userId)) < 0) continue;
+        return true;
+    }
+    return false;
+}
+
 int CMmCammonitoringDlg::CountPythonProcesses()
 {
     m_lastPyProcesses.clear();
@@ -1467,6 +1529,103 @@ void CMmCammonitoringDlg::ShowStartProgress(bool bShow)
     Invalidate();
 }
 
+// ---------------------------------------------------------
+// 운전 상태 한 줄을 새로 읽는다.
+//
+// predict_machine 이 stage_status.ini 에 적어 둔 것을 읽기만 한다.
+// 그 파일은 UTF-8 이고 이 빌드는 MBCS 라 한글을 옮겨야 한다.
+// ---------------------------------------------------------
+void CMmCammonitoringDlg::UpdateOpState()
+{
+    if (!m_lblOpNow.GetSafeHwnd() || gUserID.empty()) return;
+
+    const std::string st = std::string(GetMmCamStartPath())
+        + "users\\" + gUserID + "\\stage_status.ini";
+
+    char buf[256] = { 0 };
+    GetPrivateProfileStringA("STATUS", "OP_STATE", "", buf,
+        (DWORD)sizeof(buf), st.c_str());
+    CStringA name = Utf8ToAcp(buf);
+
+    GetPrivateProfileStringA("STATUS", "OP_MIX", "", buf,
+        (DWORD)sizeof(buf), st.c_str());
+    CStringA mix = Utf8ToAcp(buf);
+
+    // 이름이 얼마나 멀리서 붙었는가.
+    //
+    // 분류는 가장 가까운 중심을 고르므로 이름은 무조건 붙는다. 낯선 선을
+    // 넘었을 때만 한 토막을 더 붙인다 - 평소에는 줄이 길어질 이유가 없고,
+    // 길어졌다는 것 자체가 신호가 된다.
+    GetPrivateProfileStringA("STATUS", "OP_DEV", "", buf,
+        (DWORD)sizeof(buf), st.c_str());
+    const double dev = atof(buf);
+    const bool hasDev = (buf[0] != '\0');
+
+    GetPrivateProfileStringA("STATUS", "OP_FAR", "", buf,
+        (DWORD)sizeof(buf), st.c_str());
+    const double farLine = atof(buf);
+
+    CStringA odd;
+    if (hasDev && farLine > 0.0 && dev > farLine)
+        odd.Format("   ·   낯섦 %.1f도/칸 (선 %.1f)", dev, farLine);
+
+    // 최근 구성이 걸쳐 있는 시간.
+    //
+    // 건수(120건)로 세는 것이라 시간 폭이 고정이 아니다. 통신이 끊겨
+    // 프레임이 빠지면 같은 120건이 훨씬 긴 시간에 걸친다. 몇 건인지보다
+    // 언제부터 지금까지인지가 읽기 쉽다.
+    GetPrivateProfileStringA("STATUS", "OP_SPAN", "", buf,
+        (DWORD)sizeof(buf), st.c_str());
+    const double spanMin = atof(buf);
+
+    CStringA span;
+    if (spanMin >= 60.0)
+        span.Format("최근 %.1f시간", spanMin / 60.0);
+    else if (spanMin >= 1.0)
+        span.Format("최근 %.0f분", spanMin);
+    else
+        span = "최근";          // 아직 모이는 중
+
+    CStringA t;
+    if (name.IsEmpty())
+        t = "운전 상태 : 확인 전";
+    else if (mix.IsEmpty())
+        t.Format("운전 상태 : %s%s", (LPCSTR)name, (LPCSTR)odd);
+    else
+        t.Format("운전 상태 : %s%s   ·   %s : %s", (LPCSTR)name, (LPCSTR)odd,
+            (LPCSTR)span, (LPCSTR)mix);
+
+    CString cur;
+    m_lblOpNow.GetWindowText(cur);
+    if (cur.Compare(t) != 0) m_lblOpNow.SetWindowText(t);
+
+    // 그 아래 한 줄. 지금 3단계가 쓰고 있는 모델.
+    if (!m_lblGen.GetSafeHwnd()) return;
+
+    const int s2 = GetPrivateProfileIntA("STATUS", "STAGE2", 0, st.c_str());
+
+    GetPrivateProfileStringA("STATUS", "GENERATION", "", buf,
+        (DWORD)sizeof(buf), st.c_str());
+    const CStringA gen = Utf8ToAcp(buf);
+
+    GetPrivateProfileStringA("STATUS", "MODEL_AT", "", buf,
+        (DWORD)sizeof(buf), st.c_str());
+    const CStringA mat = Utf8ToAcp(buf);
+
+    CStringA g;
+    if (!s2)
+        g = "학습 모델 : 3단계 없음 (모델 파일이 아직 없습니다)";
+    else if (gen.IsEmpty())
+        g.Format("학습 모델 : 세대 모름   ·   파일 %s",
+            mat.IsEmpty() ? "-" : (LPCSTR)mat);
+    else
+        g.Format("학습 모델 : %s   ·   파일 %s", (LPCSTR)gen,
+            mat.IsEmpty() ? "-" : (LPCSTR)mat);
+
+    m_lblGen.GetWindowText(cur);
+    if (cur.Compare(g) != 0) m_lblGen.SetWindowText(g);
+}
+
 void CMmCammonitoringDlg::SetStartProgress(int pct, const char* step)
 {
     if (m_progress.GetSafeHwnd()) m_progress.SetPos(pct);
@@ -1749,9 +1908,13 @@ void CMmCammonitoringDlg::ApplyExpandLayout()
     {
         CRect rcClient;
         GetClientRect(&rcClient);
-        m_pDlgSet->SetWindowPos(nullptr, 0, y, rcClient.Width(), SETTING_AREA_H,
+        // 고정값보다 설정 영역이 말하는 높이를 우선한다. 안쪽 항목이 늘어도 맨 아래
+        // 버튼이 창 밖으로 밀려나지 않는다.
+        const int settingH = (m_pDlgSet->ContentHeight() > 0)
+                           ? m_pDlgSet->ContentHeight() : SETTING_AREA_H;
+        m_pDlgSet->SetWindowPos(nullptr, 0, y, rcClient.Width(), settingH,
             SWP_NOZORDER | SWP_SHOWWINDOW);
-        y += SETTING_AREA_H;
+        y += settingH;
     }
     else if (m_pDlgSet != nullptr && ::IsWindow(m_pDlgSet->GetSafeHwnd()))
     {
@@ -2202,9 +2365,69 @@ void LogEvent(const char* reason)
 // ---------------------------------------------------------
 // 상태 레벨
 // ---------------------------------------------------------
+// ---------------------------------------------------------
+// 1~3단계 등을 하나로 모아 본다
+//
+// 설정 창 [현재 진행] 의 등 셋과 같은 잣대로 읽고, 다음 규칙으로 접는다.
+//
+//   노랑이 하나라도 있으면        노랑
+//   셋 다 회색이면                회색
+//   그 밖에는 (초록 + 회색)       초록
+//
+// 회색은 "아직 모른다" 이지 "나쁘다" 가 아니다. 그래서 초록과 섞이면
+// 초록이 이긴다. 노랑은 차오르는 중이라는 뜻이라 하나만 있어도 드러내야
+// 한다 - 그 단계가 설 때까지는 감시에 구멍이 있다.
+//
+// 못 읽으면 -1 을 돌려 부르는 쪽이 프로세스·DB 판정을 그대로 두게 한다.
+// ---------------------------------------------------------
+int CMmCammonitoringDlg::StageLampLevel() const
+{
+    if (gUserID.empty()) return -1;
+
+    const std::string st = std::string(GetMmCamStartPath())
+        + "users\\" + gUserID + "\\stage_status.ini";
+
+    char buf[64] = { 0 };
+    GetPrivateProfileStringA("STATUS", "UPDATED_AT", "", buf,
+        (DWORD)sizeof(buf), st.c_str());
+    if (buf[0] == '\0') return -1;       // 아직 첫 기록이 없다
+
+    // 마지막 기록이 60초보다 낡았으면 감시가 멈춘 것이다. 남은 값으로 등을
+    // 켜면 죽은 감시가 초록으로 보인다. -1 은 "모른다" 이므로 부르는 쪽이
+    // 프로세스·DB 판정을 그대로 쓴다.
+    {
+        const long long age = status_age_seconds(buf);
+        if (age < 0 || age > 60) return -1;
+    }
+
+    const int s0 = GetPrivateProfileIntA("STATUS", "STAGE0", 0, st.c_str());
+    const int s1 = GetPrivateProfileIntA("STATUS", "STAGE1", 0, st.c_str());
+    const int s2 = GetPrivateProfileIntA("STATUS", "STAGE2", 0, st.c_str());
+    const int samples = GetPrivateProfileIntA("STATUS", "SAMPLES", 0, st.c_str());
+    const int db_rows = GetPrivateProfileIntA("STATUS", "DB_ROWS", -1, st.c_str());
+
+    // 설정 창의 등과 똑같이 매긴다. 0 꺼짐 · 1 준비 중 · 2 사용 중.
+    const int lamp[3] = {
+        s0 ? 2 : 0,
+        s1 ? 2 : (samples > 0 ? 1 : 0),
+        s2 ? 2 : (db_rows > 0 ? 1 : 0),
+    };
+
+    bool anyWarn = false, anyOk = false;
+    for (int i = 0; i < 3; ++i)
+    {
+        if (lamp[i] == 1) anyWarn = true;
+        if (lamp[i] == 2) anyOk = true;
+    }
+
+    if (anyWarn) return STATUS_WARN;
+    if (anyOk)   return STATUS_OK;
+    return STATUS_IDLE;
+}
+
 void CMmCammonitoringDlg::SetStatusLevel(int level)
 {
-    if (level < STATUS_OK || level > STATUS_ERROR) return;
+    if (level < STATUS_OK || level > STATUS_IDLE) return;
     if (m_nStatusLevel != level)
     {
         m_nStatusLevel = level;
@@ -2240,6 +2463,7 @@ HBRUSH CMmCammonitoringDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
         case STATUS_OK:    color = RGB(0, 180, 0); break;
         case STATUS_WARN:  color = RGB(255, 200, 0); break;
         case STATUS_ERROR: color = RGB(255, 0, 0); break;
+        case STATUS_IDLE:  color = RGB(170, 170, 170); break;   // 설정 창 등과 같은 회색
         default:           color = RGB(128, 128, 128); break;
         }
         pDC->SetTextColor(color);
@@ -2283,12 +2507,17 @@ void CMmCammonitoringDlg::OnTimer(UINT_PTR nIDEvent)
             if (m_rowSelected[i] && m_rowPids[i] != 0) ++procCount;
         }
 
-        if (procCount >= SCRIPT_COUNT)
-            SetStatusLevel(STATUS_OK);
-        else if (procCount > 0)
-            SetStatusLevel(STATUS_WARN);
-        else
-            SetStatusLevel(STATUS_ERROR);
+        // 등 색은 두 가지를 겹쳐 정한다.
+        //
+        //   1) 돌고는 있는가   프로세스 수 · DB 접속 · 오류코드
+        //   2) 감시가 서 있는가 1~3단계 등 셋을 접은 값
+        //
+        // 1) 이 어긋나면 그쪽이 이긴다. 단계가 다 서 있어도 프로세스가
+        // 죽었거나 DB 가 끊겼으면 감시는 돌지 않는 것이다.
+        int level = STATUS_OK;
+        if (procCount >= SCRIPT_COUNT)      level = STATUS_OK;
+        else if (procCount > 0)             level = STATUS_WARN;
+        else                                level = STATUS_ERROR;
 
         // 프로세스 개수와 DB 상태를 한 줄로 합쳐 표시한다 (개수가 앞)
         CString status;
@@ -2296,26 +2525,44 @@ void CMmCammonitoringDlg::OnTimer(UINT_PTR nIDEvent)
 
         CurrentStatus st = read_db_current_status();
 
+        bool running = (level == STATUS_OK);
+
         if (!st.valid)
         {
-            SetStatusLevel(STATUS_ERROR);
+            level = STATUS_ERROR;
+            running = false;
             status += "  |  DB 연결 실패";
         }
         else
         {
-            if (strcmp(st.error_code, "0000") == 0)
-                SetStatusLevel(STATUS_OK);
-            else if (strcmp(st.error_code, "0021") == 0)
-                SetStatusLevel(STATUS_ERROR);
-            else
-                SetStatusLevel(STATUS_WARN);
+            if (strcmp(st.error_code, "0000") != 0)
+            {
+                level = (strcmp(st.error_code, "0021") == 0)
+                    ? STATUS_ERROR : STATUS_WARN;
+                running = false;
+            }
 
             CString dbPart;
             dbPart.Format("  |  err=%s  |  %s", st.error_code, st.updated_at);
             status += dbPart;
         }
 
+        // 돌고 있고 탈이 없을 때만 단계 쪽에 자리를 내준다.
+        if (running)
+        {
+            const int sl = StageLampLevel();
+            if (sl >= 0) level = sl;
+        }
+        SetStatusLevel(level);
+
         m_lbStatus_0.SetWindowText(status);
+        UpdateOpState();
+
+        // 설정 영역의 [현재 진행] 도 같이 되읽는다. 펼쳐 둔 채로는 창을
+        // 열었던 때의 값이 그대로 남아, 몇 분 전 숫자를 지금 것으로
+        // 오해하게 된다. 설정 입력칸은 건드리지 않는다.
+        if (m_pDlgSet != nullptr && m_bSettingVisible)
+            m_pDlgSet->RefreshStatus();
     }
     else if (nIDEvent == TIMER_ID_BLINK)
     {

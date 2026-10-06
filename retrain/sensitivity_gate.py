@@ -94,90 +94,65 @@ def check(candidate, incumbent=None):
     candidate / incumbent 는 evaluate() 의 결과.
     incumbent 가 None 이면(첫 모델) 절대 기준만 본다.
 
-    반환: (passed, reasons)  reasons 는 사람이 읽을 판정 사유 목록
+    반환: (passed, rows)
+      rows : [(이름, 후보값, 현재값 또는 None, 통과 여부, 사유, 기준)]
+             사유는 막혔을 때만 채운다. 기준은 무엇에 견줬는지 적은 것이다.
     """
-    reasons = []
+    rows = []
     ok = True
 
-    if candidate["normal_mean"] < NORMAL_MEAN_MIN:
-        ok = False
-        reasons.append(
-            f"정상 평균 점수 {candidate['normal_mean']:.3f} < {NORMAL_MEAN_MIN} "
-            f"(정상을 이상이라 판정)")
-    else:
-        reasons.append(f"정상 평균 점수 {candidate['normal_mean']:.3f}  (통과)")
+    # 정상 평균 점수 - 절대 기준
+    v = candidate["normal_mean"]
+    good = v >= NORMAL_MEAN_MIN
+    ok &= good
+    rows.append(("평균점수", v, incumbent["normal_mean"] if incumbent else None,
+                 good, "" if good else "정상을 이상이라 판정",
+                 f"{NORMAL_MEAN_MIN} 이상"))
 
-    if candidate["normal_false"] > NORMAL_FALSE_MAX:
-        ok = False
-        reasons.append(
-            f"정상 오탐 비율 {100*candidate['normal_false']:.1f}% > "
-            f"{100*NORMAL_FALSE_MAX:.0f}%")
-    else:
-        reasons.append(f"정상 오탐 비율 {100*candidate['normal_false']:.1f}%  (통과)")
+    # 정상 오탐 비율 - 절대 기준
+    v = candidate["normal_false"]
+    good = v <= NORMAL_FALSE_MAX
+    ok &= good
+    rows.append(("오탐비율", v, incumbent["normal_false"] if incumbent else None,
+                 good, "", f"{NORMAL_FALSE_MAX} 이하"))
 
-    a40 = candidate["anomaly_40"]
-    if a40 > ANOMALY_MEAN_MAX:
-        ok = False
-        reasons.append(
-            f"+40도 주입 시 평균 {a40:.3f} > {ANOMALY_MEAN_MAX} (이상을 못 잡음)")
-    else:
-        reasons.append(f"+40도 주입 시 평균 {a40:.3f}  (통과)")
+    # 주입 단계 - 절대 기준(+40 만)과 감도 악화(모든 단계)
+    for lv in INJECT_LEVELS:
+        k = f"anomaly_{int(lv)}"
+        v = candidate[k]
+        good, why, crit = True, "", []
 
-    if incumbent is not None:
-        # 절대 기준만으로는 세대마다 조금씩 둔해지는 것을 못 잡는다.
-        for lv in INJECT_LEVELS:
-            k = f"anomaly_{int(lv)}"
-            drift = candidate[k] - incumbent[k]
+        if int(lv) == 40:
+            crit.append(f"{ANOMALY_MEAN_MAX} 이하")
+            if v > ANOMALY_MEAN_MAX:
+                good, why = False, "이상을 못 잡음"
+
+        inc = incumbent[k] if incumbent else None
+        if inc is not None:
+            crit.append(f"악화 +{REGRESSION_TOLERANCE} 이내")
+            drift = v - inc
             if drift > REGRESSION_TOLERANCE:
-                ok = False
-                reasons.append(
-                    f"+{int(lv)}도 감도 악화 {incumbent[k]:.3f} -> {candidate[k]:.3f} "
-                    f"(+{drift:.3f} > {REGRESSION_TOLERANCE})")
-            else:
-                reasons.append(
-                    f"+{int(lv)}도 감도 {incumbent[k]:.3f} -> {candidate[k]:.3f}"
-                    f"  (통과)")
+                good = False
+                why = (why + " · " if why else "") + f"악화 +{drift:.3f}"
 
-    return ok, reasons
+        ok &= good
+        rows.append((f"+{int(lv)} 변형", v, inc, good,
+                     why, " · ".join(crit) if crit else "견줄 것 없음"))
+
+    return ok, rows
 
 
-# 묶음을 가르는 가로줄. nightly_retrain 의 RULE 과 같은 길이여야 한다.
-RULE = "-" * 113
-
-
-def format_report(candidate, incumbent, passed, reasons):
+def format_report(candidate, incumbent, passed, rows):
     """
-    감도 시험 결과를 두 묶음으로 적는다 - 잰 값([평가])과 판정([판정]).
+    한 줄에 하나씩 적는다.
 
-    예전에는 표로 그렸다. 줄 머리에 표가 없으면 로그가 길어졌을 때 어느
-    묶음의 줄인지 알 수 없고, 창의 글꼴이 가변폭이라 열도 맞지 않았다.
-    다른 줄과 같이 [꼬리표] 를 앞에 둔다.
+    예전에는 [평가] 로 값을 늘어놓고 [판정] 으로 같은 값을 다시 적었다.
+    같은 숫자가 두 번 나와 열세 줄이 됐다. 판정은 줄마다 붙이고 맨 위에
+    결론 한 줄만 둔다.
     """
-    # 후보를 앞세우고 현재를 괄호에 넣는다. 이번에 만든 모델이 주인공이고
-    # 현재는 견줄 대상일 뿐인데, 나란히 두면 어느 쪽이 무엇인지 매번
-    # 되짚어야 한다.
-    lines = ["[평가] 항목 후보 (현재)"]
-
-    rows = [("평균점수", "normal_mean"),
-            ("오탐비율", "normal_false")]
-    rows += [(f"+{int(l)} 변형", f"anomaly_{int(l)}") for l in INJECT_LEVELS]
-
-    for label, key in rows:
-        # 이름을 채우지 않는다. 다섯 이름이 모두 여덟 칸이라 그대로 맞고,
-        # 파이썬의 :<8 은 한글 한 자를 한 칸으로 세어 오히려 어긋난다
-        # ('평균점수' 는 네 자 여덟 칸, '+20 변형' 은 일곱 자 여덟 칸).
-        if incumbent:
-            lines.append(f"[평가] {label}   {candidate[key]:.3f}   "
-                         f"( {incumbent[key]:.3f} )")
-        else:
-            # 첫 모델이라 견줄 것이 없다. 빈칸으로 두면 자리만 비어 무엇이
-            # 빠졌는지 알 수 없으므로 까닭을 적는다.
-            lines.append(f"[평가] {label}   {candidate[key]:.3f}   "
-                         f"( 현재 없음 )")
-
-    lines.append("")
-    lines.append(RULE)
-    lines.append("[판정] " + ("승격" if passed else "보류"))
-    for r in reasons:
-        lines.append("[판정] " + r)
+    lines = ["[판정] " + ("승격" if passed else "보류")]
+    for name, v, inc, good, why, crit in rows:
+        tail = "통과" if good else ("미달" + (" - " + why if why else ""))
+        cur = f"(현재 {inc:.3f})" if inc is not None else "(현재 없음)"
+        lines.append(f"[평가] {name}   {v:.3f}  {cur}  {tail}   기준 {crit}")
     return "\n".join(lines)

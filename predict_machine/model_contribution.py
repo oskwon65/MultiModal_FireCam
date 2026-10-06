@@ -330,7 +330,7 @@ def decision_score(conn, db_name, n_cells, mask=None, temp_warn=None,
                 "period": f"{sorted(tables)[0][-8:]} ~ {sorted(tables)[-1][-8:]}"}
 
         if len(scores) < min_frames:
-            info["reason"] = (f"쓸 만한 프레임이 {len(scores)}건뿐입니다 "
+            info["reason"] = (f"쓸 만한 표본이 {len(scores)}건뿐입니다 "
                               f"(최소 {min_frames})")
             if verbose:
                 print(f"[기여도] 판단 보류 - {info['reason']}")

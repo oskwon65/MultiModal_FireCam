@@ -53,6 +53,8 @@ public:
     virtual BOOL OnInitDialog();
     afx_msg void OnSelchangeRange();
     afx_msg void OnBnClickedReload();
+    afx_msg void OnBnClickedOpState();
+    afx_msg void OnBnClickedCellBase();
     afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS);
     afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
     afx_msg void OnMouseMove(UINT nFlags, CPoint point);
@@ -80,7 +82,7 @@ private:
     CStatic   m_chart;       // 꺾은선 (SS_OWNERDRAW)
     CStatic   m_lblState;
     CComboBox m_cboRange;
-    CButton   m_btnReload, m_btnClose;
+    CButton   m_btnReload, m_btnOpState, m_btnCellBase, m_btnClose;
     CFont     m_font, m_fontSmall;
 
     // 십자선 값 상자 전용. 축 눈금(m_fontSmall)보다 25% 크다 - 눈금은
@@ -92,7 +94,7 @@ private:
     std::vector<Point> m_pts;
     int    m_days = 7;
     bool   m_loading = false;
-    double m_tempWarn = 0.0;    // 0단계 주의 임계값 (env.ini)
+    double m_tempWarn = 0.0;    // 1단계 주의 임계값 (env.ini)
     double m_tempTop = 100.0;   // 온도 칸의 위 끝
 
     // 십자선.

@@ -780,7 +780,7 @@ def Set_Env_Config(user_ID, verbose=True):
         local_config["FLIR_HEIGHT"]         = config.getint("CONSTANTS", "FLIR_HEIGHT")
         local_config["MAXNUM_THERMAL_FIFO"] = config.getint("CONSTANTS", "MAXNUM_THERMAL_FIFO")
 
-        # 절대 임계값 (연속 학습 0단계). 학습이 전혀 없는 상태에서도 동작해야
+        # 절대 임계값 (연속 학습 1단계). 학습이 전혀 없는 상태에서도 동작해야
         # 하는 안전망이라, 다른 항목처럼 없으면 죽이지 않고 None 으로 넘긴다.
         # 온도 임계값이 없으면 판정을 끄고 상승률만 쓴다. 설비마다 정상 온도가
         # 전혀 달라 추측한 기본값은 오경보만 낳기 때문이다.
@@ -789,14 +789,11 @@ def Set_Env_Config(user_ID, verbose=True):
                    "ABS_RISE_WARN", "ABS_RISE_ALARM",
                    # 기여 가중치를 가르는 점수 문턱. 없으면 None 을 넘겨
                    # model_contribution 의 기본값을 쓰게 한다.
-                   "CONTRIB_BAND_HIGH", "CONTRIB_BAND_LOW",
-                   # 학습 표본. RETRAIN_RUN_TEMP 는 비워 두면 재생버퍼가
-                   # 자료에서 스스로 잡는다.
-                   "RETRAIN_NORMAL_MIN_SCORE", "RETRAIN_RUN_TEMP"):
+                   "CONTRIB_BAND_HIGH", "CONTRIB_BAND_LOW"):
             # 빈칸도 '없음' 으로 본다.
             #
             # getfloat 은 '' 을 만나면 ValueError 로 죽는다. [설정] 창은
-            # 절대 임계값 네 칸을 모두 비우는 것을 허용하고(0단계 끄기),
+            # 절대 임계값 네 칸을 모두 비우는 것을 허용하고(1단계 끄기),
             # 가동 판정 온도도 비우면 자동이라 빈칸이 정상적으로 생긴다.
             _v = config.get("CONSTANTS", _k, fallback="").strip()
             try:
@@ -817,12 +814,14 @@ def Set_Env_Config(user_ID, verbose=True):
         # 학습 표본 구성도 같이 읽는다.
         #
         #   RETRAIN_TARGET_SAMPLES  목표 표본 수
-        #   RETRAIN_ERA_BALANCE     시기를 나누어 담을지 (0/1)
+        #   RETRAIN_DYNAMIC_MIX     옛/새 비율을 기여 w 로 정할지 (0/1, 기본 0=가르지 않고 전체에서)
+        #   RETRAIN_BUFFER_DAYS     재생버퍼가 훑을 최근 일수 (0=전체)
         for _k in ("BASELINE_MIN_SAMPLES", "BASELINE_MIN_HOURS",
                    "RETRAIN_MIN_SAMPLES", "RETRAIN_MIN_HOURS",
                    "CONTRIB_WINDOW_TABLES", "CONTRIB_MIN_FRAMES",
                    "CONTRIB_MAX_SAMPLES",
-                   "RETRAIN_TARGET_SAMPLES", "RETRAIN_ERA_BALANCE"):
+                   "RETRAIN_TARGET_SAMPLES",
+                   "RETRAIN_DYNAMIC_MIX", "RETRAIN_BUFFER_DAYS"):
             # 위 실수 항목과 같은 이유로 빈칸을 '없음' 으로 본다.
             _v = config.get("CONSTANTS", _k, fallback="").strip()
             try:
@@ -831,12 +830,9 @@ def Set_Env_Config(user_ID, verbose=True):
                 print(f"[WARN] {_k} 값을 정수로 읽지 못했습니다: {_v!r}")
                 local_config[_k] = None
 
-        # 계산 기준일 (YYYY-MM-DD). 이 날짜 이전 데이터는 기준선 누적과
-        # 재학습 표집에서 모두 제외한다. 카메라를 옮기거나 설비를 바꾼 뒤
-        # "그 전에 배운 것은 잊으라" 고 지시하는 수단이다.
-        local_config["CALC_BASE_DATE"] = (
-            config.get("CONSTANTS", "CALC_BASE_DATE").strip()
-            if config.has_option("CONSTANTS", "CALC_BASE_DATE") else "")
+        # 계산 기준일은 없앴다. 옛 ini 에 CALC_BASE_DATE 가 남아 있어도 읽지 않는다.
+        # 옛/새 시기의 경계는 기여도 판단 구간(CONTRIB_WINDOW_TABLES 일)이 정한다.
+        local_config["CALC_BASE_DATE"] = ""
 
         local_config["THR_CONF_FIRE"]   = config.getfloat("CONSTANTS", "THR_CONF_FIRE")
         local_config["THR_TEMPT_FIRE"]  = config.getfloat("CONSTANTS", "THR_TEMPT_FIRE")

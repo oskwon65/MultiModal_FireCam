@@ -17,6 +17,12 @@ extern std::string gUserID;
 extern const char* GetMmCamStartPath();
 extern const char* GetAnacondaRootPub();
 extern const char* GetAnacondaEnvPub();
+extern std::string ini_read_utf8(const std::string&, const std::string&,
+                                 const std::string&, const std::string&);
+extern bool ini_write_utf8(const std::string&, const std::string&,
+                           const std::string&, const std::string&);
+extern bool ini_write_int_utf8(const std::string&, const std::string&,
+                               const std::string&, int);
 
 #define WM_LOG_LINE   (WM_APP + 21)
 #define WM_RUN_DONE   (WM_APP + 22)
@@ -31,6 +37,12 @@ extern const char* GetAnacondaEnvPub();
 #define ID_LBL_ELAPSED 3008
 #define ID_RING        3009
 #define ID_CBO_GEN     3010
+#define ID_CHK_DYN     3011
+#define ID_ED_BAND_HIGH 3012
+#define ID_ED_BAND_LOW  3013
+#define ID_CHK_AUTO     3014
+#define ID_ED_AUTO_HRS  3015
+#define ID_BTN_MIXSAVE  3016
 
 // 가운데 판 크기
 #define BUSY_W  460
@@ -117,6 +129,12 @@ BEGIN_MESSAGE_MAP(CDlg_Retrain, CDialogEx)
     ON_BN_CLICKED(ID_BTN_DRY, &CDlg_Retrain::OnBnClickedDryRun)
     ON_BN_CLICKED(ID_BTN_APPLY, &CDlg_Retrain::OnBnClickedApply)
     ON_BN_CLICKED(ID_BTN_BACK, &CDlg_Retrain::OnBnClickedRollback)
+    ON_BN_CLICKED(ID_CHK_DYN, &CDlg_Retrain::OnBnClickedDyn)
+    ON_BN_CLICKED(ID_CHK_AUTO, &CDlg_Retrain::OnBnClickedAuto)
+    ON_EN_CHANGE(ID_ED_AUTO_HRS, &CDlg_Retrain::OnEnChangeMix)
+    ON_EN_CHANGE(ID_ED_BAND_HIGH, &CDlg_Retrain::OnEnChangeMix)
+    ON_EN_CHANGE(ID_ED_BAND_LOW, &CDlg_Retrain::OnEnChangeMix)
+    ON_BN_CLICKED(ID_BTN_MIXSAVE, &CDlg_Retrain::OnBnClickedMixSave)
     ON_MESSAGE(WM_LOG_LINE, &CDlg_Retrain::OnLogLine)
     ON_MESSAGE(WM_RUN_DONE, &CDlg_Retrain::OnRunDone)
     ON_WM_DESTROY()
@@ -169,8 +187,11 @@ BOOL CDlg_Retrain::OnInitDialog()
                         - (M + headH + 4);
     const int logH    = (oldLogH > 240) ? oldLogH / 2 : 200;
 
+    const int mixH      = 24;                      // 동적구성 줄
     const int yBtnTop   = M + headH + 8;
-    const int yStateTop = yBtnTop + btnH + 8;
+    const int yMixTop   = yBtnTop + btnH + 8;
+    const int yAutoTop  = yMixTop + mixH + 4;      // 자동 재학습 줄
+    const int yStateTop = yAutoTop + mixH + 8;
     const int yLogTop   = yStateTop + stateH + 8;
     const int yLogBot   = yLogTop + logH;
 
@@ -265,18 +286,76 @@ BOOL CDlg_Retrain::OnInitDialog()
         CRect(M + btnW + 10, yBtnTop, M + btnW + 10 + 330, yBtnTop + 260),
         this, ID_CBO_GEN);
 
+    // 재생버퍼 동적구성 줄. 체크박스 글 - 입력칸 둘(상/하) - "기여 문턱 w (상/하)" 순서다.
+    // 왼쪽이 상(이 점수 이상이면 w=1), 오른쪽이 하(이 점수 이하이면 w=0).
+    // 입력칸은 소수라 ES_NUMBER 를 걸 수 없다.
+    {
+        long chkW;
+        {
+            CClientDC dc(this);
+            CFont* old = dc.SelectObject(&m_font);
+            chkW = 24 + dc.GetTextExtent(CString("재생버퍼 동적구성 [ w : 1-w]")).cx;
+            dc.SelectObject(old);
+        }
+        const long edW = 56;
+        const long x1 = M + chkW + 6;
+        const long x2 = x1 + edW + 6;
+        const long x3 = x2 + edW + 8;
+
+        m_chkDyn.Create("재생버퍼 동적구성 [ w : 1-w]",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(M, yMixTop + 2, x1 - 2, yMixTop + 2 + 20), this, ID_CHK_DYN);
+        const DWORD est = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_RIGHT;
+        m_edBandHigh.Create(est, CRect(x1, yMixTop, x1 + edW, yMixTop + 22),
+            this, ID_ED_BAND_HIGH);
+        m_edBandLow.Create(est, CRect(x2, yMixTop, x2 + edW, yMixTop + 22),
+            this, ID_ED_BAND_LOW);
+        m_lblBand.Create("기여 문턱 w (상/하)", WS_CHILD | WS_VISIBLE | SS_LEFT,
+            CRect(x3, yMixTop + 3, x3 + 170, yMixTop + 3 + 20), this);
+    }
+
+    // 자동 재학습 줄. 체크박스 - 간격 입력칸 - 설명 순서다.
+    {
+        long chkW;
+        {
+            CClientDC dc(this);
+            CFont* old = dc.SelectObject(&m_font);
+            chkW = 24 + dc.GetTextExtent(CString("자동 재학습")).cx;
+            dc.SelectObject(old);
+        }
+        const long edW = 56;
+        const long x1 = M + chkW + 6;
+        const long x2 = x1 + edW + 6;
+
+        m_chkAuto.Create("자동 재학습",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(M, yAutoTop + 2, x1 - 2, yAutoTop + 2 + 20), this, ID_CHK_AUTO);
+        m_edAutoHours.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_RIGHT | ES_NUMBER,
+            CRect(x1, yAutoTop, x1 + edW, yAutoTop + 22), this, ID_ED_AUTO_HRS);
+        m_lblAuto.Create("시간마다 · 기여 w < 1.00 이면 감도 시험을 거쳐 자동 교체",
+            WS_CHILD | WS_VISIBLE | SS_LEFT,
+            CRect(x2, yAutoTop + 3, rc.right - M - 100, yAutoTop + 3 + 20), this);
+
+        // 두 줄 오른쪽 끝에 [저장] 하나. 동적구성·문턱·자동 재학습을 함께 저장한다.
+        m_btnMixSave.Create("저장", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(rc.right - M - 92, yMixTop, rc.right - M, yAutoTop + 24), this, ID_BTN_MIXSAVE);
+    }
+
     SetFont(&m_font);
     SendMessageToDescendants(WM_SETFONT, (WPARAM)m_font.GetSafeHandle(), TRUE);
     m_edLog.SetFont(&m_fontMono);
+
+    LoadMixSettings();
+    LoadAutoSettings();
+    SetMixDirty(false);       // 읽어 넣는 동안 EN_CHANGE 가 변경으로 센 것을 지운다
 
     // [재학습 적용] 이 왜 꺼져 있는지 화면에 적어 둔다. 눌리지 않는 버튼을 두고
     // 설명이 없으면 고장으로 오해한다.
     CStringA head;
     head.Format("[%s]  재학습은 운용 모델을 바꿉니다. 먼저 [예행연습] 으로 결과를 확인하십시오.\r\n"
                 "[재학습 적용] 은 예행연습이 [판정] 승격 을 낸 경우에만 "
-                "켜집니다. 보류로 끝나면 사유가 아래에 남으며 적용할 수 없습니다.\r\n"
-                "[되돌리기] 는 옆에서 고른 세대로 돌리고, 칸별 기준선도 함께 "
-                "치웁니다. 보관된 세대는 모두 고를 수 있습니다.",
+                "켜집니다.\r\n"
+                "[되돌리기] 는 옆에서 고른 세대로 모델만 돌립니다.",
                 gUserID.c_str());
     m_lblHead.SetWindowTextA(head);
 
@@ -286,7 +365,7 @@ BOOL CDlg_Retrain::OnInitDialog()
     ShowGenerations();
 
     SetButtons();
-    m_lblState.SetWindowTextA("[예행연습] 을 눌러 시작하십시오. 아직 [재학습 적용] 은 꺼져 있습니다.");
+    m_lblState.SetWindowTextA("");
 
     // 컨트롤을 다 만든 뒤에 줄인다. 먼저 줄이면 GetClientRect 가 바뀌어
     // 배치가 어긋난다. 진행 판 자리는 띄울 때 늘려서 낸다.
@@ -297,6 +376,199 @@ BOOL CDlg_Retrain::OnInitDialog()
 }
 
 //---------------------------------------------------------
+
+// 재생버퍼 동적구성과 기여 문턱. 쓰는 곳은 continual_learning.ini 다(설정 창과 같은 파일).
+// 문턱은 소수라 문자열로 다뤄 적은 그대로 둔다 - 숫자로 돌려 다시 찍으면 0.850000 이 된다.
+void CDlg_Retrain::LoadMixSettings()
+{
+    const std::string ini = UserPath() + "continual_learning.ini";
+    static const char* MISSING = "\x01";
+
+    auto rd = [&](const char* key, const char* def) {
+        std::string v = ini_read_utf8(ini, "CONSTANTS", key, MISSING);
+        if (v == MISSING)       // 옮기기 전 현장 PC 는 env.ini 에 남아 있을 수 있다.
+            v = ini_read_utf8(UserPath() + "env.ini", "CONSTANTS", key, def);
+        return v;
+    };
+
+    const std::string dyn = rd("RETRAIN_DYNAMIC_MIX", "0");
+    m_chkDyn.SetCheck(atoi(dyn.c_str()) ? BST_CHECKED : BST_UNCHECKED);
+    m_edBandLow.SetWindowTextA(rd("CONTRIB_BAND_LOW", "0.20").c_str());
+    m_edBandHigh.SetWindowTextA(rd("CONTRIB_BAND_HIGH", "0.85").c_str());
+    UpdateBandEnable();
+}
+
+// 기여 문턱(상/하)은 w 를 정한다. w 는 동적구성을 켰을 때 옛/새 비율을 정하고, 자동 재학습을
+// 켰을 때는 "돌릴지" 를 정한다(w < 1.00). 둘 다 꺼져 있으면 w 를 쓰는 곳이 없어 칸을
+// 회색으로 막아 둔다(값은 보관한다).
+void CDlg_Retrain::UpdateBandEnable()
+{
+    const BOOL on = (m_chkDyn.GetCheck() == BST_CHECKED
+                  || m_chkAuto.GetCheck() == BST_CHECKED) ? TRUE : FALSE;
+    m_edBandHigh.EnableWindow(on);
+    m_edBandLow.EnableWindow(on);
+    m_lblBand.EnableWindow(on);
+}
+
+void CDlg_Retrain::OnBnClickedDyn()
+{
+    UpdateBandEnable();
+    SetMixDirty(true);
+}
+
+void CDlg_Retrain::OnEnChangeMix()
+{
+    SetMixDirty(true);
+}
+
+// 저장하지 않은 변경이 있을 때만 [저장] 을 켠다. 학습 단추는 SetButtons 가 같이 막는다.
+void CDlg_Retrain::SetMixDirty(bool dirty)
+{
+    m_mixDirty = dirty;
+    if (m_btnMixSave.GetSafeHwnd())
+        m_btnMixSave.EnableWindow(dirty && !m_bRunning);
+    if (m_btnDry.GetSafeHwnd()) SetButtons();
+}
+
+// 문턱. 점수는 exp(-mse*10) 이라 0 ~ 1 범위다.
+bool CDlg_Retrain::BandValid(CStringA& err) const
+{
+    CString cbl, cbh;
+    m_edBandLow.GetWindowTextA(cbl);
+    m_edBandHigh.GetWindowTextA(cbh);
+    const double lo = atof(cbl);
+    const double hi = atof(cbh);
+
+    if (lo <= 0.0 || lo >= 1.0 || hi <= 0.0 || hi > 1.0)
+    {
+        err = "기여 문턱은 0 초과 1 이하여야 합니다.";
+        return false;
+    }
+    if (lo >= hi)
+    {
+        err = "기여 문턱의 '하' 는 '상' 보다 낮아야 합니다.";
+        return false;
+    }
+    return true;
+}
+
+// [저장]. 무엇이 어떻게 바뀌는지 적어 보이고, 확인한 뒤에만 쓴다.
+void CDlg_Retrain::OnBnClickedMixSave()
+{
+    CStringA err;
+    if (!BandValid(err))
+    {
+        m_lblState.SetWindowTextA("[ERROR] " + err);
+        return;
+    }
+
+    CString lo, hi, hrs;
+    m_edBandLow.GetWindowTextA(lo);
+    m_edBandHigh.GetWindowTextA(hi);
+    m_edAutoHours.GetWindowTextA(hrs);
+    int hh = atoi(hrs);
+    if (hh < 1)   hh = 1;
+    if (hh > 720) hh = 720;
+
+    const bool dyn  = (m_chkDyn.GetCheck()  == BST_CHECKED);
+    const bool autoOn = (m_chkAuto.GetCheck() == BST_CHECKED);
+
+    CString ask;
+    ask.Format(_T("다음 내용으로 저장합니다.\n\n")
+               _T("재생버퍼 동적구성   %s\n")
+               _T("기여 문턱 w (상/하)  %s / %s\n")
+               _T("자동 재학습         %s\n\n")
+               _T("자동 재학습은 저장하는 즉시 감시가 따릅니다. 켜면 기여 w 가 1.00 미만일 때 ")
+               _T("%d시간 간격으로 학습하고, 감도 시험을 통과하면 모델을 바로 교체합니다.\n\n저장하시겠습니까?"),
+               dyn ? _T("켬") : _T("끔"),
+               (LPCTSTR)hi, (LPCTSTR)lo,
+               autoOn ? _T("켬") : _T("끔"), hh);
+
+    if (AfxMessageBox(ask, MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
+    {
+        m_lblState.SetWindowTextA("저장을 취소했습니다. 고친 내용은 아직 저장되지 않았습니다.");
+        return;
+    }
+
+    if (SaveMixSettings() && SaveAutoSettings())
+    {
+        SetMixDirty(false);
+        m_lblState.SetWindowTextA("저장했습니다.");
+    }
+}
+
+// 자동 재학습. 체크하면 감시가 기여 w 가 1.00 미만일 때 마지막 시작 뒤 간격(시간)이 지났으면
+// 재학습을 띄운다(predict_machine/auto_retrain.py).
+void CDlg_Retrain::LoadAutoSettings()
+{
+    const std::string ini = UserPath() + "continual_learning.ini";
+    const std::string on  = ini_read_utf8(ini, "CONSTANTS", "AUTO_RETRAIN", "0");
+    std::string hrs = ini_read_utf8(ini, "CONSTANTS", "AUTO_RETRAIN_HOURS", "24");
+    if (atoi(hrs.c_str()) < 1) hrs = "24";
+
+    m_chkAuto.SetCheck(atoi(on.c_str()) ? BST_CHECKED : BST_UNCHECKED);
+    m_edAutoHours.SetWindowTextA(hrs.c_str());
+    UpdateAutoEnable();
+    UpdateBandEnable();
+}
+
+void CDlg_Retrain::UpdateAutoEnable()
+{
+    const BOOL on = (m_chkAuto.GetCheck() == BST_CHECKED) ? TRUE : FALSE;
+    m_edAutoHours.EnableWindow(on);
+    m_lblAuto.EnableWindow(on);
+}
+
+bool CDlg_Retrain::SaveAutoSettings()
+{
+    CString t;
+    m_edAutoHours.GetWindowTextA(t);
+    int hrs = atoi(t);
+    if (hrs < 1)   hrs = 1;
+    if (hrs > 720) hrs = 720;
+    t.Format("%d", hrs);
+    m_edAutoHours.SetWindowTextA(t);          // 고친 값을 그대로 보여 준다
+
+    const std::string ini = UserPath() + "continual_learning.ini";
+    const int on = (m_chkAuto.GetCheck() == BST_CHECKED) ? 1 : 0;
+    const bool ok =
+        ini_write_int_utf8(ini, "CONSTANTS", "AUTO_RETRAIN", on)
+        && ini_write_int_utf8(ini, "CONSTANTS", "AUTO_RETRAIN_HOURS", hrs);
+    if (!ok)
+        m_lblState.SetWindowTextA("[ERROR] continual_learning.ini 를 쓰지 못했습니다.");
+    return ok;
+}
+
+void CDlg_Retrain::OnBnClickedAuto()
+{
+    UpdateAutoEnable();
+    UpdateBandEnable();
+    SetMixDirty(true);
+}
+
+bool CDlg_Retrain::SaveMixSettings()
+{
+    CString cbl, cbh;
+    m_edBandLow.GetWindowTextA(cbl);
+    m_edBandHigh.GetWindowTextA(cbh);
+
+    CStringA err;
+    if (!BandValid(err))
+    {
+        m_lblState.SetWindowTextA("[ERROR] " + err);
+        return false;
+    }
+
+    const std::string ini = UserPath() + "continual_learning.ini";
+    const int dyn = (m_chkDyn.GetCheck() == BST_CHECKED) ? 1 : 0;
+    const bool ok =
+        ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_DYNAMIC_MIX", dyn)
+        && ini_write_utf8(ini, "CONSTANTS", "CONTRIB_BAND_LOW", (const char*)CStringA(cbl))
+        && ini_write_utf8(ini, "CONSTANTS", "CONTRIB_BAND_HIGH", (const char*)CStringA(cbh));
+    if (!ok)
+        m_lblState.SetWindowTextA("[ERROR] continual_learning.ini 를 쓰지 못했습니다.");
+    return ok;
+}
 
 std::string CDlg_Retrain::UserPath() const
 {
@@ -430,7 +702,9 @@ CDlg_Retrain::GenMeta CDlg_Retrain::ReadGenMeta(const char* stamp) const
             // report.txt 는 UTF-8 이고 이 빌드는 MBCS 다.
             const CStringA t = Utf8ToAnsi(line);
 
-            const int at = t.Find("정상 평균 점수");
+            // 새 꼴과 옛 꼴을 모두 찾는다.
+            int at = t.Find("평균점수");
+            if (at < 0) at = t.Find("정상 평균 점수");
             if (at >= 0 && m.score.IsEmpty())
             {
                 int i = at;
@@ -459,8 +733,11 @@ CDlg_Retrain::GenMeta CDlg_Retrain::ReadGenMeta(const char* stamp) const
 
 // 그 세대가 학습 직후에 낸 정상 평균 점수. report.txt 에서 읽는다.
 //
-// 감도 회귀 시험표의 "정상 평균 점수" 줄에서 앞의 값(후보)을 쓴다. 뒤의
-// 값은 그때 운용 중이던 모델 것이라 세대의 성질이 아니다.
+// 감도 시험의 "평균점수" 줄에서 앞의 값(후보)을 쓴다. 뒤의 값은 괄호 안의
+// 현재 모델 것이라 세대의 성질이 아니다.
+//
+// 2026-09-29 에 보고서 꼴이 "[평가] 평균점수 0.966 (현재 0.791) 통과" 로
+// 바뀌었다. 옛 세대의 report.txt 는 "정상 평균 점수" 이므로 둘 다 찾는다.
 //
 // 물러나는 운용 모델을 떠 둔 세대에는 시험표가 없다. 그때는 빈 문자열이다.
 CStringA CDlg_Retrain::GenScore(const char* stamp) const
@@ -478,7 +755,8 @@ CStringA CDlg_Retrain::GenScore(const char* stamp) const
         // report.txt 는 UTF-8 이고 이 빌드는 MBCS 다. 줄마다 바꾸지 않으면
         // 한글로 찾을 수 없다.
         const CStringA t = Utf8ToAnsi(line);
-        const int at = t.Find("정상 평균 점수");
+        int at = t.Find("평균점수");
+        if (at < 0) at = t.Find("정상 평균 점수");
         if (at < 0) continue;
 
         int i = at;
@@ -688,6 +966,59 @@ void CDlg_Retrain::ShowGenerations()
     AppendLog("\r\n모두 되돌릴 수 있습니다. \"승격 안 됨\" 은 감도 시험을 "
               "거치지 않았거나 손으로 넣은 것입니다.\r\n", COLOR_LOG_DIM);
 
+    // 자동 재학습 이력. 감시가 한 건이 끝날 때마다 한 줄씩 쌓는다(auto_retrain_history.txt).
+    // 한 줄은  시작<탭>종료<탭>기여 w<탭>결과<탭>승격된 세대  다. 최근 열 건을 새것부터 적는다.
+    {
+        std::vector<std::string> rows;
+        CStdioFile f;
+        if (f.Open((UserPath() + "auto_retrain_history.txt").c_str(),
+                   CFile::modeRead | CFile::typeText))
+        {
+            CStringA ln;
+            while (f.ReadString(ln))
+            {
+                ln.Trim();
+                if (!ln.IsEmpty()) rows.push_back(std::string((LPCSTR)ln));
+            }
+            f.Close();
+        }
+
+        CStringA h;
+        h.Format("\r\n[자동 재학습 이력] 최근 %d건 / 전체 %d건\r\n",
+                 (int)(rows.size() > 10 ? 10 : rows.size()), (int)rows.size());
+        AppendLog(h);
+
+        if (rows.empty())
+            AppendLog("    (아직 없음)\r\n", COLOR_LOG_DIM);
+
+        for (size_t n = 0; n < rows.size() && n < 10; ++n)
+        {
+            // 새것부터. 파일은 오래된 것이 위다.
+            const std::string& r = rows[rows.size() - 1 - n];
+            std::vector<std::string> c;
+            size_t b = 0;
+            for (;;)
+            {
+                const size_t e = r.find('\t', b);
+                if (e == std::string::npos) { c.push_back(r.substr(b)); break; }
+                c.push_back(r.substr(b, e - b));
+                b = e + 1;
+            }
+            while (c.size() < 5) c.push_back("");
+
+            // 시작 시각은 분까지, 종료는 시각만 적는다. 같은 날 안에 끝나는 것이 보통이다.
+            const std::string st = c[0].substr(0, 16);
+            const std::string en = (c[1].size() >= 16) ? c[1].substr(11, 5) : "";
+
+            std::string line = "    " + st + (en.empty() ? "" : " ~ " + en)
+                + "   w " + c[2] + "   " + c[3];
+            if (!c[4].empty()) line += "   " + c[4];
+
+            AppendLog(Utf8ToAnsi(line.c_str()) + "\r\n",
+                      n == 0 ? COLOR_LOG_NORMAL : COLOR_LOG_DIM);
+        }
+    }
+
 
     // 되돌릴 수 있을 때는 따로 적지 않는다. 위 목록과 단추 옆 목록이
     // 이미 말해 준다. 못 할 때만 이유를 적는다.
@@ -710,6 +1041,25 @@ void CDlg_Retrain::SetButtons()
     m_btnBack.EnableWindow(!m_bRunning && canBack);
     if (m_cboGen.GetSafeHwnd()) m_cboGen.EnableWindow(!m_bRunning && canBack);
     m_btnClose.EnableWindow(!m_bRunning);
+    if (m_chkDyn.GetSafeHwnd())
+    {
+        m_chkDyn.EnableWindow(!m_bRunning);
+        if (m_bRunning)
+        {
+            m_edBandHigh.EnableWindow(FALSE);
+            m_edBandLow.EnableWindow(FALSE);
+            m_lblBand.EnableWindow(FALSE);
+        }
+        else UpdateBandEnable();
+    }
+    if (m_btnMixSave.GetSafeHwnd())
+        m_btnMixSave.EnableWindow(m_mixDirty && !m_bRunning);
+    if (m_chkAuto.GetSafeHwnd())
+    {
+        m_chkAuto.EnableWindow(!m_bRunning);
+        if (m_bRunning) m_edAutoHours.EnableWindow(FALSE);
+        else UpdateAutoEnable();
+    }
 }
 
 void CDlg_Retrain::SetClientHeight(int cliH)
@@ -1126,6 +1476,14 @@ void CDlg_Retrain::Run(RunKind kind)
     const bool dryRun = (kind == RUN_DRY);
     const bool back = (kind == RUN_ROLLBACK);
 
+    // 파이썬은 기동할 때 ini 를 읽으므로, 화면에서 고친 값을 저장하지 않고 돌리면 화면과 다른
+    // 값으로 학습한다. 저장하지 않은 변경이 있으면 돌리지 않는다.
+    if (!back && m_mixDirty)
+    {
+        AfxMessageBox(_T("저장하지 않은 변경이 있습니다.\n[저장] 을 눌러 저장한 뒤에 실행하십시오."));
+        return;
+    }
+
     // conda 환경을 활성화한 뒤 실행한다. 감시 프로세스를 띄울 때와 같은
     // 방식이라, 파이썬 환경이 어긋나 생기는 문제가 따로 생기지 않는다.
     // 되돌리기는 세대를 직접 지정한다. 무인자 --rollback 도 운용 중인 것의
@@ -1240,12 +1598,9 @@ void CDlg_Retrain::OnBnClickedRollback()
     q.Format("고른 세대로 되돌립니다.\r\n\r\n"
              "    지금  %s\r\n"
              "    이후  %s\r\n\r\n"
-             "칸별 기준선(online_baseline.npz)도 함께 치웁니다. 기준선은 "
-             "그 모델이 칸마다 내는 오차의 분포이므로, 모델만 갈면 임계치가 "
-             "다른 모델 것이 되어 어긋납니다.\r\n\r\n"
-             "치운 기준선은 지우지 않고 보관하므로 되돌릴 수 있습니다. "
-             "다시 쌓는 동안에는 칸별 임계치가 나오지 않고 절대 온도 "
-             "임계치만 작동합니다.\r\n\r\n"
+             "경험 임계값(online_baseline.npz)은 그대로 둡니다. 기준선이 "
+             "세는 것은 모델의 오차가 아니라 칸의 온도 그 자체라, 모델을 "
+             "되돌려도 그대로 맞습니다.\r\n\r\n"
              "%s"
              "되돌린 뒤 감시를 다시 시작해야 반영됩니다. 진행할까요?",
              (LPCSTR)m_curGen, (LPCSTR)m_backGen, (LPCSTR)warn);
@@ -1385,6 +1740,10 @@ void CDlg_Retrain::OnCancel()
         AfxMessageBox(_T("실행 중입니다. 끝난 뒤에 닫으십시오."));
         return;
     }
+    if (m_mixDirty &&
+        AfxMessageBox(_T("저장하지 않은 변경이 있습니다.\n저장하지 않고 닫으시겠습니까?"),
+                      MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
+        return;
     CDialogEx::OnCancel();
 }
 

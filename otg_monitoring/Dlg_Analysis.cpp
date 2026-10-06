@@ -6,6 +6,8 @@
 #include "MmCam_monitoring.h"
 #include "MmCam_monitoringDlg.h"
 #include "Dlg_Analysis.h"
+#include "Dlg_OpState.h"
+#include "Dlg_CellBase.h"
 #include "afxdialogex.h"
 
 extern "C" {
@@ -31,6 +33,8 @@ extern const char* GetMmCamStartPath();
 #define ID_BTN_RELOAD   3103
 #define ID_LBL_STATE    3104
 #define ID_LBL_HEAD     3105
+#define ID_BTN_OPSTATE  3106
+#define ID_BTN_CELLBASE 3107
 
 #define PANEL_BG    RGB(255, 255, 255)
 #define AXIS_COLOR  RGB(0xB8, 0xC0, 0xCC)
@@ -85,6 +89,8 @@ void CDlg_Analysis::DoDataExchange(CDataExchange* pDX)
 BEGIN_MESSAGE_MAP(CDlg_Analysis, CDialogEx)
     ON_CBN_SELCHANGE(ID_CBO_RANGE, &CDlg_Analysis::OnSelchangeRange)
     ON_BN_CLICKED(ID_BTN_RELOAD, &CDlg_Analysis::OnBnClickedReload)
+    ON_BN_CLICKED(ID_BTN_OPSTATE, &CDlg_Analysis::OnBnClickedOpState)
+    ON_BN_CLICKED(ID_BTN_CELLBASE, &CDlg_Analysis::OnBnClickedCellBase)
     ON_WM_DRAWITEM()
     ON_WM_CTLCOLOR()
     ON_WM_MOUSEMOVE()
@@ -138,6 +144,25 @@ BOOL CDlg_Analysis::OnInitDialog()
     m_btnReload.Create("다시 읽기", WS_CHILD | WS_VISIBLE | WS_TABSTOP
         | BS_PUSHBUTTON,
         CRect(M + 160, yTop, M + 160 + btnW, yTop + btnH), this, ID_BTN_RELOAD);
+
+    // 운전 상태 관찰.
+    //
+    // 점수 추이는 "얼마나 낯선가" 를 시간 순으로 보여 주고, 운전 상태는
+    // 같은 자료를 "무슨 상황이었나" 로 나눠 보여 준다. 선이 내려앉은
+    // 구간에서 설비가 무엇을 하고 있었는지는 저쪽에서 읽는다.
+    m_btnOpState.Create("운전 상태 관찰", WS_CHILD | WS_VISIBLE | WS_TABSTOP
+        | BS_PUSHBUTTON,
+        CRect(M + 160 + btnW + 10, yTop, M + 160 + btnW + 10 + 150,
+              yTop + btnH), this, ID_BTN_OPSTATE);
+
+    // 경험 임계값.
+    //
+    // 이 창의 격자는 DB 에 적힌 온도라 높은지 낮은지 판단할 근거가 없다.
+    // 저쪽은 칸마다 평소 선을 나란히 둔다.
+    m_btnCellBase.Create("경험 임계값", WS_CHILD | WS_VISIBLE | WS_TABSTOP
+        | BS_PUSHBUTTON,
+        CRect(M + 160 + btnW + 170, yTop, M + 160 + btnW + 170 + 130,
+              yTop + btnH), this, ID_BTN_CELLBASE);
 
     int bx = rc.right - M - btnW;
     m_btnClose.Create("닫기", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
@@ -254,6 +279,20 @@ void CDlg_Analysis::SetState(const char* text)
 
 void CDlg_Analysis::OnSelchangeRange() { Load(); }
 void CDlg_Analysis::OnBnClickedReload() { Load(); }
+
+// 운전 상태 관찰 창을 띄운다.
+void CDlg_Analysis::OnBnClickedOpState()
+{
+    CDlg_OpState dlg(this);
+    dlg.DoModal();
+}
+
+// 경험 임계값 창을 띄운다.
+void CDlg_Analysis::OnBnClickedCellBase()
+{
+    CDlg_CellBase dlg(this);
+    dlg.DoModal();
+}
 
 //---------------------------------------------------------
 // DB 에서 시간별 평균을 읽는다
@@ -643,7 +682,7 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
             mem.DrawTextA(t, &rcT, DT_RIGHT | DT_SINGLELINE);
         }
     }
-    // 아래 칸 : 0단계 절대 임계값
+    // 아래 칸 : 1단계 절대 임계값
     if (m_tempWarn > 0.0 && m_tempWarn <= m_tempTop)
     {
         CPen pen(PS_DOT, 1, BAND_COLOR);

@@ -12,8 +12,15 @@
   python retrain/nightly_retrain.py kict1 --rollback 20260923_144613
   python retrain/nightly_retrain.py kict1 --list        세대 목록
 
-되돌리면 칸별 기준선도 함께 치운다. 기준선은 그 모델의 오차 분포이므로
-모델만 갈면 임계치가 어긋난다. --keep-baseline 으로 막을 수 있다.
+되돌리기는 오토인코더 모델만 돌린다. 경험 임계값은 건드리지 않는다 -
+기준선이 세는 것은 모델의 오차가 아니라 "이 칸이 평소 몇 도까지 올라갔나"
+라서, 모델을 갈아도 그대로 맞는다.
+
+  python retrain/nightly_retrain.py kict1 --reset-baseline
+
+기준선을 치우는 것은 따로 있는 일이다. 모델이 바뀌어서가 아니라 카메라가
+보는 것이 달라졌을 때 쓴다 - 마스크를 다시 떴거나, 카메라 자리를 옮겼거나,
+이상한 장면을 한참 정상으로 배워 넣었을 때.
 
 --dry-run 은 모델을 저장하지 않는다. 결과는 보고서로 다 나오고 그 모델을
 나중에 쓸 일이 없다. 세대는 실제 재학습에서만 생긴다.
@@ -78,6 +85,9 @@ from db_utils import Set_Env_Config, Get_HistoryDB_Config, Connect_History_DB
 # 폴더의 scaler.npz 로 폴백해 준다.
 from predict_machine import AutoEncoder, load_scaler
 
+# 기준선을 치울 때 사유를 남기는 쪽지. 감시 쪽이 다음에 올라오며 읽는다.
+from online_baseline import write_reset_note
+
 import replay_buffer
 import model_contribution
 import sensitivity_gate
@@ -97,8 +107,8 @@ MIN_SAMPLES_DEFAULT = 5000
 # 15,352건으로 최소 기준의 세 배를 넘겼지만 새벽 02~07시가 통째로 비어
 # 있었다. 그대로 학습하면 평범한 새벽 3시를 이상으로 판정한다.
 #
-# 1단계 기준선에는 같은 뜻의 조건(BASELINE_MIN_HOURS)이 처음부터 있었는데
-# 재학습에만 빠져 있었다. 값을 1단계와 같은 18 로 맞춘다.
+# 2단계 기준선에는 같은 뜻의 조건(BASELINE_MIN_HOURS)이 처음부터 있었는데
+# 재학습에만 빠져 있었다. 값을 2단계와 같은 18 로 맞춘다.
 MIN_HOURS_DEFAULT = 18
 HOLDOUT_RATIO = 0.15
 EPOCHS = 400
@@ -111,7 +121,7 @@ KEEP_GENERATIONS = 10
 GEN_DIR_NAME = "model_generations"
 ARTIFACTS = ("autoencoder_final.pth", "scaler.pkl", "scaler.npz")
 
-# 칸별 기준선. 세대 산출물이 아니라 운용 중에 쌓이는 상태다.
+# 경험 임계값. 세대 산출물이 아니라 운용 중에 쌓이는 상태다.
 BASELINE_NAME = "online_baseline.npz"
 RETIRED_DIR_NAME = "_retired_baseline"
 
@@ -401,18 +411,28 @@ def print_base_info(user_path):
 
 def reset_baseline(user_path, why=""):
     """
-    칸별 기준선을 치운다. 되돌리기와 함께 쓴다.
+    경험 임계값을 치운다. --reset-baseline 을 줄 때만 부른다.
 
-    [왜 치워야 하는가]
+    [모델을 갈았다고 치울 일이 아니다]
 
-    기준선은 "이 모델이 이 칸에서 내는 오차" 의 분포다. 칸마다 256구간
-    히스토그램으로 0.999 분위를 잡아 임계치로 쓴다. 모델을 갈면 오차의
-    크기 자체가 달라지므로, 남은 분포는 다른 모델의 것이다. 임계치가 너무
-    느슨하면 놓치고 너무 빡빡하면 오경보가 쏟아진다.
+    예전에는 되돌릴 때마다 함께 치웠다. "기준선은 그 모델이 칸마다 내는
+    오차의 분포라, 모델을 갈면 어긋난다" 는 것이 이유였는데 사실이 아니다.
+    기준선이 세는 것은 오차가 아니라 **칸의 온도 그 자체**다 (0~255 도를
+    256구간 히스토그램에 넣고 분위수를 뽑는다). 채점도 "이 칸이 평소 선보다
+    몇 도 높은가" 로, 오토인코더가 끼어들지 않는다.
+
+    그래서 모델을 되돌려도 기준선은 그대로 맞다. 치우면 3,000건·18시간대를
+    다시 쌓는 동안(cj_busan_1 은 하루 넘게) 칸별 임계치 없이 돌 뿐이다.
+
+    [그러면 언제 치우는가]
+
+    카메라가 보는 것이 달라졌을 때다. 마스크를 다시 떴거나, 카메라 자리를
+    옮겼거나, 이상한 장면을 한참 정상으로 배워 넣었을 때. 그때는 쌓인
+    온도 분포가 지금 화면의 것이 아니다.
 
     [왜 지우지 않고 옮기는가]
 
-    되돌리기를 또 되돌릴 수 있어야 한다. 기준선은 다시 쌓는 데 시간이
+    치운 것을 다시 되돌릴 수 있어야 한다. 기준선은 다시 쌓는 데 시간이
     걸리고(MIN_SAMPLES 3,000 · 시간대 조건) 그 동안 현장은 임계치 없이
     돈다. 잘못 판단해 치웠다면 파일을 되돌려 놓는 것이 가장 빠른 복구다.
 
@@ -437,6 +457,12 @@ def reset_baseline(user_path, why=""):
             os.remove(os.path.join(dst_dir, old_f))
         except OSError:
             pass
+
+    # 왜 치웠는지를 쪽지로 남긴다.
+    #
+    # 치우고 나면 감시 쪽에서 보이는 것은 "파일이 없다" 뿐이라 설치 직후와
+    # 구별되지 않는다. 사유를 아는 것은 치운 이쪽뿐이다.
+    write_reset_note(user_path, why if why else "부터 쌓는 중")
 
     tail = f" ({why})" if why else ""
     print(f"[기준선] 치웠습니다{tail} - "
@@ -553,18 +579,48 @@ def activate(user_path, stamp, how="승격"):
 # 학습
 # ======================================================================
 
-def train(X, input_dim, latent_dim, device, verbose=True,
-          init_state=None, old_weight=1.0):
+AUTO_FILE_NAME = "retrain_auto.ini"
+
+
+def write_auto_run_temp(user_path, info):
     """
-    init_state  기존 모델의 가중치. 주면 거기서 출발한다(웜스타트).
-    old_weight  기존 모델을 얼마나 물려받을지(0.0~1.0).
+    자동으로 잡은 가동 판정 온도를 [설정] 창이 읽도록 남긴다.
+
+    재학습(예행연습 포함)이 표본을 모을 때마다 다시 쓴다. 보류로 끝나도 남긴다 -
+    값이 맞게 잡혔는지는 학습이 되든 안 되든 볼 수 있어야 한다.
+    """
+    split = info.get("split")
+    if split is None:
+        return
+    share = info.get("run_share")
+    try:
+        with open(os.path.join(user_path, AUTO_FILE_NAME), "w",
+                  encoding="utf-8") as f:
+            f.write("; 재학습이 자동으로 잡은 값입니다. 직접 고치지 마십시오.\n")
+            f.write("[AUTO]\n")
+            f.write(f"RUN_TEMP = {float(split):.0f}\n")
+            f.write(f"RUN_PCT = {'' if share is None else f'{float(share) * 100:.0f}'}\n")
+            f.write(f"PERIOD = {info.get('period', '')}\n")
+            f.write(f"AT = {datetime.now():%Y-%m-%d %H:%M}\n")
+    except OSError as e:
+        print(f"[WARN] 가동 판정 온도를 남기지 못했습니다: {e}")
+
+
+def train(X, input_dim, latent_dim, device, verbose=True,
+          init_state=None, old_weight=1.0, dynamic_mix=False):
+    """
+    init_state   기존 모델의 가중치. 주면 거기서 출발한다(웜스타트).
+    old_weight   기존 모델을 얼마나 물려받을지(0.0~1.0).
+    dynamic_mix  재생버퍼 동적구성이 켜져 있는가. 꺼져 있으면 w 를 보지 않고 늘
+                 웜스타트한다. 켜져 있을 때만 w=0 이 "새로 초기화" 를 뜻한다.
 
     웜스타트는 지난 세대가 찾아 놓은 자리에서 시작하므로 적은 자료로도 빨리
-    수렴한다. 다만 옛 모습에 붙들리는 대가가 있다. 그래서 물려받는 정도가
-    낮을수록 학습률을 올려 옛 흔적을 빨리 벗게 한다.
+    수렴한다. 학습률은 w 와 무관하게 늘 LEARNING_RATE 로 고정한다. 예전에는
+    물려받는 정도가 낮을수록 올렸으나, w 가 표본 구성과 학습률 두 곳에서 한꺼번에
+    작용해 결과를 읽기 어려웠다.
 
-    old_weight = 0 이면 아예 새로 초기화한다. 카메라가 완전히 다른 곳을 보고
-    있는데 그 자리에서 출발할 이유가 없다.
+    동적구성이 켜져 있고 old_weight = 0 이면 아예 새로 초기화한다. 카메라가 완전히
+    다른 곳을 보고 있는데 그 자리에서 출발할 이유가 없다.
     """
     scaler = StandardScaler().fit(X)
     Xs = torch.tensor(scaler.transform(X), dtype=torch.float32)
@@ -572,13 +628,14 @@ def train(X, input_dim, latent_dim, device, verbose=True,
     model = AutoEncoder(input_dim, latent_dim, input_dim).to(device)
 
     lr = LEARNING_RATE
-    if init_state is not None and old_weight > 0.0:
+    warm = init_state is not None and (not dynamic_mix or old_weight > 0.0)
+    if warm:
         try:
             model.load_state_dict(init_state)
-            # 적게 물려받을수록 크게 흔든다. w=1 이면 그대로, w=0.2 면 약 3배.
-            lr = LEARNING_RATE * (1.0 + 2.0 * (1.0 - old_weight))
             if verbose:
-                print(f"[학습] 웜스타트 (기여 {old_weight:.2f}, 학습률 {lr:.5f})")
+                why = (f"동적구성 꺼짐, 기여 {old_weight:.2f} 와 무관"
+                       if not dynamic_mix else f"기여 {old_weight:.2f}")
+                print(f"[학습] 웜스타트 ({why}, 학습률 {lr:.5f})")
         except Exception as e:
             print(f"[경고] 웜스타트 실패, 새로 초기화합니다: {type(e).__name__} {e}")
     elif verbose:
@@ -680,9 +737,15 @@ def main():
     ap.add_argument("--list", action="store_true", help="세대 목록")
     ap.add_argument("--fresh", action="store_true",
                     help="예행연습 결과를 다시 쓰지 않고 새로 학습한다")
+    # 기준선 치우기. 되돌리기와 섞이지 않는 독립된 일이다.
+    ap.add_argument("--reset-baseline", action="store_true",
+                    help="경험 임계값을 치우고 처음부터 다시 쌓게 한다 "
+                         "(마스크를 다시 떴거나 카메라를 옮겼을 때). "
+                         "모델·세대는 건드리지 않는다")
+    # 옛 이름. 되돌리기가 더 이상 기준선을 치우지 않아 할 일이 없지만,
+    # 적어 둔 명령이 깨지지 않게 받기만 한다.
     ap.add_argument("--keep-baseline", action="store_true",
-                    help="되돌릴 때 칸별 기준선을 그대로 둔다 "
-                         "(기본은 치우고 다시 쌓게 한다)")
+                    help=argparse.SUPPRESS)
     args = ap.parse_args()
 
     # 읽은 파일은 제목 아래에 적는다. 여기서 찍으면 제목 위로 올라간다.
@@ -711,6 +774,14 @@ def main():
             print()
             print(f"  승격 기록({HISTORY_NAME})이 없습니다. 어느 것이 실제로 "
                   f"운용되었는지 알 수 없습니다.")
+        return 0
+
+    # ---------------- 기준선 치우기 ----------------
+    #
+    # 세대·모델과 아무 상관이 없는 일이다. 카메라가 보는 것이 달라졌을 때
+    # 쌓인 온도 분포를 버리는 것뿐이라, 되돌리기에 얹지 않고 따로 둔다.
+    if args.reset_baseline:
+        reset_baseline(user_path, "부터 쌓는 중")
         return 0
 
     # ---------------- 되돌리기 ----------------
@@ -761,14 +832,10 @@ def main():
             return 1
         activate(user_path, target, how="되돌림")
 
-        # 기준선은 갈아 낸 모델의 오차 분포다. 모델만 되돌리면 임계치가
-        # 다른 모델 것이라 어긋난다. --keep-baseline 으로 막을 수 있다.
-        if args.keep_baseline:
-            print("[기준선] --keep-baseline 이므로 그대로 둡니다. "
-                  "임계치가 한동안 어긋날 수 있습니다.")
-        else:
-            reset_baseline(user_path, f"{target} 로 되돌림")
-
+        # 되돌리기는 모델만 돌린다. 기준선은 칸의 온도 분포지 모델의
+        # 산물이 아니라, 여기서 다룰 일이 아니다. 치워야 한다면 그것은
+        # 모델이 아니라 카메라가 보는 것이 달라졌다는 뜻이고, 그때는
+        # --reset-baseline 을 따로 돌린다.
         print(f"[OK] {target} 세대로 되돌렸습니다. "
               f"감시가 곧 알아채고 갈아 끼웁니다(10초 안).")
         return 0
@@ -887,51 +954,59 @@ def main():
         # 아예 멈춘다 - 망가진 모델이 자기 후임을 못 만들게 막는 꼴이다.
         #
         # 모델을 못 믿기로 했으면 그 판단으로 표본을 걸러서도 안 된다.
-        # 대신 0단계 절대 임계값으로 거른다. 학습과 무관하게 늘 동작하는
+        # 대신 1단계 절대 임계값으로 거른다. 학습과 무관하게 늘 동작하는
         # 유일한 판단이고, 이상 프레임을 학습에 넣지 않는다는 목적도 지킨다.
-        # 표본을 거르는 점수도 다시 매긴다.
-        #
-        # 기여도만 고쳐 놓으면 앞뒤가 맞지 않는다. "지금 모델을 믿는다"(기여
-        # 1.00)고 판단해 놓고, 정작 표본은 그때그때 다른 모델이 매긴 점수로
-        # 거르게 된다. 09-25~26 이 그래서 3,000건 중 102건만 들어왔다.
         # 학습 표본 구성 규칙. [설정] 창에서 바꾼다.
         target = int(config.get("RETRAIN_TARGET_SAMPLES") or TARGET_SAMPLES)
-        normal_min = config.get("RETRAIN_NORMAL_MIN_SCORE")
-        normal_min = (replay_buffer.NORMAL_MIN_SCORE if normal_min in (None, "")
-                      else float(normal_min))
-        run_temp = config.get("RETRAIN_RUN_TEMP")
-        run_temp = None if run_temp in (None, "") else float(run_temp)
-        era_balance = bool(int(config.get("RETRAIN_ERA_BALANCE") or 0))
+        # 가동 판정 온도는 사람이 정하지 않는다. 재생버퍼가 자료의 온도 분포에서
+        # 스스로 잡고, 그 값을 [설정] 창이 읽도록 파일로 남긴다.
+        run_temp = None
+        # 재생버퍼 동적 구성. 켜면 옛/새 비율을 기여 w 로 정하고(새 시기 = 판단 구간,
+        # 곧 최근 N일), 끄면(기본) w 를 보지 않고 옛/새를 가르지 않은 채 전체에서 뽑는다.
+        dynamic_mix = bool(int(config.get("RETRAIN_DYNAMIC_MIX") or 0))
+        # 재생버퍼 수집 일수. 0 이거나 비어 있으면 DB 에 있는 전체.
+        buffer_days = int(config.get("RETRAIN_BUFFER_DAYS") or 0)
 
-        replay_score = None
-        if old_weight >= 1.0:
-            min_score = normal_min
-            temp_warn = None
-            replay_score = rescore
-            if replay_score is not None:
-                print(f"[재생버퍼] 정상 판정 기준 : 모델 점수 >= {min_score} "
-                      f"(지금 모델로 다시 매긴 값)")
-            else:
-                print(f"[재생버퍼] 정상 판정 기준 : 모델 점수 >= {min_score} "
-                      f"(아직 운용 모델이 없어 적힌 점수를 쓴다)")
+        # 거르는 잣대는 기여와 무관하다.
+        #
+        # 예전에는 기여 1.00 이면 모델 점수로, 미만이면 절대 임계값으로
+        # 걸렀다. 모델을 믿느냐에 따라 잣대를 바꾼 것인데, 믿는 쪽이 오히려
+        # 위험했다 - 모델이 틀린 자리가 표본에서 빠져 다음 세대도 똑같이
+        # 틀렸다. 이제 언제나 절대 임계값과 칸별 분위수로 거른다.
+        temp_warn = config.get("ABS_TEMP_WARN")
+        if temp_warn is None:
+            print("[경고] ABS_TEMP_WARN 이 비어 있어 이상 프레임을 걸러낼")
+            print("       잣대가 하나도 없습니다. 들어온 것을 모두 학습합니다.")
+            print("       [설정] 창에서 절대 임계값을 지정하십시오.")
         else:
-            min_score = 0.0
-            temp_warn = config.get("ABS_TEMP_WARN")
-            if temp_warn is None:
-                print("[경고] 모델 점수를 믿지 않기로 했는데 ABS_TEMP_WARN 이")
-                print("       비어 있어 이상 프레임을 걸러낼 수단이 없습니다.")
-                print("       [설정] 창에서 절대 임계값을 먼저 지정하십시오.")
-            else:
-                print(f"[재생버퍼] 정상 판정 기준 : 절대 임계값 < {temp_warn:.0f}도 "
-                      f"(모델 점수는 믿지 않음)")
+            print(f"[재생버퍼] 정상 판정 기준 : 절대 임계값 < {temp_warn:.0f}도")
+
+        # 옛/새 표본 비율의 규칙을 적는다.
+        #
+        # 비율을 따로 정하는 곳이 없다는 것을 화면에서 알 수 있어야 한다.
+        # 기여가 정해지면 비율은 따라온다. 그리고 가르지 않는 경우가 오히려
+        # 흔한데(기여 1.00 이거나 기준일이 비어 있으면), 그때 무엇을 기준으로
+        # 뽑는지가 지금까지 어디에도 없었다.
+        _rule = "[재생버퍼] 옛샘플 (판단 구간 이전) 새샘플 = 기여 : 1-기여"
+        if not dynamic_mix:
+            print("[재생버퍼] 옛/새를 가르지 않고 전체에서 뽑음   "
+                  "(동적구성 꺼짐 - 기여 w 를 보지 않음)")
+        elif old_weight >= 1.0:
+            print(f"{_rule}   (기여 1.00 이라 가르지 않고 전체에서 뽑음)")
+        else:
+            print(f"{_rule} = {old_weight:.2f} : {1.0 - old_weight:.2f} "
+                  f"(새 시기 = 최근 {n_tab}일)")
 
         X, info = replay_buffer.collect(
             conn, history_db["database"], n_cells, target, mask=mask,
-            base_date=config.get("CALC_BASE_DATE"), old_weight=old_weight,
-            min_score=min_score, temp_warn=temp_warn, score_fn=replay_score,
-            run_temp=run_temp, era_balance=era_balance)
+            split_days=n_tab, old_weight=old_weight,
+            temp_warn=temp_warn,
+            run_temp=run_temp, dynamic_mix=dynamic_mix,
+            recent_days=buffer_days)
     finally:
         conn.close()
+
+    write_auto_run_temp(user_path, info)
 
     # 최소 표본 수는 모니터링 프로그램의 [설정] 창에서 바꾼다.
     min_samples = config.get("RETRAIN_MIN_SAMPLES") or MIN_SAMPLES_DEFAULT
@@ -940,7 +1015,7 @@ def main():
 
     if len(X) < min_samples:
         print(f"[보류] 표본이 {len(X):,}건뿐입니다. 최소 {min_samples:,}건이 필요합니다.")
-        print("       1단계 기준선이 채점을 시작한 뒤부터 정상 프레임이 쌓입니다.")
+        print("       2단계 기준선이 채점을 시작한 뒤부터 정상 프레임이 쌓입니다.")
         return 2
 
     if info.get("hours", 0) < min_hours:
@@ -963,7 +1038,6 @@ def main():
                  f" · 시간대 {info.get('hours', 0)}/{min_hours}"
                  f" · 기간 {info['period']}"
                  f" · 칸 {info['cells']}"
-                 + (f" · 시기 {info['eras']}" if info.get("eras", 1) > 1 else "")
                  + f" · 기여 {old_weight:.2f}"
                  + (f" · 가동판정 {info['split']:.0f}도"
                     if info.get("split") else ""))
@@ -981,11 +1055,12 @@ def main():
     # 표본에서 쓰지 못한 모델의 가중치를 웜스타트에만 쓰는 일이 생긴다.
     # 이제 읽지 못하면 위에서 멈추므로, 여기 오는 것은 온전히 읽힌 모델뿐이다.
     init_state = None
-    if old_weight > 0.0 and live_model is not None:
+    if live_model is not None and (not dynamic_mix or old_weight > 0.0):
         init_state = live_model.state_dict()
 
     model, scaler = train(X_train, n_cells, latent_dim, device,
-                          init_state=init_state, old_weight=old_weight)
+                          init_state=init_state, old_weight=old_weight,
+                          dynamic_mix=dynamic_mix)
 
     # ---------------- 감도 회귀 시험 ----------------
     cand = sensitivity_gate.evaluate(model, scaler, X_hold, mask, device)
@@ -1014,8 +1089,8 @@ def main():
             print(f"[경고] 현재 모델을 시험하지 못했습니다: {type(e).__name__} {e}")
             print(f"       감도 악화 비교 없이 절대 기준만 적용합니다.")
 
-    passed, reasons = sensitivity_gate.check(cand, incumbent)
-    report = sensitivity_gate.format_report(cand, incumbent, passed, reasons)
+    passed, gate_rows = sensitivity_gate.check(cand, incumbent)
+    report = sensitivity_gate.format_report(cand, incumbent, passed, gate_rows)
     print()
     print(RULE)
     print(report)
@@ -1056,11 +1131,9 @@ def main():
     if os.path.exists(_cp):
         base_gen = open(_cp, encoding="utf-8").read().strip()
 
-    _cbd = (config.get("CALC_BASE_DATE") or "").strip()
-
     header = (f"재학습 {datetime.now():%Y-%m-%d %H:%M:%S}  user={args.user_id}\n"
               f"기준 세대 {base_gen or '없음'}  기여 {old_weight:.2f}  "
-              f"계산기준일 {_cbd or '없음'}\n"
+              f"판단 {config.get('CONTRIB_WINDOW_TABLES') or '기본'}일\n"
               f"표본 {info['drawn']:,}건  기간 {info['period']}  "
               f"칸 {info['cells']}개  시간대 {info.get('hours', 0)}개\n\n")
     if args.dry_run:
