@@ -10,6 +10,7 @@
 #include "Dlg_CamPos.h"
 #include "Dlg_Retrain.h"
 #include "Dlg_CellBase.h"
+#include "Dlg_OpState.h"
 
 #include <vector>
 
@@ -60,6 +61,8 @@ extern const char* GetMmCamStartPath();
 // 학습 표본 구성
 // [현재 진행] 2단계 줄 옆의 작은 버튼. 칸별 기준값을 띄운다.
 #define ID_BTN_CELLBASE						2150
+#define ID_BTN_OPNAMES						2153
+#define ID_BTN_GENMGR						2154
 #define ID_BTN_BASE_FRESH					2151
 #define ID_BTN_BASE_REBUILD					2152
 
@@ -132,6 +135,8 @@ BEGIN_MESSAGE_MAP(CDlg_Set_MmCam_Env, CDialogEx)
 	ON_BN_CLICKED(ID_BTN_SAVE_STAGE, &CDlg_Set_MmCam_Env::OnBnClickedSaveStage)
 	ON_BN_CLICKED(ID_BTN_RETRAIN, &CDlg_Set_MmCam_Env::OnBnClickedRetrain)
 	ON_BN_CLICKED(ID_BTN_CELLBASE, &CDlg_Set_MmCam_Env::OnBnClickedCellBase)
+	ON_BN_CLICKED(ID_BTN_OPNAMES, &CDlg_Set_MmCam_Env::OnBnClickedOpNames)
+	ON_BN_CLICKED(ID_BTN_GENMGR, &CDlg_Set_MmCam_Env::OnBnClickedGenMgr)
 	ON_BN_CLICKED(ID_BTN_BASE_FRESH, &CDlg_Set_MmCam_Env::OnBnClickedBaseFresh)
 	ON_BN_CLICKED(ID_BTN_BASE_REBUILD, &CDlg_Set_MmCam_Env::OnBnClickedBaseRebuild)
 	ON_WM_CTLCOLOR()
@@ -322,6 +327,9 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 주의와 경보를 한 줄에 둘씩 묶어 두 줄로 줄였다. 넷을 따로 늘어놓으면
 	// 설정 영역이 지나치게 길어진다.
 	// -------------------------------------------------------------
+	// 왼쪽 열 구역 제목의 폭. 오른쪽 [현재 진행] 열(col2_x = nBase_X + 360) 앞에서
+	// 끊는다. 520 으로 두었더니 오른쪽 칸 글상자와 겹쳐 그 윗줄을 가렸다.
+	const long CAP_W = 355;
 	const long ed2_w = 70;
 	const long ed2_x1 = nBase_X + lbl_w + 10;
 	const long ed2_x2 = ed2_x1 + ed2_w + 10;
@@ -359,7 +367,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 
 	m_capStage.Create("[ 2단계 전환 조건 ]   경험 임계값으로 채점을 시작할 때",
 		WS_CHILD | WS_VISIBLE | SS_LEFT,
-		CRect(nBase_X, y, nBase_X + 520, y + 22), this);
+		CRect(nBase_X, y, nBase_X + CAP_W, y + 22), this);
 	y += 26;
 
 	Row rows1[] = {
@@ -391,7 +399,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// -------------------------------------------------------------
 	m_capContrib.Create("[ 3단계·기여도 ]   현 모델이 최근 데이터를 잘 측정하는지",
 		WS_CHILD | WS_VISIBLE | SS_LEFT,
-		CRect(nBase_X, y, nBase_X + 520, y + 22), this);
+		CRect(nBase_X, y, nBase_X + CAP_W, y + 22), this);
 	y += 26;
 
 	{
@@ -426,7 +434,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 
 	m_capStage2.Create("[ 3단계·재생 버퍼 ]   재학습이 무엇을 모아 배울지",
 		WS_CHILD | WS_VISIBLE | SS_LEFT,
-		CRect(nBase_X, y, nBase_X + 520, y + 22), this);
+		CRect(nBase_X, y, nBase_X + CAP_W, y + 22), this);
 	y += 26;
 
 	Row rows2[] = {
@@ -455,11 +463,6 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 정상 판정선(모델 점수)은 두지 않는다. 모델이 못 배운 정상 상태와
 	// 진짜 이상을 구분하지 못해, 모델이 틀린 자리가 표본에서 빠지고 다음
 	// 세대도 똑같이 틀렸다. 이제 절대 임계값과 칸별 분위수로 거른다.
-	//
-	// 가동 판정 온도를 비워 두면 재생버퍼가 앞쪽 2,000건 최고온도의
-	// 중앙값으로 스스로 잡는다. 그 방식은 훑기 시작한 시간대에 끌려가고,
-	// 그 2,000건 자체는 판정선이 아직 없어 전부 정지로 들어간다. 현장에서
-	// 아는 값이 있으면 적어 두는 편이 낫다.
 	// -------------------------------------------------------------
 	// 재생버퍼 동적구성과 기여 문턱은 [재학습] 창으로 옮겼다.
 	y += 10;
@@ -534,60 +537,61 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		if (col2_w < 260) col2_w = 260;       // 너무 좁으면 최소치로
 	}
 
-	// 0~2 는 "지금 무엇으로 채점할 수 있는가"(상태)이고, 연속학습은
-	// "모델을 어떻게 갱신하는가"(활동)다. 성격이 달라 번호를 붙이지 않는다.
+	// 1~3단계, 곧 "지금 무엇으로 채점할 수 있는가" 를 적는다.
 	m_capNow.Create("[ 현재 진행 ]", WS_CHILD | WS_VISIBLE | SS_LEFT,
 		CRect(col2_x, stage_top, col2_x + col2_w, stage_top + 22), this);
 
-	// 1단계(절대 임계값)도 늘 동작하므로 함께 보여준다. 네 항목이 되면서
-	// 간격을 62 -> 54 로 줄였다.
+	// 1단계(절대 임계값)도 늘 동작하므로 함께 보여준다.
 	long ny = stage_top + 26;
-	CStatic* stg[5] = { &m_lblStage0, &m_lblStage1, &m_lblStage2, &m_lblStage3,
-		&m_lblOpState };
+	CStatic* stg[3] = { &m_lblStage0, &m_lblStage1, &m_lblStage2 };
 	// 칸마다 줄 수가 다르다. 한 값으로 두면 긴 칸의 마지막 줄이 잘린다.
 	//
 	//   0 절대임계값   제목 · 온도/상승률 · 지금 잰 값     3줄
 	//   1 경험임계값   제목 · 표본/시간대 · 언제부터 왜    4줄 (사유가 접힌다)
 	//   2 오토인코더   제목 · 세대 · 모델 파일 시각        3줄
-	//   3 연속학습     제목 · 재학습 가능 · 점수 · 기여    4줄
-	//   4 운전 상태     제목 · 최근 구성 · 가동 판정 온도    5줄
-	static const long STAGE_H[5] = { 78, 102, 78, 60, 104 };
+	//
+	// 연속학습과 운전 상태는 메인 창 위에 이미 나오므로 여기에 다시 적지 않는다.
+	// 운전 상태 이름을 고치는 [운전상태명 변경] 버튼만 맨 아래에 둔다.
+	static const long STAGE_H[3] = { 78, 102, 78 };
 	const long STAGE1_TEXT_H = 68;       // 2단계 글상자 높이(세 줄). 나머지는 버튼 줄(위 0 · 아래 8)
 	const long STAGE_GAP = 8;
 
 	// 단계마다 등을 하나씩 단다.
 	//
-	// 1~3단계에만 붙인다. 연속학습과 운전 상태는 켜지고 꺼지는 것이 아니라
-	// 상황을 적는 칸이라, 등을 달면 뜻이 없는 색이 하나 더 는다. 다섯 칸의
-	// 글 시작 자리는 모두 같은 만큼 밀어 줄을 맞춘다.
+	// 세 칸의 글 시작 자리는 모두 같은 만큼 밀어 줄을 맞춘다.
 	const long LAMP_W = 20;
 	long stage1_y = ny;
 
-	for (int i = 0; i < 5; ++i)
+	for (int i = 0; i < 3; ++i)
 	{
-		if (i < 3)
-		{
-			m_lampStage[i].Create("●", WS_CHILD | WS_VISIBLE | SS_LEFT,
-				CRect(col2_x, ny - 1, col2_x + LAMP_W, ny + 21), this);
-		}
+		m_lampStage[i].Create("●", WS_CHILD | WS_VISIBLE | SS_LEFT,
+			CRect(col2_x, ny - 1, col2_x + LAMP_W, ny + 21), this);
 
 		if (i == 1) stage1_y = ny;      // 버튼은 글상자 뒤에 만든다
 
-		// 2단계 글상자는 [임계값] 버튼 자리까지 폭이 넓다. 글이 바뀌어 다시 그려지면 버튼을
-		// 덮으므로, 글을 고친 뒤 LoadStageStatus 가 버튼을 다시 그린다.
-		stg[i]->Create("", WS_CHILD | WS_VISIBLE | SS_LEFT,
+		// 2단계 글상자는 첫 줄 끝 버튼([임계값]) 자리까지 넓다.
+		// 글상자가 먼저 만들어져 z 순서가 버튼보다 위라, 그대로 두면 글을 고칠 때마다 버튼을
+		// 덮어 칠했다(버튼 윗변 2px 만 남았다). WS_CLIPSIBLINGS 로 위에 올린 버튼 자리를 비켜
+		// 칠하게 하고, 글상자는 z 순서 맨 아래로 내린다. 글상자는 탭으로 가지 않으므로 버튼의
+		// 탭 순서는 그대로다.
+		stg[i]->Create("", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | SS_LEFT,
 			CRect(col2_x + LAMP_W, ny, col2_x + col2_w,
 				ny + (i == 1 ? STAGE1_TEXT_H : STAGE_H[i])), this);
 		ny += STAGE_H[i] + STAGE_GAP;
 	}
+
+	// 버튼 두 줄. [운전상태명 변경] 과 그 아래 [학습모델관리].
+	const long opstate_y = ny;
+	ny += 26 + STAGE_GAP;
+	const long genmgr_y = ny;
+	ny += 26 + STAGE_GAP;
 
 	// 2단계 줄 끝에 칸별 기준값을 여는 작은 버튼.
 	//
 	// 이 칸은 표본 수밖에 말하지 못한다. "어느 칸이 선에 가까운가" 는
 	// 격자로 봐야 하는데, 좁은 칸에 64개를 넣을 수는 없다.
 	//
-	// 글상자를 만든 뒤에 만든다. 새로 만든 형제가 z 순서에서 위에 서므로,
-	// 먼저 만들면 2단계 글상자가 버튼을 덮어 보이지도 눌리지도 않았다.
+	// 글상자는 위에서 z 순서 맨 아래로 내렸고 WS_CLIPSIBLINGS 라 이 버튼을 덮지 않는다.
 	{
 		const long bw = 64;
 		m_btnCellBase.Create("임계값", WS_CHILD | WS_VISIBLE | WS_TABSTOP
@@ -612,7 +616,25 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 			| BS_PUSHBUTTON,
 			CRect(bx + bw1 + gap, by, bx + bw1 + gap + bw2, by + 26), this,
 			ID_BTN_BASE_REBUILD);
+
+		// 운전 상태 이름을 고치는 버튼. 글 칸들과 같은 자리에서 시작한다.
+		// 이름은 스크립트가 온도 순서로 붙인 짐작이라 설비를 아는 사람이 고친다.
+		const long bwn = 144;
+		m_btnOpNames.Create("운전상태명 변경", WS_CHILD | WS_VISIBLE | WS_TABSTOP
+			| BS_PUSHBUTTON,
+			CRect(bx, opstate_y, bx + bwn, opstate_y + 26), this, ID_BTN_OPNAMES);
+
+		// 보관된 학습모델(세대)을 골라 되돌리거나 지운다. [운전상태명 변경] 과 같은 꼴.
+		m_btnGenMgr.Create("학습모델관리", WS_CHILD | WS_VISIBLE | WS_TABSTOP
+			| BS_PUSHBUTTON,
+			CRect(bx, genmgr_y, bx + bwn, genmgr_y + 26), this, ID_BTN_GENMGR);
 	}
+
+	// 글상자를 z 순서 맨 아래로. 버튼을 다 만든 뒤에 해야 한다 - 자식 창은 만든
+	// 순서대로 아래에 쌓여서, 먼저 내려 두면 뒤에 만든 버튼이 다시 그 밑으로 간다.
+	for (int i = 0; i < 3; ++i)
+		stg[i]->SetWindowPos(&CWnd::wndBottom, 0, 0, 0, 0,
+			SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
 	LoadStageSettings();
 	LoadAbsSettings();
@@ -831,59 +853,12 @@ static void PlaceBaseButtons(CWnd* parent, CStatic& lbl, CButton& b1, CButton& b
 	}
 }
 
-// 가동 판정 온도 두 줄. 재학습이 자동으로 잡아 남긴 값이라 감시가 멈춰 있어도 보인다.
-static CStringA RunTempText()
-{
-	const std::string ap = std::string(GetMmCamStartPath()) + "users" + "\\" + gUserID
-		+ "\\" "retrain_auto.ini";
-	const std::string rt = ini_read_utf8(ap, "AUTO", "RUN_TEMP", "");
-
-	CStringA t;
-	if (rt.empty())
-		return "    가동 판정 온도 계산 전";
-
-	const std::string pct = ini_read_utf8(ap, "AUTO", "RUN_PCT", "");
-	const std::string at  = ini_read_utf8(ap, "AUTO", "AT", "");
-	std::string per = ini_read_utf8(ap, "AUTO", "PERIOD", "");
-
-	// 기간은 "20260702 ~ 20261005" 로 남아 있다. 날짜마다 20260702 -> 2026-07-02 로 푼다.
-	for (size_t i = 0; i + 8 <= per.size(); )
-	{
-		bool digits = (i == 0 || !isdigit((unsigned char)per[i - 1]));
-		for (size_t k = 0; digits && k < 8; ++k)
-			digits = isdigit((unsigned char)per[i + k]) != 0;
-		if (digits && (i + 8 == per.size() || !isdigit((unsigned char)per[i + 8])))
-		{
-			per.insert(i + 6, "-");
-			per.insert(i + 4, "-");
-			i += 10;
-		}
-		else
-			++i;
-	}
-
-	t.Format("    가동 판정 온도 %s도 (자동)", rt.c_str());
-	if (!pct.empty() || !per.empty())
-	{
-		t += "\r\n    ";
-		if (!pct.empty())
-			t.AppendFormat("가동 %s%%", pct.c_str());
-		if (!per.empty())
-			t.AppendFormat("%s%s", pct.empty() ? "" : " · ", per.c_str());
-	}
-	if (!at.empty())
-		t.AppendFormat("\r\n    %s 기준", at.c_str());
-	return t;
-}
-
 void CDlg_Set_MmCam_Env::LoadStageStatus()
 {
 	const std::string st =
 		std::string(GetMmCamStartPath()) + "users\\" + gUserID + "\\stage_status.ini";
 
 	const std::string updated = ini_read_utf8(st, "STATUS", "UPDATED_AT", "");
-
-	const CStringA runTxt = RunTempText();
 
 	// 마지막 기록이 낡았으면 파일에 남은 값을 믿지 않는다. 프로세스가 죽어도
 	// 마지막 값이 남아 등이 계속 초록으로 보였다.
@@ -955,8 +930,6 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 		SetIfChanged(m_lblStage1, "2단계 경험임계값   " + down);
 		PlaceBaseButtons(this, m_lblStage1, m_btnBaseFresh, m_btnBaseRebuild);
 		SetIfChanged(m_lblStage2, "3단계 오토인코더   " + down);
-		SetIfChanged(m_lblStage3, "연속학습   " + down);
-		SetIfChanged(m_lblOpState, "운전 상태   확인 전" "\r\n" + runTxt);
 		for (int i = 0; i < 3; ++i)
 			SetLamp(m_lampStage[i], m_lampLevel[i], 0);
 		return;
@@ -968,8 +941,6 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 		SetIfChanged(m_lblStage1, "2단계 경험임계값   집계 대기");
 		PlaceBaseButtons(this, m_lblStage1, m_btnBaseFresh, m_btnBaseRebuild);
 		SetIfChanged(m_lblStage2, "3단계 오토인코더   집계 대기");
-		SetIfChanged(m_lblStage3, "연속학습   집계 대기");
-		SetIfChanged(m_lblOpState, "운전 상태   확인 전" "\r\n" + runTxt);
 		for (int i = 0; i < 3; ++i)
 			SetLamp(m_lampStage[i], m_lampLevel[i], 0);
 		return;
@@ -981,11 +952,8 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	const int min_hr  = ini_read_int_utf8(st, "STATUS", "MIN_HOURS", 0);
 	const int s1      = ini_read_int_utf8(st, "STATUS", "STAGE1", 0);
 	const int s2      = ini_read_int_utf8(st, "STATUS", "STAGE2", 0);
-	const int s3      = ini_read_int_utf8(st, "STATUS", "STAGE3", 0);
 	const int used    = ini_read_int_utf8(st, "STATUS", "STAGE_USED", -1);
 	const int db_rows = ini_read_int_utf8(st, "STATUS", "DB_ROWS", -1);
-	const int min_rtr = ini_read_int_utf8(st, "STATUS", "MIN_RETRAIN", -1);
-	const std::string gen_at = ini_read_utf8(st, "STATUS", "GENERATION_AT", "");
 
 
 	CStringA t;
@@ -1189,38 +1157,6 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	SetLamp(m_lampStage[2], m_lampLevel[2],
 		s2 ? 2 : (db_rows > 0 ? 1 : 0));
 
-	if (s3 && !gen_at.empty())
-		t.Format("연속학습   현황\r\n    최근 승격 %s", gen_at.c_str());
-	else if (db_rows >= 0 && min_rtr > 0)
-		t.Format("연속학습   대기\r\n    재학습 가능 %d/%d건", db_rows, min_rtr);
-	else
-		t.Format("연속학습   대기\r\n    아직 재학습 이력이 없습니다");
-
-	SetIfChanged(m_lblStage3, t);
-
-	// 운전 상태.
-	//
-	// 단계가 아니라 "지금 설비가 어떤 상황인가" 다. 미리 만들어 둔 군집
-	// 중심(users/<현장>/op_states.json)으로 매 프레임 이름을 붙인 것이고,
-	// 경보에도 학습에도 쓰이지 않는다.
-	{
-		const CStringA opn = StatusUtf8(ini_read_utf8(st, "STATUS", "OP_STATE", ""));
-		const CStringA opm = StatusUtf8(ini_read_utf8(st, "STATUS", "OP_MIX", ""));
-		const CStringA opi = StatusUtf8(ini_read_utf8(st, "STATUS", "OP_INFO", ""));
-
-		CStringA o;
-		if (!opn.IsEmpty())
-			o.Format("운전 상태   %s\r\n    최근 %s", (LPCSTR)opn,
-				opm.IsEmpty() ? "-" : (LPCSTR)opm);
-		else if (!opi.IsEmpty())
-			o.Format("운전 상태   없음\r\n    %s", (LPCSTR)opi);
-		else
-			o = "운전 상태   확인 전";
-		o += "\r\n";
-		o += runTxt;
-		SetIfChanged(m_lblOpState, o);
-	}
-
 	// 갱신 시각은 상단 안내줄에 함께 보여준다. 기준선 창의 기간과 건수는 [2단계
 	// 경험임계값] 칸의 "표본 N/3,000" 과 겹쳐서 여기에는 적지 않는다.
 	CStringA head;
@@ -1356,13 +1292,13 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	const int sp_target = atoi(sp_t);
 	const int sp_days   = sp_d.IsEmpty() ? 0 : atoi(sp_d);
 
-	// 목표가 너무 작으면 시간대와 가동상태를 다 덮지 못하고, 너무 크면
-	// 모으는 데만 오래 걸린다. 48칸에 최소 스무 건씩은 들어가야 한다.
+	// 목표가 너무 작으면 시간대를 다 덮지 못하고, 너무 크면 모으는 데만
+	// 오래 걸린다.
 	if (sp_target < 1000 || sp_target > 1000000) {
 		Msg("[ERROR] 재학습 최대 표본 수는 1,000 ~ 1,000,000 사이여야 합니다.");
 		return;
 	}
-	// 0 은 전체. 너무 짧으면 시각 x 가동상태 48칸을 채우지 못한다.
+	// 0 은 전체. 너무 짧으면 24개 시간대를 다 채우지 못한다.
 	if (sp_days < 0 || sp_days > 3650) {
 		Msg("[ERROR] 재학습 수집 일수는 0(전체) 또는 1 ~ 3650 사이여야 합니다.");
 		return;
@@ -1639,6 +1575,22 @@ void CDlg_Set_MmCam_Env::OnBnClickedCellBase()
 	dlg.DoModal();
 }
 
+// 운전 상태 이름을 고친다.
+//
+// 메인 창 위의 운전 상태 줄은 감시가 stage_status.ini 에 적은 것이라, 저장한 뒤
+// 감시가 새 이름을 읽을 때까지(1분 안) 옛 이름이 보인다.
+void CDlg_Set_MmCam_Env::OnBnClickedOpNames()
+{
+	if (gUserID.empty())
+	{
+		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		return;
+	}
+
+	if (EditOpStateNames(this, &m_stdFont, &m_stdFont))
+		Msg("운전 상태 이름을 저장했습니다. 감시가 새 이름을 읽으면(1분 안) 메인 창에도 반영됩니다.");
+}
+
 // ---------------------------------------------------------
 // 경험 임계값을 손으로 다시 세운다
 //
@@ -1908,9 +1860,6 @@ void CDlg_Set_MmCam_Env::LoadContribSettings()
 //---------------------------------------------------------
 
 // 학습 표본 구성을 continual_learning.ini 에서 읽어 넣는다.
-//
-// 가동 판정 온도만 빈칸을 허용한다. 비우면 재생버퍼가 자료에서 스스로
-// 잡는다는 뜻이고, 그것이 기본 동작이다.
 void CDlg_Set_MmCam_Env::LoadSampleSettings()
 {
 	CString t;
@@ -1940,5 +1889,25 @@ void CDlg_Set_MmCam_Env::OnBnClickedRetrain()
 	dlg.DoModal();
 
 	// 재학습이 끝났으면 세대·모델 시각이 바뀌었을 수 있다.
+	LoadStageStatus();
+}
+
+// 보관된 학습모델(세대)을 되돌리거나 지운다.
+//
+// 관리 창은 재학습 창의 것을 그대로 쓴다. 되돌리기는 진행 판과 로그가 있는
+// 재학습 창에서 돌아야 해서, 재학습 창을 '관리만' 으로 열면 그 창이 곧바로
+// 관리 창을 띄운다. 되돌리기를 고르지 않으면 재학습 창도 함께 닫힌다.
+void CDlg_Set_MmCam_Env::OnBnClickedGenMgr()
+{
+	if (gUserID.empty()) {
+		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		return;
+	}
+
+	CDlg_Retrain dlg(this);
+	dlg.OpenGenManagerOnly();
+	dlg.DoModal();
+
+	// 되돌렸으면 세대·모델 시각이 바뀌었을 수 있다.
 	LoadStageStatus();
 }

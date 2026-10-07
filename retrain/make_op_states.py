@@ -92,6 +92,8 @@ def main():
                     help="군집을 낼 때 뽑을 프레임 수")
     ap.add_argument("--stats-only", action="store_true",
                     help="중심은 그대로 두고 비율·온도·평소 벗어남만 다시 잰다")
+    ap.add_argument("--reset-names", action="store_true",
+                    help="화면에서 고친 이름을 버리고 처음 이름(NAMES_BY_K)을 붙인다")
     args = ap.parse_args()
 
     config = Set_Env_Config(args.user_id, verbose=False)
@@ -163,6 +165,19 @@ def main():
                        key=lambda i: np.median(peak[lab0 == i]))
         centers = km.cluster_centers_[order]
         names = names_for(args.k)
+
+        # 사람이 운전 상태 창에서 고친 이름이 있으면 이어 쓴다. 상태 수가 같고
+        # 둘 다 온도 순서로 줄을 세웠으니 같은 자리는 대개 같은 무리다. 그래도
+        # 중심이 움직였으므로 아래 표를 보고 이름이 맞는지 확인해야 한다.
+        if os.path.exists(p) and not args.reset_names:
+            try:
+                with open(p, encoding="utf-8") as f:
+                    old_names = [s["name"] for s in json.load(f)["states"]]
+            except Exception:
+                old_names = []
+            if len(old_names) == args.k and old_names != names:
+                names = old_names
+                print("쓰던 이름을 이어 씁니다. 처음 이름으로 돌리려면 --reset-names")
 
     # 프레임마다 가장 가까운 중심과 그 거리.
     #

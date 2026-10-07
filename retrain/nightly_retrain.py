@@ -579,33 +579,6 @@ def activate(user_path, stamp, how="승격"):
 # 학습
 # ======================================================================
 
-AUTO_FILE_NAME = "retrain_auto.ini"
-
-
-def write_auto_run_temp(user_path, info):
-    """
-    자동으로 잡은 가동 판정 온도를 [설정] 창이 읽도록 남긴다.
-
-    재학습(예행연습 포함)이 표본을 모을 때마다 다시 쓴다. 보류로 끝나도 남긴다 -
-    값이 맞게 잡혔는지는 학습이 되든 안 되든 볼 수 있어야 한다.
-    """
-    split = info.get("split")
-    if split is None:
-        return
-    share = info.get("run_share")
-    try:
-        with open(os.path.join(user_path, AUTO_FILE_NAME), "w",
-                  encoding="utf-8") as f:
-            f.write("; 재학습이 자동으로 잡은 값입니다. 직접 고치지 마십시오.\n")
-            f.write("[AUTO]\n")
-            f.write(f"RUN_TEMP = {float(split):.0f}\n")
-            f.write(f"RUN_PCT = {'' if share is None else f'{float(share) * 100:.0f}'}\n")
-            f.write(f"PERIOD = {info.get('period', '')}\n")
-            f.write(f"AT = {datetime.now():%Y-%m-%d %H:%M}\n")
-    except OSError as e:
-        print(f"[WARN] 가동 판정 온도를 남기지 못했습니다: {e}")
-
-
 def train(X, input_dim, latent_dim, device, verbose=True,
           init_state=None, old_weight=1.0, dynamic_mix=False):
     """
@@ -958,9 +931,6 @@ def main():
         # 유일한 판단이고, 이상 프레임을 학습에 넣지 않는다는 목적도 지킨다.
         # 학습 표본 구성 규칙. [설정] 창에서 바꾼다.
         target = int(config.get("RETRAIN_TARGET_SAMPLES") or TARGET_SAMPLES)
-        # 가동 판정 온도는 사람이 정하지 않는다. 재생버퍼가 자료의 온도 분포에서
-        # 스스로 잡고, 그 값을 [설정] 창이 읽도록 파일로 남긴다.
-        run_temp = None
         # 재생버퍼 동적 구성. 켜면 옛/새 비율을 기여 w 로 정하고(새 시기 = 판단 구간,
         # 곧 최근 N일), 끄면(기본) w 를 보지 않고 옛/새를 가르지 않은 채 전체에서 뽑는다.
         dynamic_mix = bool(int(config.get("RETRAIN_DYNAMIC_MIX") or 0))
@@ -1000,13 +970,10 @@ def main():
         X, info = replay_buffer.collect(
             conn, history_db["database"], n_cells, target, mask=mask,
             split_days=n_tab, old_weight=old_weight,
-            temp_warn=temp_warn,
-            run_temp=run_temp, dynamic_mix=dynamic_mix,
+            temp_warn=temp_warn, dynamic_mix=dynamic_mix,
             recent_days=buffer_days)
     finally:
         conn.close()
-
-    write_auto_run_temp(user_path, info)
 
     # 최소 표본 수는 모니터링 프로그램의 [설정] 창에서 바꾼다.
     min_samples = config.get("RETRAIN_MIN_SAMPLES") or MIN_SAMPLES_DEFAULT
@@ -1031,16 +998,11 @@ def main():
     # "이번 학습이 어떤 자료로 이뤄지는가" 를 한눈에 볼 수 없다.
     # 이것도 한 줄이다. 창이 집어 고정된 자리에 보인다.
     #
-    # split 은 재생버퍼가 앞쪽 2,000건의 중앙값으로 잡은 가동 판정 온도다.
-    # 마스크 칸 최고가 이 위면 "돌고 있다" 로 보고 시간대x가동상태 48칸에
-    # 고르게 담는다. 옛/새 시기 비율이 아니다.
+    # 표본은 날짜마다 같은 몫, 하루 안에서는 시간대마다 같은 몫으로 뽑는다.
     comp_line = (f"[재생버퍼] 표본 {info['drawn']:,}/{target:,}"
                  f" · 시간대 {info.get('hours', 0)}/{min_hours}"
                  f" · 기간 {info['period']}"
-                 f" · 칸 {info['cells']}"
-                 + f" · 기여 {old_weight:.2f}"
-                 + (f" · 가동판정 {info['split']:.0f}도"
-                    if info.get("split") else ""))
+                 + f" · 기여 {old_weight:.2f}")
     print(comp_line)
     print()
     print(RULE)

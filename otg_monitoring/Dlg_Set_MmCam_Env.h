@@ -64,19 +64,19 @@ public:
     CEdit   m_edSpTarget, m_edSpDays;
 
     // 현재 진행 상황 (predict_machine 이 남긴 stage_status.ini 를 읽는다)
-    CStatic m_capNow, m_lblStage0, m_lblStage1, m_lblStage2, m_lblStage3;
+    CStatic m_capNow, m_lblStage0, m_lblStage1, m_lblStage2;
 
     // 단계마다 켜지는 등. 메인 창 현장 콤보 앞의 것과 같은 표식이다.
     //
     // 글만으로는 "사용 중" 과 "누적 중" 을 한눈에 가릴 수 없다. 색이
     // 먼저 들어오고 글은 그 다음에 읽힌다.
     CButton m_btnCellBase;        // 2단계 줄 옆. 칸별 기준값을 띄운다
+    CButton m_btnOpNames;         // [현재 진행] 맨 아래. 운전 상태 이름을 고친다
+    CButton m_btnGenMgr;          // 그 아래. 보관된 학습모델을 되돌리거나 지운다
     // 경험 임계값을 손으로 다시 세우는 두 가지 길.
     CButton m_btnBaseFresh, m_btnBaseRebuild;
     CStatic m_lampStage[3];
     int     m_lampLevel[3] = { 0, 0, 0 };   // 0 꺼짐 · 1 준비 중 · 2 사용 중
-    // 운전 상태. 단계가 아니라 "지금 설비가 어떤 상황인가" 다.
-    CStatic m_lblOpState;
 
     virtual BOOL OnInitDialog();
     afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
@@ -100,6 +100,8 @@ public:
 
     afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
     afx_msg void OnBnClickedCellBase();
+    afx_msg void OnBnClickedOpNames();
+    afx_msg void OnBnClickedGenMgr();
     afx_msg void OnBnClickedBaseFresh();
     afx_msg void OnBnClickedBaseRebuild();
     afx_msg LRESULT OnSpanDone(WPARAM wp, LPARAM lp);   // DB 기간 조회가 끝났다

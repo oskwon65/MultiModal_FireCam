@@ -18,6 +18,8 @@ extern "C" {
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
+#include <algorithm>
 
 extern std::string gUserID;
 extern MYSQL* connect_history_db(std::string* dbNameOut);
@@ -34,6 +36,7 @@ extern const char* GetMmCamStartPath();
 #define ID_DT_TO        3209
 #define ID_CAP_FROM     3210
 #define ID_CAP_TO       3211
+#define ID_BTN_NAMES    3212
 
 // 콤보의 자리. 마지막은 달력을 직접 건드렸을 때 넘어오는 자리다.
 #define RANGE_7      0
@@ -209,6 +212,7 @@ void CDlg_OpState::DoDataExchange(CDataExchange* pDX)
 BEGIN_MESSAGE_MAP(CDlg_OpState, CDialogEx)
     ON_CBN_SELCHANGE(ID_CBO_RANGE, &CDlg_OpState::OnSelchangeRange)
     ON_BN_CLICKED(ID_BTN_RELOAD, &CDlg_OpState::OnBnClickedReload)
+    ON_BN_CLICKED(ID_BTN_NAMES, &CDlg_OpState::OnBnClickedNames)
     ON_NOTIFY(DTN_DATETIMECHANGE, ID_DT_FROM, &CDlg_OpState::OnDateChanged)
     ON_NOTIFY(DTN_DATETIMECHANGE, ID_DT_TO, &CDlg_OpState::OnDateChanged)
     ON_WM_DRAWITEM()
@@ -302,6 +306,12 @@ BOOL CDlg_OpState::OnInitDialog()
     m_btnReload.Create("다시 읽기", WS_CHILD | WS_VISIBLE | WS_TABSTOP
         | BS_PUSHBUTTON,
         CRect(dx, y, dx + btnW, y + btnH), this, ID_BTN_RELOAD);
+    dx += btnW + 8;
+
+    // 이름은 스크립트가 온도 순서대로 붙인 짐작이다. 설비를 아는 사람이 고친다.
+    m_btnNames.Create("운전상태명 변경", WS_CHILD | WS_VISIBLE | WS_TABSTOP
+        | BS_PUSHBUTTON,
+        CRect(dx, y, dx + 152, y + btnH), this, ID_BTN_NAMES);   // 글이 길어 조금 넓다
 
     const int bx = rc.right - M - btnW;
     m_btnClose.Create("닫기", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
@@ -330,6 +340,7 @@ BOOL CDlg_OpState::OnInitDialog()
 
     if (!LoadStates())
     {
+        m_btnNames.EnableWindow(FALSE);
         m_lblHead.SetWindowTextA(m_madeInfo);
         SetState("운전 상태 분류표가 없습니다. retrain/make_op_states.py 로 "
                  "만든 뒤 다시 여십시오.");
@@ -473,6 +484,460 @@ void CDlg_OpState::SetState(const char* text)
 {
     m_lblState.SetWindowTextA(text);
     m_lblState.UpdateWindow();
+}
+
+//---------------------------------------------------------
+// 상태 이름 바꾸기
+//
+// 이름은 make_op_states.py 가 최고 온도 순서대로 붙인 짐작이라 설비와 맞지
+// 않을 수 있다. 여기서 고친 이름은 op_states.json 에 그대로 적으므로, 감시
+// (predict_machine/op_state.py)도 같은 이름을 쓴다.
+//
+// 창 틀은 .rc 에 두지 않고 여기서 만든다. 이 창에서만 쓰는 작은 창이다.
+//---------------------------------------------------------
+#define ID_NM_EDIT0  3301          // 상태 수만큼 이어 붙는다
+
+class CDlg_OpNames : public CDialogEx
+{
+public:
+    struct Row
+    {
+        CStringA name;
+        CStringA hint;     // 그 상태가 어떤 모양인지 (최고 · 최저 · 비율)
+        COLORREF color;
+        int      idx;      // 분류표에서 몇 번째 상태인가 (목록은 비율 순이다)
+    };
+
+    CDlg_OpNames(const std::vector<Row>& rows, const CStringA& period,
+                 CFont* font, CFont* hintFont,
+                 CWnd* parent)
+        : CDialogEx(), m_rows(rows), m_period(period), m_font(font),
+          m_small(hintFont)
+    {
+        m_tpl.assign(64, 0);
+        DLGTEMPLATE* t = reinterpret_cast<DLGTEMPLATE*>(m_tpl.data());
+        t->style = DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU;
+        t->cx = 300; t->cy = 200;
+        WORD* p = reinterpret_cast<WORD*>(t + 1);
+        *p++ = 0;                                     // 메뉴 없음
+        *p++ = 0;                                     // 기본 창 종류
+        const wchar_t* cap = L"\xC6B4\xC804 \xC0C1\xD0DC \xC774\xB984";  // "운전 상태 이름"
+        while (*cap) *p++ = (WORD)*cap++;
+        *p++ = 0;
+        InitModalIndirect(t, parent);
+    }
+
+    const std::vector<CStringA>& Names() const { return m_names; }
+
+protected:
+    virtual BOOL OnInitDialog() override
+    {
+        CDialogEx::OnInitDialog();
+
+        const int M = 14, rowH = 40, edW = 220, chipW = 14, bH = 32;
+        const int n = (int)m_rows.size();
+        const int W = 620;
+        const int top = M + 46 + 30;     // 안내 두 줄 + 기간 한 줄
+        const int H = top + n * rowH + 12 + bH + M;
+
+        CRect wr(0, 0, W, H);
+        AdjustWindowRectEx(&wr, GetStyle(), FALSE, GetExStyle());
+        SetWindowPos(nullptr, 0, 0, wr.Width(), wr.Height(),
+                     SWP_NOMOVE | SWP_NOZORDER);
+        CenterWindow();
+
+        m_lbl.Create("비율이 큰 상태부터 차례입니다. 설비에 맞는 이름으로 고치십시오.\r\n"
+                     "감시를 다시 시작하지 않아도 1분 안에 감시 쪽 이름도 바뀝니다.",
+                     WS_CHILD | WS_VISIBLE | SS_LEFT, CRect(M, M, W - M, M + 42), this);
+        if (m_font) m_lbl.SetFont(m_font);
+
+        // 비율이 어느 기간의 것인지. 운전 상태 창에서 고른 기간이 그대로 온다.
+        m_lblPeriod.Create(m_period, WS_CHILD | WS_VISIBLE | SS_LEFT,
+                           CRect(M, M + 46, W - M, M + 46 + 26), this);
+        if (m_font) m_lblPeriod.SetFont(m_font);
+
+        m_chips.resize(n);
+        m_edits.resize(n);
+        m_hints.resize(n);
+        for (int i = 0; i < n; ++i)
+        {
+            const int y = top + i * rowH;
+
+            // 카드 윗변과 같은 색 표식. 어느 카드의 이름인지 색으로 잇는다.
+            m_chips[i].reset(new CStatic);
+            m_chips[i]->Create("", WS_CHILD | WS_VISIBLE | SS_OWNERDRAW,
+                CRect(M, y + 6, M + chipW, y + 26), this, 3400 + i);
+
+            m_edits[i].reset(new CEdit);
+            m_edits[i]->CreateEx(WS_EX_CLIENTEDGE, "EDIT", m_rows[i].name,
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+                CRect(M + chipW + 8, y + 2, M + chipW + 8 + edW, y + 30),
+                this, ID_NM_EDIT0 + i);
+            m_edits[i]->LimitText(40);
+            if (m_font) m_edits[i]->SetFont(m_font);
+
+            m_hints[i].reset(new CStatic);
+            m_hints[i]->Create(m_rows[i].hint,
+                WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
+                CRect(M + chipW + 8 + edW + 12, y + 2, W - M, y + 30), this);
+            if (m_small) m_hints[i]->SetFont(m_small);
+        }
+
+        const int yb = H - M - bH;
+        m_btnOk.Create("저장", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+            CRect(W - M - 208, yb, W - M - 108, yb + bH), this, IDOK);
+        m_btnCancel.Create("취소", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(W - M - 100, yb, W - M, yb + bH), this, IDCANCEL);
+        if (m_font) { m_btnOk.SetFont(m_font); m_btnCancel.SetFont(m_font); }
+
+        if (n > 0) { m_edits[0]->SetFocus(); m_edits[0]->SetSel(0, -1); }
+        return FALSE;     // 첫 칸에 초점을 두었다
+    }
+
+    afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
+    {
+        const int i = nIDCtl - 3400;
+        if (i >= 0 && i < (int)m_rows.size())
+        {
+            CDC* dc = CDC::FromHandle(lpDIS->hDC);
+            dc->FillSolidRect(&lpDIS->rcItem, m_rows[i].color);
+            return;
+        }
+        CDialogEx::OnDrawItem(nIDCtl, lpDIS);
+    }
+
+    virtual void OnOK() override
+    {
+        // 감시와 이 창이 이름을 따옴표로 끊어 읽는다. 따옴표와 역빗금은 받지 않는다.
+        std::vector<CStringA> out;
+        for (size_t i = 0; i < m_edits.size(); ++i)
+        {
+            CStringA s;
+            m_edits[i]->GetWindowTextA(s);
+            s.Trim();
+
+            CStringA why;
+            if (s.IsEmpty())
+                why = "비어 있습니다.";
+            else if (s.FindOneOf("\"\\") >= 0)
+                why = "따옴표(\")와 역빗금(\\)은 쓸 수 없습니다.";
+            else
+                for (int c = 0; c < s.GetLength(); ++c)
+                    if ((unsigned char)s[c] < 0x20) { why = "제어 문자가 있습니다."; break; }
+
+            // 같은 이름이 둘이면 화면에서 두 상태를 가릴 수 없다.
+            for (size_t k = 0; why.IsEmpty() && k < out.size(); ++k)
+                if (out[k] == s) why.Format("%d번째와 이름이 같습니다.", (int)k + 1);
+
+            if (!why.IsEmpty())
+            {
+                CStringA m;
+                m.Format("%d번째 이름이 %s", (int)i + 1, (LPCSTR)why);
+                AfxMessageBox(m, MB_ICONWARNING);
+                m_edits[i]->SetFocus();
+                m_edits[i]->SetSel(0, -1);
+                return;
+            }
+            out.push_back(s);
+        }
+        m_names.swap(out);
+        CDialogEx::OnOK();
+    }
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    std::vector<WORD> m_tpl;
+    std::vector<Row> m_rows;
+    CStringA m_period;     // 비율을 센 기간 한 줄
+    std::vector<CStringA> m_names;
+    CFont* m_font;
+    CFont* m_small;
+
+    CStatic m_lbl, m_lblPeriod;
+    std::vector<std::unique_ptr<CStatic> > m_chips, m_hints;
+    std::vector<std::unique_ptr<CEdit> > m_edits;
+    CButton m_btnOk, m_btnCancel;
+};
+
+BEGIN_MESSAGE_MAP(CDlg_OpNames, CDialogEx)
+    ON_WM_DRAWITEM()
+END_MESSAGE_MAP()
+
+// 화면 부호(CP_ACP) -> UTF-8. op_states.json 은 UTF-8 이다.
+static std::string ToU8(const CStringA& a)
+{
+    if (a.IsEmpty()) return std::string();
+
+    const int wn = MultiByteToWideChar(CP_ACP, 0, a, -1, nullptr, 0);
+    if (wn <= 0) return std::string((LPCSTR)a);
+    CStringW w;
+    MultiByteToWideChar(CP_ACP, 0, a, -1, w.GetBuffer(wn), wn);
+    w.ReleaseBuffer();
+
+    const int un = WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0,
+        nullptr, nullptr);
+    if (un <= 0) return std::string((LPCSTR)a);
+    std::string u(un, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w, -1, &u[0], un, nullptr, nullptr);
+    u.resize(un - 1);                  // 끝의 0
+    return u;
+}
+
+// 이름 칸만 바꿔 쓴다. 나머지(중심 · 비율 · 기준선)는 한 글자도 건드리지 않는다.
+//
+// 파일 전체를 다시 쓰면 이 파서가 모르는 키가 사라질 수 있다. 그래서 상태
+// 덩이마다 "name" 의 값 자리만 갈아 끼운다. 다 쓴 뒤 임시 파일에서 한 번에
+// 바꿔 놓으므로, 쓰다가 멈춰도 감시가 반쪽 파일을 읽지 않는다.
+static bool SaveOpStateNames(const std::vector<CStringA>& names, CStringA& err)
+{
+    const std::string path = std::string(GetMmCamStartPath()) + "users\\"
+                           + gUserID + "\\op_states.json";
+
+    std::string txt;
+    {
+        FILE* f = nullptr;
+        if (fopen_s(&f, path.c_str(), "rb") != 0 || f == nullptr)
+        {
+            err = "op_states.json 을 열 수 없습니다.";
+            return false;
+        }
+        char buf[4096];
+        size_t n = 0;
+        while ((n = fread(buf, 1, sizeof(buf), f)) > 0) txt.append(buf, n);
+        fclose(f);
+    }
+
+    size_t p = 0;
+    if (!jSeek(txt, p, "states"))
+    {
+        err = "op_states.json 에 상태가 없습니다.";
+        return false;
+    }
+
+    size_t k = 0;
+    while (k < names.size() && jSeek(txt, p, "name"))
+    {
+        const size_t a = txt.find('\"', p);
+        if (a == std::string::npos) break;
+        const size_t b = txt.find('\"', a + 1);
+        if (b == std::string::npos) break;
+
+        const std::string u = ToU8(names[k]);
+        txt.replace(a + 1, b - a - 1, u);
+        p = a + 1 + u.size() + 1;
+        ++k;
+    }
+    if (k != names.size())
+    {
+        err.Format("op_states.json 의 상태 수(%d)가 화면(%d)과 다릅니다. "
+                   "창을 다시 여십시오.", (int)k, (int)names.size());
+        return false;
+    }
+
+    const std::string tmp = path + ".tmp";
+    {
+        FILE* f = nullptr;
+        if (fopen_s(&f, tmp.c_str(), "wb") != 0 || f == nullptr)
+        {
+            err = "임시 파일을 만들 수 없습니다.";
+            return false;
+        }
+        const size_t w = fwrite(txt.data(), 1, txt.size(), f);
+        const bool ok = (fclose(f) == 0) && (w == txt.size());
+        if (!ok)
+        {
+            DeleteFileA(tmp.c_str());
+            err = "임시 파일을 다 쓰지 못했습니다.";
+            return false;
+        }
+    }
+    if (!MoveFileExA(tmp.c_str(), path.c_str(),
+                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+    {
+        DeleteFileA(tmp.c_str());
+        err.Format("op_states.json 을 바꿔 놓지 못했습니다 (오류 %lu).",
+                   GetLastError());
+        return false;
+    }
+    return true;
+}
+
+void CDlg_OpState::OnBnClickedNames()
+{
+    if (m_states.empty()) return;
+
+    // 비율이 큰 것부터. 이름을 고칠 때 먼저 보아야 할 것은 자주 나오는 상태다.
+    // 비율은 카드와 같은 것 - 이 창에서 고른 기간에 그 상태였던 프레임의 몫이다.
+    std::vector<int> order(m_states.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = (int)i;
+    std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
+        return m_states[a].n > m_states[b].n; });
+
+    std::vector<CDlg_OpNames::Row> rows;
+    for (size_t k = 0; k < order.size(); ++k)
+    {
+        const int i = order[k];
+        const State& s = m_states[i];
+        CDlg_OpNames::Row r;
+        r.name = s.name;
+        CStringA pct = "-";
+        if (m_total > 0) pct.Format("%.1f%%", 100.0 * s.n / m_total);
+        r.hint.Format("%s  ·  최고 %.0f도 · 최저 %.0f도", (LPCSTR)pct, s.tmax, s.tmin);
+        r.color = ColorOf(i, (int)m_states.size());
+        r.idx = i;
+        rows.push_back(r);
+    }
+
+    // 비율을 센 기간. 날짜는 자료가 있는 첫날과 끝날, 일수는 자료가 있는 날 수다.
+    CStringA period;
+    if (m_days.empty() || m_total <= 0)
+        period = "기간 안에 읽은 프레임이 없어 비율을 셀 수 없습니다.";
+    else
+    {
+        auto ymd = [](const std::string& d) {
+            CStringA t;
+            if (d.size() >= 8)
+                t.Format("%s-%s-%s", d.substr(0, 4).c_str(), d.substr(4, 2).c_str(),
+                         d.substr(6, 2).c_str());
+            else t = d.c_str();
+            return t;
+        };
+        period.Format("운전 기간  %s ~ %s  (%u일 · %ld프레임)",
+                      (LPCSTR)ymd(m_days.front().ymd), (LPCSTR)ymd(m_days.back().ymd),
+                      (unsigned)m_days.size(), m_total);
+    }
+
+    CDlg_OpNames dlg(rows, period, &m_font, &m_fontTip, this);
+    if (dlg.DoModal() != IDOK) return;
+
+    // 창은 비율 순으로 돌려준다. 분류표 순서로 되돌린다.
+    const std::vector<CStringA>& shown = dlg.Names();
+    if (shown.size() != m_states.size()) return;
+    std::vector<CStringA> names(m_states.size());
+    for (size_t k = 0; k < shown.size(); ++k) names[rows[k].idx] = shown[k];
+
+    CStringA err;
+    if (!SaveOpStateNames(names, err))
+    {
+        AfxMessageBox("이름을 저장하지 못했습니다.\r\n\r\n" + err, MB_ICONERROR);
+        return;
+    }
+
+    // 비율과 점수는 DB 에서 센 그대로 두고 이름만 바꾼다.
+    for (size_t i = 0; i < names.size(); ++i) m_states[i].name = names[i];
+    m_cards.Invalidate();
+    m_grid.Invalidate();
+    SetState("상태 이름을 저장했습니다. 위 '지금' 줄은 감시가 새 이름을 읽은 뒤(1분 안) 바뀝니다.");
+}
+
+// 설정 창에서 부르는 길. DB 를 훑지 않고 op_states.json 만 읽는다.
+//
+// 비율은 분류표를 만들 때 센 것(share)이고, 기간도 그때의 것(period)이다.
+// 운전 상태 창의 [운전상태명 변경] 은 그 창에서 고른 기간으로 센 비율을 쓴다.
+bool EditOpStateNames(CWnd* parent, CFont* font, CFont* hintFont)
+{
+    const std::string path = std::string(GetMmCamStartPath()) + "users\\"
+                           + gUserID + "\\op_states.json";
+
+    std::string txt;
+    {
+        FILE* f = nullptr;
+        if (fopen_s(&f, path.c_str(), "rb") != 0 || f == nullptr)
+        {
+            AfxMessageBox("운전 상태 분류표(op_states.json)가 없습니다.\r\n"
+                          "retrain/make_op_states.py 로 만든 뒤 다시 하십시오.");
+            return false;
+        }
+        char buf[4096];
+        size_t n = 0;
+        while ((n = fread(buf, 1, sizeof(buf), f)) > 0) txt.append(buf, n);
+        fclose(f);
+    }
+
+    size_t p = 0;
+    std::string period;
+    if (jSeek(txt, p, "period")) period = jStr(txt, p);
+    long frames = 0;
+    p = 0;
+    if (jSeek(txt, p, "frames")) frames = (long)jNum(txt, p);
+
+    // 상태 덩이 안의 순서는 name · center · share · max · min 이다.
+    struct S { CStringA name; double share = 0, tmax = 0, tmin = 0; };
+    std::vector<S> st;
+    p = 0;
+    if (jSeek(txt, p, "states"))
+    {
+        while (jSeek(txt, p, "name"))
+        {
+            S s;
+            s.name = U8(jStr(txt, p).c_str());
+            size_t q = p;
+            if (jSeek(txt, q, "share")) { s.share = jNum(txt, q); p = q; }
+            q = p;
+            if (jSeek(txt, q, "max"))   { s.tmax  = jNum(txt, q); p = q; }
+            q = p;
+            if (jSeek(txt, q, "min"))   { s.tmin  = jNum(txt, q); p = q; }
+            st.push_back(s);
+        }
+    }
+    if (st.empty())
+    {
+        AfxMessageBox("op_states.json 에서 상태를 읽지 못했습니다.");
+        return false;
+    }
+
+    std::vector<int> order(st.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = (int)i;
+    std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
+        return st[a].share > st[b].share; });
+
+    std::vector<CDlg_OpNames::Row> rows;
+    for (size_t k = 0; k < order.size(); ++k)
+    {
+        const int i = order[k];
+        CDlg_OpNames::Row r;
+        r.name = st[i].name;
+        r.hint.Format("%.1f%%  ·  최고 %.0f도 · 최저 %.0f도",
+                      st[i].share, st[i].tmax, st[i].tmin);
+        r.color = ColorOf(i, (int)st.size());
+        r.idx = i;
+        rows.push_back(r);
+    }
+
+    // "20260702 ~ 20260930" -> 날짜와 달력 일수.
+    CStringA line;
+    {
+        int y1, m1, d1, y2, m2, d2;
+        if (sscanf_s(period.c_str(), "%4d%2d%2d ~ %4d%2d%2d",
+                     &y1, &m1, &d1, &y2, &m2, &d2) == 6)
+        {
+            const CTime a(y1, m1, d1, 0, 0, 0), b(y2, m2, d2, 0, 0, 0);
+            const long days = (long)((b - a).GetDays()) + 1;
+            line.Format("운전 기간  %04d-%02d-%02d ~ %04d-%02d-%02d  "
+                        "(%ld일 · %ld프레임 · 분류표를 만들 때)",
+                        y1, m1, d1, y2, m2, d2, days, frames);
+        }
+        else
+            line.Format("운전 기간  %s  (%ld프레임 · 분류표를 만들 때)",
+                        period.empty() ? "모름" : period.c_str(), frames);
+    }
+
+    CDlg_OpNames dlg(rows, line, font, hintFont, parent);
+    if (dlg.DoModal() != IDOK) return false;
+
+    const std::vector<CStringA>& shown = dlg.Names();
+    if (shown.size() != st.size()) return false;
+    std::vector<CStringA> names(st.size());
+    for (size_t k = 0; k < shown.size(); ++k) names[rows[k].idx] = shown[k];
+
+    CStringA err;
+    if (!SaveOpStateNames(names, err))
+    {
+        AfxMessageBox("이름을 저장하지 못했습니다.\r\n\r\n" + err, MB_ICONERROR);
+        return false;
+    }
+    return true;
 }
 
 void CDlg_OpState::OnSelchangeRange() { Load(); }

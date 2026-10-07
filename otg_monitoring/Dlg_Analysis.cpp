@@ -62,9 +62,9 @@ static COLORREF HeatOf(double v)
 // 그리는 쪽과 집는 쪽이 같은 자리를 가리켜야 한다. 한 곳에서 정한다.
 #define CH_L   52
 #define CH_R   14
-#define CH_T   16
+#define CH_T   25
 #define CH_B   32
-#define CH_GAP 34
+#define CH_GAP 43
 #define BAND_COLOR  RGB(0xE4, 0x57, 0x2E)
 #define TEXT_COLOR  RGB(0x1A, 0x24, 0x35)
 #define TIP_TEXT    RGB(0x00, 0x00, 0x00)   // 값 상자는 순검정
@@ -115,6 +115,12 @@ BOOL CDlg_Analysis::OnInitDialog()
     // 값 상자는 눈금보다 25% 크게.
     m_fontTip.CreateFont((UI_FONT_SIZE - 4) * 125 / 100, 0, 0, 0, FW_NORMAL,
         FALSE, FALSE, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+        CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+        _T(UI_FONT_NAME));
+
+    // 칸 이름과 범례는 값 상자보다 크게(25% 키운 뒤 10% 줄여 22px). 무슨 칸인지가 먼저 읽혀야 한다.
+    m_fontLabel.CreateFont((UI_FONT_SIZE - 4) * 125 / 100 * 125 / 100 * 90 / 100, 0, 0, 0,
+        FW_NORMAL, FALSE, FALSE, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
         CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
         _T(UI_FONT_NAME));
 
@@ -622,12 +628,16 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
     };
 
     // ---- 칸 이름 ----
-    mem.SetTextColor(TEXT_COLOR);
+    // 크고(m_fontLabel) 검정이다. 눈금 크기로 두니 무슨 칸인지 읽히지 않았다.
+    // 그 높이만큼 위 여백(CH_T)과 칸 사이(CH_GAP)를 넓혔다.
+    mem.SetTextColor(TIP_TEXT);
     {
-        CRect r1(px, topY - 15, px + 260, topY - 1);
+        CFont* pOld = mem.SelectObject(&m_fontLabel);
+        CRect r1(px, topY - 24, px + 340, topY - 1);
         mem.DrawTextA("점수", &r1, DT_LEFT | DT_SINGLELINE);
-        CRect r2(px, botY - 15, px + 260, botY - 1);
+        CRect r2(px, botY - 24, px + 340, botY - 1);
         mem.DrawTextA("마스크 칸 온도 (섭씨)", &r2, DT_LEFT | DT_SINGLELINE);
+        mem.SelectObject(pOld);
     }
 
     // ---- 가로 눈금과 y 글자 ----
@@ -807,6 +817,8 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
     // ---- 온도 칸 범례 ----
     // 선이 둘이면 색만으로는 무엇인지 알 수 없다.
     {
+        // 글자는 칸 이름과 같이 크고(m_fontLabel) 검정이다. 색은 선이 말한다.
+        CFont* pOldFont = mem.SelectObject(&m_fontLabel);
         int lx = px + 6;
         const int ly = botY + 6;
         struct { COLORREF c; const char* t; } leg[] = {
@@ -815,15 +827,16 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
         {
             CPen pen(PS_SOLID, 2, e.c);
             CPen* pOld = mem.SelectObject(&pen);
-            mem.MoveTo(lx, ly + 7);
-            mem.LineTo(lx + 16, ly + 7);
+            mem.MoveTo(lx, ly + 11);
+            mem.LineTo(lx + 22, ly + 11);
             mem.SelectObject(pOld);
 
-            mem.SetTextColor(MUTED_COLOR);
-            CRect rcT(lx + 21, ly, lx + 71, ly + 15);
+            mem.SetTextColor(TIP_TEXT);
+            CRect rcT(lx + 28, ly, lx + 100, ly + 23);
             mem.DrawTextA(e.t, &rcT, DT_LEFT | DT_SINGLELINE);
-            lx += 66;
+            lx += 94;
         }
+        mem.SelectObject(pOldFont);
     }
 
     // ---- 십자선 ----

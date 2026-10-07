@@ -51,6 +51,7 @@ public:
     virtual BOOL OnInitDialog();
     afx_msg void OnSelchangeRange();
     afx_msg void OnBnClickedReload();
+    afx_msg void OnBnClickedNames();
     afx_msg void OnDateChanged(NMHDR* pNMHDR, LRESULT* pResult);
     afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS);
     afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
@@ -95,7 +96,7 @@ private:
     CDateTimeCtrl m_dtFrom, m_dtTo;
     CStatic   m_capFrom, m_capTo;
 
-    CButton   m_btnReload, m_btnClose;
+    CButton   m_btnReload, m_btnNames, m_btnClose;
     CFont     m_font, m_fontSmall, m_fontBig, m_fontNum;
 
     // 짚은 칸 옆에 뜨는 쪽지 전용. 눈금(m_fontSmall)보다 25% 크다 - 눈금은
@@ -135,3 +136,6 @@ private:
     void DrawGrid(CDC* pDC, const CRect& rc);
     bool GridCellAt(CPoint pt, int* day, int* hour) const;
 };
+
+// 설정 창에서 운전 상태 이름을 고친다. op_states.json 만 읽고 쓴다. 저장했으면 true.
+bool EditOpStateNames(CWnd* parent, CFont* font, CFont* hintFont);

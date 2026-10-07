@@ -21,9 +21,13 @@ hot_list(64셀 값)를 이미 기록하고 있다.
 [왜 시간대로 층화하는가]
 
 단순 균일 표집은 데이터가 많은 기간에 끌려간다. 설비가 밤에만 도는
-현장이라면 낮 표본이 모자라고, 모델은 낮을 이상으로 본다. 시간대(0~23)와
-가동 상태(가동/정지)로 칸을 나눠 각 칸에서 고르게 뽑으면, 어느 조건도
-누락되지 않는다.
+현장이라면 낮 표본이 모자라고, 모델은 낮을 이상으로 본다. 날짜마다 시간대
+(0~23)로 칸을 나눠 각 칸에서 고르게 뽑으면, 어느 시간대도 누락되지 않는다.
+
+예전에는 시간대 안을 다시 가동/정지(마스크 칸 최고 온도가 자동으로 잡은
+'가동 판정 온도' 이상인가)로 나눴다. 2026-10-07 에 뺐다. cj_busan_1 에서
+그 온도(98도)는 가동과 정지가 아니라 드문 고온 구간과 나머지를 가르고
+있었고, 표본 구성도 거의 바꾸지 못했다(고온 6.6% -> 표본 6.0%).
 
 
 [안전 규칙] 정상으로 판정된 프레임만 담는다. mscore 가 기준 미만인
@@ -56,12 +60,11 @@ import numpy as np
 # 현장 실측에 맞게 잡혀 있어야 한다 - cj_busan_1 은 역대 최고 118도인데
 # 임계값이 172도라 지금은 한 건도 걸리지 않는다.
 
-# (날짜, 시간대, 가동상태) 칸마다 모아 둔 뒤 최종 표집한다. 목표 개수보다 넉넉히
+# (날짜, 시간대) 칸마다 모아 둔 뒤 최종 표집한다. 목표 개수보다 넉넉히
 # 잡아야 날짜·칸별 균형을 맞출 여지가 생긴다.
 #
-# 한 날은 보통 시간대마다 가동/정지 중 한쪽 칸만 차서 실제로 쓰이는 칸이 24개
-# 안팎이다. 48칸이 다 찬다고 가정해 2배로 잡았더니 cj_busan_1 에서 칸당 몫이
-# 모자라 목표 20,000건에 13,689건만 뽑혔다. 24칸 기준으로 4배를 잡는다.
+# 2배로 잡았더니 cj_busan_1 에서 칸당 몫이 모자라 목표 20,000건에 13,689건만
+# 뽑혔다. 하루 24칸 기준으로 4배를 잡는다.
 OVERSAMPLE = 4.0
 
 # 다시 매길 때 한 번에 넘기는 프레임 수.
@@ -125,7 +128,7 @@ def _water_fill(total, caps):
 
 
 class StratifiedReservoir:
-    """(날짜, 시간대, 가동상태) 칸마다 따로 저수지 표집을 돌린다."""
+    """(날짜, 시간대) 칸마다 따로 저수지 표집을 돌린다."""
 
     def __init__(self, per_cell, seed=None):
         self.per_cell = int(per_cell)
@@ -149,7 +152,7 @@ class StratifiedReservoir:
 
     def day_balanced_draw(self, total):
         """
-        날짜마다 같은 몫으로, 하루 안에서는 (시간대, 가동상태) 칸마다 같은 몫으로
+        날짜마다 같은 몫으로, 하루 안에서는 시간대 칸마다 같은 몫으로
         최대 total 개를 뽑는다.
 
         날짜: total / 날짜 수. 프레임이 그보다 적은 날은 있는 만큼만 받고, 남는 몫은
@@ -192,8 +195,7 @@ class StratifiedReservoir:
 def collect(conn, db_name, n_cells, target, mask=None,
             seed=None, verbose=True,
             split_days=None, old_weight=None, temp_warn=None,
-            run_temp=None, dynamic_mix=True,
-            recent_days=None):
+            dynamic_mix=True, recent_days=None):
     """
     히스토리 DB 를 훑어 학습용 표본을 만든다.
 
@@ -289,11 +291,9 @@ def collect(conn, db_name, n_cells, target, mask=None,
                   f"새 시기(최근 {split_days}일) {len(tables)}개에서 {n_new:,}건 "
                   f"(기여 가중치 {float(mix_weight):.2f})")
         X_old, info_old = _collect_from(cur, db_name, old_tables, n_cells, n_old,
-                                        mask, seed, verbose, temp_warn,
-                                        run_temp)
+                                        mask, seed, verbose, temp_warn)
         X_new, info_new = _collect_from(cur, db_name, tables, n_cells, n_new,
-                                        mask, seed, verbose, temp_warn,
-                                        run_temp)
+                                        mask, seed, verbose, temp_warn)
         cur.close()
         X = np.concatenate([a for a in (X_old, X_new) if len(a)]) \
             if (len(X_old) or len(X_new)) else np.empty((0, n_cells))
@@ -310,73 +310,20 @@ def collect(conn, db_name, n_cells, target, mask=None,
             # 들고 있어 정확히 합칠 수 없다. 많은 쪽을 쓴다 — 적게 잡는 것이
             # 관문을 느슨하게 만들지는 않는다.
             "hours": max(info_old.get("hours", 0), info_new.get("hours", 0)),
-            "split": info_new.get("split", info_old.get("split")),
-            "run_share": info_new.get("run_share", info_old.get("run_share")),
             "old_rows": int(len(X_old)), "new_rows": int(len(X_new)),
             "mix_weight": float(mix_weight), "dynamic_mix": bool(dynamic_mix),
         }
         return X, info
 
     X, info = _collect_from(cur, db_name, tables, n_cells, target,
-                            mask, seed, verbose, temp_warn,
-                            run_temp)
+                            mask, seed, verbose, temp_warn)
     cur.close()
     info["mix_weight"] = 1.0 if mix_weight is None else float(mix_weight)
     return X, info
 
 
-def auto_run_temp(peaks):
-    """
-    가동 판정 온도를 자료에서 잡는다. 마스크 셀 최고 온도(peak)의 분포를
-    둘로 가르는 자리(오쓰 방법: 두 덩어리의 분산 차이가 가장 큰 자리).
-
-    설비는 서 있을 때와 돌 때의 온도가 뚜렷이 갈리므로 분포가 두 봉우리다.
-    예전에는 앞쪽 2,000건의 중앙값을 썼는데, 그 방식은 훑기 시작한 시간대에
-    끌려가고 그 2,000건은 전부 정지로 들어갔다. 가동이 70% 넘는 현장에서는
-    중앙값이 가동 봉우리 한가운데에 놓이기도 한다.
-
-    돌려주는 값 이상이면 가동이다. 자료가 없으면 None.
-    """
-    p = np.asarray(peaks, dtype=np.float64).reshape(-1)
-    p = p[np.isfinite(p)]
-    if p.size == 0:
-        return None
-
-    lo, hi = float(p.min()), float(p.max())
-    if hi - lo < 1.0:
-        # 온도가 한 값뿐이라 가를 수 없다. 전부 가동으로 본다.
-        return lo
-
-    nb = int(np.ceil(hi - lo)) + 1                # 1도 폭
-    hist, edges = np.histogram(p, bins=nb, range=(lo, lo + nb))
-    centers = (edges[:-1] + edges[1:]) / 2.0
-
-    w0 = np.cumsum(hist).astype(np.float64)
-    w1 = float(p.size) - w0
-    s0 = np.cumsum(hist * centers)
-    tot = float((hist * centers).sum())
-
-    with np.errstate(divide="ignore", invalid="ignore"):
-        m0 = s0 / w0
-        m1 = (tot - s0) / w1
-        between = w0 * w1 * (m0 - m1) ** 2
-    between[~np.isfinite(between)] = -1.0
-
-    k = int(np.argmax(between))
-
-    # 두 덩어리 사이의 한가운데를 돌려준다. 아래 덩어리의 위쪽 끝에 바짝 붙이면
-    # 정지 상태의 꼬리가 가동으로 넘어간다.
-    occupied = np.nonzero(hist)[0]
-    below = occupied[occupied <= k]
-    above = occupied[occupied > k]
-    if below.size == 0 or above.size == 0:
-        return float(edges[k + 1])
-    return float((edges[below[-1] + 1] + edges[above[0]]) / 2.0)
-
-
 def _collect_from(cur, db_name, tables, n_cells, target, mask,
-                  seed, verbose, temp_warn=None,
-                  run_temp=None):
+                  seed, verbose, temp_warn=None):
     """
     테이블 묶음 하나에서 target 건을 고르게 뽑는다.
 
@@ -392,29 +339,16 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
     2026-09-28 cj_busan_1. 칸 37 이 70도인 상태는 09-20·21 에 1,125번 있던
     정상인데, 운용 모델이 0.06 을 주어 표본에서 빠졌다. 세대가 거듭될수록
     그 상태의 점수가 0.84 -> 0.08 -> 0.06 으로 떨어졌다.
-
-        [run_temp - 가동 판정 온도]
-
-    주지 않으면 앞쪽 2,000건 최고 온도의 중앙값으로 잡는다. 그 방식은 앞쪽
-    2,000건이 어느 시간대인지에 끌려가고, 그 2,000건 자체는 판정선이 아직
-    없어 전부 정지로 들어간다. 값을 주면 처음부터 같은 선으로 가른다.
-
     """
     if not tables or target <= 0:
         return np.empty((0, n_cells)), {"tables": 0, "rows": 0, "kept": 0}
 
-    # 날짜가 칸에 들어가므로 칸 수는 날짜 수 x 하루 칸 수다(날짜 테이블 하나가 하루).
-    # 하루에 실제로 쓰이는 칸은 24개 안팎으로 어림한다(OVERSAMPLE 설명 참고).
+    # 날짜가 칸에 들어가므로 칸 수는 날짜 수 x 24 시간대다(날짜 테이블 하나가 하루).
     # 칸마다 최소 셋은 들고 있어야 한 날의 몫을 채울 여지가 있다.
     n_days = max(1, len(tables))
     n_keys_est = 24 * n_days
     per_cell = max(3, int(OVERSAMPLE * target / n_keys_est) + 1)
     res = StratifiedReservoir(per_cell, seed=seed)
-
-    # 가동/정지를 가르는 기준. 값을 주면 그대로 쓰고, 없으면 마스크 셀 최고
-    # 온도의 중앙값으로 잡는다 - 한 번 훑는 동안은 알 수 없으므로 앞쪽
-    # 표본으로 잡고 간다.
-    split = None if run_temp is None else float(run_temp)
 
     rows_seen = 0
     kept = 0
@@ -426,13 +360,9 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
     # 없었다.
     hours_seen = 0
 
-    def cell_key(day, hour, running):
-        return (day, hour, running)
-
-    # ---- 1) 훑어 모은다 ----
+    # ---- 훑으면서 (날짜, 시간대) 칸에 담는다 ----
     #
     # 여기서 거는 것은 절대 임계값 하나다.
-    frames = []          # (날짜, 시각, 값)
     n_abs = 0            # 절대 임계값에 걸린 수
 
     for t in tables:
@@ -451,42 +381,18 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
                 n_abs += 1
                 continue
 
-            frames.append((t[-8:], int(when.hour), v.astype(np.float32)))
+            hour = int(when.hour)
+            res.offer((t[-8:], hour), v)
+            hours_seen |= (1 << hour)
+            kept += 1
 
     cur.close()
 
-    if not frames:
+    if not kept:
         return (np.empty((0, n_cells)),
                 {"tables": len(tables), "rows": rows_seen, "kept": 0,
                  "period": f"{tables[0][-8:]} ~ {tables[-1][-8:]}",
-                 "cells": 0, "drawn": 0, "hours": 0, "split": split,
-                 "abs_cut": n_abs})
-
-    # ---- 2) 칸에 나눠 담는다 ----
-    sel = (np.asarray(mask, dtype=np.int32).reshape(-1) == 1
-           if mask is not None else np.ones(n_cells, dtype=bool))
-
-    # 가동 판정 온도는 훑어 모은 프레임 전체의 분포에서 잡는다. 사람이 정하는
-    # 값이 아니다.
-    peaks = np.array([float(np.asarray(v32, dtype=np.float64)[sel].max())
-                      for _d, _h, v32 in frames])
-    if split is None:
-        split = auto_run_temp(peaks)
-
-    n_run = 0
-    for (day, hour, v32), peak in zip(frames, peaks):
-        v = np.asarray(v32, dtype=np.float64)
-        running = 1 if peak >= split else 0
-        n_run += running
-
-        res.offer(cell_key(day, hour, running), v)
-        hours_seen |= (1 << hour)
-        kept += 1
-
-    run_share = (n_run / kept) if kept else 0.0
-    if verbose:
-        print(f"[재생버퍼] 가동 판정 온도 {split:.0f}도 (자동) · "
-              f"가동 {run_share * 100:.0f}% / 정지 {(1 - run_share) * 100:.0f}%")
+                 "cells": 0, "drawn": 0, "hours": 0, "abs_cut": n_abs})
 
     X, seen = res.day_balanced_draw(target)
 
@@ -499,8 +405,6 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
         "days": len({k[0] for k in seen}),
         "drawn": int(X.shape[0]),
         "hours": bin(hours_seen).count("1"),
-        "split": split,
-        "run_share": run_share,
         "abs_cut": n_abs,
     }
 
@@ -511,7 +415,7 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
         print(f"           본 {rows_seen:,}건 중 {kept:,}건 사용")
         print(f"           절대 임계값 위반 [ {n_abs:,} ] 건")
         print(f"           {info['drawn']:,}건 표집, 날짜 {info['days']}일 균등 · "
-              f"{info['cells']}개 칸(시각x가동상태) · {info['hours']}개 시간대")
+              f"{info['hours']}개 시간대")
         if info["drawn"] < target:
             print(f"           (목표 {target:,}건에 못 미칩니다. 중복 복제 대신 "
                   f"있는 만큼만 씁니다)")

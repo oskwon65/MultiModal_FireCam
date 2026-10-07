@@ -49,11 +49,15 @@ public:
     virtual BOOL OnInitDialog();
     afx_msg void OnBnClickedDryRun();
     afx_msg void OnBnClickedApply();
-    afx_msg void OnBnClickedRollback();
     afx_msg void OnBnClickedDyn();
     afx_msg void OnBnClickedAuto();
     afx_msg void OnEnChangeMix();
     afx_msg void OnBnClickedMixSave();
+    afx_msg void OnBnClickedGenDelete();       // 학습모델관리 창을 연다
+    afx_msg LRESULT OnGenMgrStart(WPARAM, LPARAM);
+
+    // [설정] 창의 [학습모델관리] 로 열 때 부른다. 창이 뜨면 바로 관리 창을 연다.
+    void OpenGenManagerOnly() { m_genMgrOnly = true; }
     afx_msg void OnDestroy();
     afx_msg void OnTimer(UINT_PTR nIDEvent);
     afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS);
@@ -72,14 +76,14 @@ private:
     // 로그 칸은 RichEdit 이다. 일반 CEdit 은 글자색을 칸 전체에만 줄 수
     // 있어, 운용 중인 세대와 나머지를 줄 단위로 구분할 수 없다.
     CRichEditCtrl m_edLog;
-    CButton  m_btnDry, m_btnApply, m_btnBack, m_btnClose;
-    CComboBox m_cboGen;                    // 되돌릴 세대
+    CButton  m_btnDry, m_btnApply;
     std::vector<std::string> m_cboStamps;  // 목록 순서대로의 세대 이름
     std::vector<bool> m_cboServed;         // 그 세대가 운용된 적 있는가
+    bool m_genMgrOnly = false;             // 학습모델관리만 하려고 열렸는가
     CStatic  m_lblHead, m_lblState;
 
     // 재생버퍼 동적구성과 기여 문턱. 학습을 돌릴 때 쓰는 값이라 단추 줄 아래에 둔다.
-    // 고친 값은 [저장] 을 눌러 확인한 뒤에만 continual_learning.ini 에 쓴다. 자동 재학습은
+    // 고친 값은 [설정저장] 을 눌러 확인한 뒤에만 continual_learning.ini 에 쓴다. 자동 재학습은
     // 감시가 그 파일을 읽어 따르므로 고치자마자 바뀌면 곤란하다. 저장하지 않은 변경이 있으면
     // 학습 단추는 막고, 닫을 때는 묻는다.
     CButton  m_chkDyn;
@@ -187,8 +191,8 @@ private:
     CStringA GenScore(const char* stamp) const;   // 그 세대의 정상 평균 점수
     CStringA IncumbentAt(const char* stamp) const;   // 그때 운용 중이던 세대
     void ScanGenerations();           // m_curGen · m_backGen · m_backWhy 갱신
-    void FillGenCombo();              // 고를 수 있는 세대를 목록에 채운다
-    CStringA PickedGen() const;       // 목록에서 고른 세대 (없으면 빈 문자열)
+    void FillGenCombo();              // 고를 수 있는 세대를 m_cboStamps 에 채운다
+    void RollbackTo(const CStringA& picked);   // 고른 세대로 되돌린다 (묻고 나서)
     void ShowGenerations();           // 세대 목록을 로그에 적는다
 
     void Run(RunKind kind);

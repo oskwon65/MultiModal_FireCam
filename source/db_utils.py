@@ -794,7 +794,7 @@ def Set_Env_Config(user_ID, verbose=True):
             #
             # getfloat 은 '' 을 만나면 ValueError 로 죽는다. [설정] 창은
             # 절대 임계값 네 칸을 모두 비우는 것을 허용하고(1단계 끄기),
-            # 가동 판정 온도도 비우면 자동이라 빈칸이 정상적으로 생긴다.
+            # 비워 둔 칸은 빈 문자열로 남는다.
             _v = config.get("CONSTANTS", _k, fallback="").strip()
             try:
                 local_config[_k] = float(_v) if _v else None

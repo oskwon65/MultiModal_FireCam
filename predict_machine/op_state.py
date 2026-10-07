@@ -55,8 +55,11 @@ class OpStates:
         self._recent = []
         self._recent_dev = []
         self._recent_t = []
+        self._path = os.path.join(user_path, FILE_NAME)
+        self._mtime = None
+        self._names_checked = 0.0
 
-        p = os.path.join(user_path, FILE_NAME)
+        p = self._path
         if not os.path.exists(p):
             self.info = f"{FILE_NAME} 이 없습니다 (retrain/make_op_states.py 로 만듭니다)"
             return
@@ -85,6 +88,11 @@ class OpStates:
         self.names = names
         self.centers = cen
         self.cells = cells
+        try:
+            self._mtime = os.path.getmtime(p)
+        except OSError:
+            self._mtime = None
+        self._names_checked = time.time()
         self.info = f"{len(names)}가지 · {d.get('period', '')} 자료"
         self.ok = True
 
@@ -143,13 +151,38 @@ class OpStates:
                 n += 1
         return n / len(self._recent_dev)
 
+    def _refresh_names(self):
+        """사람이 화면에서 고친 이름을 다시 읽는다. 1분에 한 번만 본다.
+
+        이름은 운전 상태 창의 [이름 바꾸기] 로 op_states.json 에 고쳐 쓴다.
+        중심은 그대로이므로 이름만 갈아 끼운다 - 상태 수가 달라졌으면 분류표
+        자체가 바뀐 것이라 손대지 않는다(감시를 다시 시작해야 한다).
+        """
+        now = time.time()
+        if not self.ok or now - self._names_checked < 60:
+            return
+        self._names_checked = now
+        try:
+            m = os.path.getmtime(self._path)
+            if m == self._mtime:
+                return
+            with open(self._path, encoding="utf-8") as f:
+                names = [s["name"] for s in json.load(f)["states"]]
+        except Exception:
+            return              # 쓰는 중이거나 깨졌으면 다음에 다시 본다
+        self._mtime = m
+        if len(names) == len(self.names):
+            self.names = names
+
     def name_of(self, i):
+        self._refresh_names()
         if i is None or not (0 <= i < len(self.names)):
             return ""
         return self.names[i]
 
     def recent_mix(self, top=2):
         """최근 RECENT 건의 상태 구성. '전부하 운전 82% · 편중 발열 18%'."""
+        self._refresh_names()
         if not self._recent:
             return ""
         n = len(self._recent)

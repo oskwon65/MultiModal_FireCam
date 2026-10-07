@@ -89,6 +89,8 @@ private:
     // 그림을 읽는 보조지만 이 상자는 지금 짚은 값 그 자체라서, 같은 크기로
     // 두면 읽으려고 눈을 모아야 한다.
     CFont     m_fontTip;
+    // 칸 이름과 범례(점수 · 마스크 칸 온도 · 최고 · 평균). 값 상자보다 크다(22px).
+    CFont     m_fontLabel;
     CBrush    m_brWhite;
 
     std::vector<Point> m_pts;
