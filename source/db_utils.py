@@ -830,6 +830,14 @@ def Set_Env_Config(user_ID, verbose=True):
                 print(f"[WARN] {_k} 값을 정수로 읽지 못했습니다: {_v!r}")
                 local_config[_k] = None
 
+        # 카메라 자리가 바뀐 시각 ("YYYY-MM-DD HH:MM:SS"). 비어 있으면 없음.
+        #
+        # [설정] 의 [기준 이미지] 에서 칸 단위로 밀린 채 기준을 바꾸면 적힌다. 그
+        # 앞의 프레임은 칸마다 다른 곳을 보고 있었으므로 재학습 · 기여도 · 경험
+        # 임계값 되쌓기가 쓰지 않는다. position_since() 로 읽는다.
+        local_config["POSITION_SINCE"] = config.get("CONSTANTS", "POSITION_SINCE",
+                                                    fallback="").strip()
+
         # 계산 기준일은 없앴다. 옛 ini 에 CALC_BASE_DATE 가 남아 있어도 읽지 않는다.
         # 옛/새 시기의 경계는 기여도 판단 구간(CONTRIB_WINDOW_TABLES 일)이 정한다.
         local_config["CALC_BASE_DATE"] = ""
@@ -916,3 +924,22 @@ def Get_HistoryDB_Config(local_config):
     # 밀어낼 뿐이다.
 
     return HISTORY_DB_CONFIG
+
+def position_since(config):
+    """
+    카메라 자리가 바뀐 시각(datetime). 없거나 읽을 수 없으면 None.
+
+    히스토리 DB 는 날짜별 테이블이라, 쓰는 쪽은 테이블 이름(YYYYMMDD)으로 먼저
+    거르고 그날 테이블 안에서는 time 열로 한 번 더 거른다.
+    """
+    from datetime import datetime
+    v = (config.get("POSITION_SINCE") or "").strip()
+    if not v:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(v, fmt)
+        except ValueError:
+            pass
+    print(f"[WARN] POSITION_SINCE 를 읽지 못했습니다: {v!r}")
+    return None

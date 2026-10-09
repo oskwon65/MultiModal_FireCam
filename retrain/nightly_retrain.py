@@ -72,7 +72,7 @@ sys.path.insert(0, os.path.join(_ROOT, "source"))
 sys.path.insert(0, os.path.join(_ROOT, "predict_machine"))
 sys.path.insert(0, _HERE)
 
-from db_utils import Set_Env_Config, Get_HistoryDB_Config, Connect_History_DB
+from db_utils import Set_Env_Config, Get_HistoryDB_Config, Connect_History_DB, position_since
 
 # 서빙이 쓰는 것과 똑같은 모델 정의를 그대로 가져온다. 여기에 복사해 두면
 # 한쪽만 고쳐졌을 때 state_dict 로드가 깨지는데, 그 증상이 원인을 전혀
@@ -913,7 +913,8 @@ def main():
         dec_score, dec_info = model_contribution.decision_score(
             conn, history_db["database"], n_cells, mask=mask,
             temp_warn=config.get("ABS_TEMP_WARN"), score_fn=rescore,
-            n_tables=n_tab, min_frames=min_fr, max_samples=max_sm)
+            n_tables=n_tab, min_frames=min_fr, max_samples=max_sm,
+            since=position_since(config))
         old_weight = model_contribution.weight_for(dec_score, bands(config))
         print(f"[기여도] {model_contribution.describe(dec_score, old_weight)}")
         print()
@@ -971,7 +972,7 @@ def main():
             conn, history_db["database"], n_cells, target, mask=mask,
             split_days=n_tab, old_weight=old_weight,
             temp_warn=temp_warn, dynamic_mix=dynamic_mix,
-            recent_days=buffer_days)
+            recent_days=buffer_days, since=position_since(config))
     finally:
         conn.close()
 

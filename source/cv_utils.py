@@ -192,7 +192,7 @@ def estimate_movement(input_img,base_img_path):
     return dx, dy, response
 
 # ----------------------------
-# get_new_hotlist_mask : 카메라 위치 조정에 따른 hotlist_mask 의 내용을 조정함
+# 카메라 틀어짐을 잰다. 마스크는 옮기지 않는다 (자동 이동보정은 2026-10-08 에 뺐다).
 # ----------------------------
 import sys
 import os
@@ -212,7 +212,7 @@ import numpy as np
 #
 # 섞인 원인은 저장 규칙이다. 밝기차 20 미만이면 이동량이 얼마든 저장했고,
 # 밀린 화면이 새 기준으로 계속 추가되었다. 그래서 기준은 굳힌다. 자동으로
-# 늘리지 않고, 사람이 이동보정을 승인할 때만 바꾼다.
+# 늘리지 않고, 사람이 [설정] 의 [기준 이미지] 에서 견주어 보고 바꾼다.
 #
 # 밝기를 맞출 필요도 없다. 위상 상관(phaseCorrelate)은 진폭을 정규화하므로
 # 조명 변화에 이미 둔감하다. 조명 성분을 빼는 고역통과를 함께 시험했더니
@@ -254,19 +254,6 @@ def base_ref_path(BASE_IMG_DIR):
     return os.path.join(BASE_IMG_DIR, BASE_REF_NAME)
 
 
-def write_base_ref(BASE_IMG_DIR, input_img):
-    """
-    지금 화면을 기준 1장으로 굳힌다.
-
-    부르는 곳은 사람이 이동보정을 승인한 자리 하나뿐이어야 한다.
-    """
-    os.makedirs(BASE_IMG_DIR, exist_ok=True)
-    p = base_ref_path(BASE_IMG_DIR)
-    ok = cv2.imwrite(p, input_img)
-    print(f"[기준 1장] {'굳혔습니다' if ok else '쓰지 못했습니다'}: {p}")
-    return ok
-
-
 def measure_shift_vs_ref(ref_img, input_img):
     """
     굳혀 둔 기준 1장에 대한 평행이동.
@@ -290,18 +277,6 @@ def measure_shift_vs_ref(ref_img, input_img):
         return None
 
     return dx, dy, response
-
-
-def _shift_mask(mask_grid, shift_x, shift_y, Y_GRID, X_GRID):
-    """마스크를 칸 단위로 민다. 밖에서 들어오는 자리는 0."""
-    shifted = np.zeros_like(mask_grid)
-    for r in range(Y_GRID):
-        for c in range(X_GRID):
-            src_r = r - shift_y
-            src_c = c - shift_x
-            if 0 <= src_r < Y_GRID and 0 <= src_c < X_GRID:
-                shifted[r, c] = mask_grid[src_r, src_c]
-    return shifted
 
 
 def _adjust_with_frozen_ref(ref_path, input_img, hotlist_mask, X_GRID, Y_GRID):
@@ -344,9 +319,8 @@ def _adjust_with_frozen_ref(ref_path, input_img, hotlist_mask, X_GRID, Y_GRID):
     print(f"[기준 1장] 틀어짐 감지 - 가로 {shift_x:+d}칸, 세로 {shift_y:+d}칸")
     print("-" * 50)
 
-    shifted = _shift_mask(hotlist_mask.reshape(Y_GRID, X_GRID),
-                          shift_x, shift_y, Y_GRID, X_GRID)
-    return True, shifted.flatten(), shift_x, shift_y, shift_info(SHIFT_STATE_SHIFT, dx, dy, response)
+    # 마스크는 옮기지 않는다. 잰 값만 돌려준다 (자동 이동보정은 2026-10-08 에 뺐다).
+    return True, hotlist_mask.copy(), shift_x, shift_y, shift_info(SHIFT_STATE_SHIFT, dx, dy, response)
 
 
 # ----------------------------
@@ -394,9 +368,6 @@ def Get_Adjusted_HotMask_Position(BASE_IMG_DIR, input_img, hotlist_mask, X_GRID,
     cell_w = w / X_GRID
     cell_h = h / Y_GRID
 
-    # ---------- 1D → 2D ----------
-    mask_grid = hotlist_mask.reshape(Y_GRID, X_GRID)
-
     # ---------- cell 단위 이동량 계산 ----------
     shift_x = int(dx / cell_w)
     shift_y = int(dy / cell_h)
@@ -416,13 +387,8 @@ def Get_Adjusted_HotMask_Position(BASE_IMG_DIR, input_img, hotlist_mask, X_GRID,
             save_base_image(BASE_IMG_DIR, input_img)
             return False, hotlist_mask.copy(), 0, 0, shift_info(SHIFT_STATE_LEGACY, dx, dy, response)
 
-    # ---------- 마스크 이동 보정 ----------
-
-    shifted = _shift_mask(mask_grid, shift_x, shift_y, Y_GRID, X_GRID)
-
-    shifted_flat = shifted.flatten()
-
-    return True, shifted_flat, shift_x, shift_y, shift_info(SHIFT_STATE_LEGACY, dx, dy, response)
+    # 마스크는 옮기지 않는다. 잰 값만 돌려준다 (자동 이동보정은 2026-10-08 에 뺐다).
+    return True, hotlist_mask.copy(), shift_x, shift_y, shift_info(SHIFT_STATE_LEGACY, dx, dy, response)
 
 # ----------------------------
 

@@ -23,7 +23,7 @@ protected:
     DECLARE_MESSAGE_MAP()
 
 public:
-    CButton m_btnClose, m_btnGetMask_Server, m_btnSetMask_CamPos;
+    CButton m_btnClose, m_btnGetMask_Server;
     CFont   m_stdFont;
     CStatic m_cap_0;
     // 기동 시 잰 카메라 틀어짐. 버튼 옆에 적는다.
@@ -31,7 +31,6 @@ public:
 
     // 연속 학습 단계 전환 조건 (users\<id>\env.ini 의 [CONSTANTS])
     CStatic m_sepTop;                                    // 안내줄과 마스크 버튼을 가르는 구분선
-    CStatic m_sepStage;                                  // 마스크 버튼과 가르는 구분선
     CStatic m_sepBottom;                                 // 설정 영역의 끝을 긋는 구분선
     CStatic m_capStage;                                  // [ 2단계 전환 조건 ]
     CStatic m_capStage2;                                 // [ 3단계·재생 버퍼 ]
@@ -73,14 +72,21 @@ public:
     CButton m_btnCellBase;        // 2단계 줄 옆. 칸별 기준값을 띄운다
     CButton m_btnOpNames;         // [현재 진행] 맨 아래. 운전 상태 이름을 고친다
     CButton m_btnGenMgr;          // 그 아래. 보관된 학습모델을 되돌리거나 지운다
+    CButton m_btnRetrainHist;     // 그 아래. 자동 재학습 이력을 본다
+    // 재생버퍼 동적구성과 기여 문턱 (상/하). [재학습] 창에서 옮겨 왔다.
+    CButton m_chkDyn;
+    CStatic m_lblBand;
+    CEdit   m_edBandHigh, m_edBandLow;
+    CButton m_btnBaseRef;         // 맨 윗줄 오른쪽. RGB 기준 이미지를 견주어 보고 바꾼다
     // 경험 임계값을 손으로 다시 세우는 두 가지 길.
     CButton m_btnBaseFresh, m_btnBaseRebuild;
     CStatic m_lampStage[3];
     int     m_lampLevel[3] = { 0, 0, 0 };   // 0 꺼짐 · 1 준비 중 · 2 사용 중
+    bool    m_shiftAlert = false;           // [카메라 위치 이동] 줄을 적색으로
+    void    SetShiftAlert(bool on);
 
     virtual BOOL OnInitDialog();
     afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
-    afx_msg void OnBnClickedButtonChangeMask();
     afx_msg void OnBnClickedButtonGetMask();
     afx_msg void OnBnClickedClose();
     afx_msg void OnBnClickedSaveStage();
@@ -102,6 +108,8 @@ public:
     afx_msg void OnBnClickedCellBase();
     afx_msg void OnBnClickedOpNames();
     afx_msg void OnBnClickedGenMgr();
+    afx_msg void OnBnClickedBaseRef();
+    afx_msg void OnBnClickedRetrainHist();
     afx_msg void OnBnClickedBaseFresh();
     afx_msg void OnBnClickedBaseRebuild();
     afx_msg LRESULT OnSpanDone(WPARAM wp, LPARAM lp);   // DB 기간 조회가 끝났다

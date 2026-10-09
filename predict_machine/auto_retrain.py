@@ -27,7 +27,11 @@
 
   auto_retrain_history.txt 에 한 건이 끝날 때마다 한 줄씩 쌓는다(지우지 않는다).
 
-    시작 <탭> 종료 <탭> 기여 w <탭> 결과 <탭> 승격된 세대
+    시작 <탭> 종료 <탭> 기여 w <탭> 결과 <탭> 승격된 세대 <탭> 판단 점수
+
+  판단 점수는 w 를 낸 점수다(model_contribution.decision_score - 최근 판단 구간에서
+  지금 모델이 낸 정상 평균). w 만 보면 왜 그 값이 나왔는지, 문턱에서 얼마나 떨어져
+  있는지 알 수 없다. 2026-10-07 에 더했고, 그 전 줄에는 이 칸이 없다.
 
   결과는 "승격 · 세대", "완료 (변경 없음)", "보류 …", "실패 …" 중 하나다. 감시가 학습 도중에
   꺼지면 끝난 뒤의 결과를 볼 수 없어 "결과 미확인" 으로 적는다. 승격 여부는 끝난 뒤
@@ -69,6 +73,14 @@ _EXIT_TEXT = {
 }
 
 
+def _score_text(score):
+    """판단 점수를 이력 칸에 적을 글자로. 모르면 빈칸."""
+    try:
+        return "" if score is None else f"{float(score):.4f}"
+    except (TypeError, ValueError):
+        return ""
+
+
 def _read_ini(path):
     cp = configparser.ConfigParser(interpolation=None)
     cp.optionxform = str
@@ -90,6 +102,7 @@ class AutoRetrain:
         self.log = None
         self._started = ""        # 지금 도는 학습의 시작 시각
         self._w = 0.0
+        self._score = ""         # w 를 낸 판단 점수 (글자, 모르면 빈칸)
         self._gen_before = ""
 
         # 이전 감시가 학습 도중에 꺼졌다면 그 학습의 끝을 보지 못했다. 이력에 그렇게 남긴다.
@@ -97,7 +110,8 @@ class AutoRetrain:
         if cp.get("LAST", "RESULT", fallback="") == "진행 중":
             self._history(cp.get("LAST", "AT", fallback=""), "",
                           cp.get("LAST", "W", fallback=""),
-                          "결과 미확인 (학습 도중 감시가 꺼짐)", "")
+                          "결과 미확인 (학습 도중 감시가 꺼짐)", "",
+                          cp.get("LAST", "SCORE", fallback=""))
             self._write_state(RESULT="결과 미확인")
 
     # ---- 설정과 기록 ------------------------------------------------
@@ -139,15 +153,16 @@ class AutoRetrain:
         except (configparser.Error, ValueError):
             return 0.0
 
-    def _note_skip(self, w, why, hours):
+    def _note_skip(self, w, why, hours, score=None):
         """시작하지 않았다는 판별을 간격마다 한 번 이력에 적는다."""
         now = time.time()
         if now - self._last_check() < hours * 3600.0:
             return
         at = datetime.fromtimestamp(now).strftime("%Y-%m-%d %H:%M:%S")
         wtxt = "" if w is None else f"{float(w):.2f}"
-        self._history(at, "", wtxt, why, "")
-        self._write_state("CHECK", AT=at, W=wtxt, RESULT=why)
+        stxt = _score_text(score)
+        self._history(at, "", wtxt, why, "", stxt)
+        self._write_state("CHECK", AT=at, W=wtxt, SCORE=stxt, RESULT=why)
 
     def _generation(self):
         try:
@@ -157,11 +172,11 @@ class AutoRetrain:
         except OSError:
             return ""
 
-    def _history(self, started, ended, w, result, gen):
+    def _history(self, started, ended, w, result, gen, score=""):
         try:
             with open(os.path.join(self.user_path, HISTORY_NAME), "a",
                       encoding="utf-8") as f:
-                f.write(f"{started}\t{ended}\t{w}\t{result}\t{gen}\n")
+                f.write(f"{started}\t{ended}\t{w}\t{result}\t{gen}\t{score}\n")
         except OSError as e:
             print(f"[WARN] 자동 재학습 이력을 쓰지 못했습니다: {e}")
 
@@ -207,14 +222,15 @@ class AutoRetrain:
         elif code == 0:
             text = "완료 (변경 없음)"
         self._history(self._started, ended, f"{self._w:.2f}", text,
-                      gen_after if promoted else "")
+                      gen_after if promoted else "", self._score)
 
         self._write_state(DONE_AT=ended, RESULT=text)
         print(f"[자동 재학습] 끝났습니다 - {text}  (자세한 내용 {LOG_NAME})")
 
-    def tick(self, w):
+    def tick(self, w, score=None):
         """
-        w 는 감시가 구한 기여 가중치(없으면 None). 조건이 맞으면 재학습을 띄운다.
+        w 는 감시가 구한 기여 가중치(없으면 None), score 는 그 w 를 낸 판단 점수.
+        조건이 맞으면 재학습을 띄운다.
         감시 루프에서 부르므로 오래 걸리면 안 된다 - 띄우기만 하고 기다리지 않는다.
         """
         self._reap()
@@ -228,16 +244,16 @@ class AutoRetrain:
             return
         if float(w) >= 1.0:
             # 기존 모델을 믿어도 된다
-            self._note_skip(w, f"건너뜀 (재학습 불필요 · w {float(w):.2f})", hours)
+            self._note_skip(w, "건너뜀 (재학습 불필요)", hours, score)
             return
 
         # 필요하지만 방금 돌렸다. 시작 줄이 이미 이력에 있으므로 따로 적지 않는다.
         if time.time() - self.last_started() < hours * 3600.0:
             return
 
-        self._start(w, hours)
+        self._start(w, hours, score)
 
-    def _start(self, w, hours):
+    def _start(self, w, hours, score=None):
         script = os.path.join(self.root, "retrain", "nightly_retrain.py")
         cmd = [sys.executable, script, self.user_id, "--fresh"]
 
@@ -246,6 +262,7 @@ class AutoRetrain:
 
         self._started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._w = float(w)
+        self._score = _score_text(score)
         self._gen_before = self._generation()
 
         flags = 0
@@ -264,11 +281,13 @@ class AutoRetrain:
             print(f"[WARN] 자동 재학습을 시작하지 못했습니다: {e}")
             # 시작하지 못한 것도 시도로 센다. 안 그러면 10분마다 같은 실패가 되풀이된다.
             self._write_state(AT=self._started, W=f"{float(w):.2f}",
-                              RESULT=f"시작 실패: {e}")
+                              SCORE=self._score, RESULT=f"시작 실패: {e}")
             self._history(self._started, self._started, f"{float(w):.2f}",
-                          f"실패 (시작하지 못함: {e})", "")
+                          f"실패 (시작하지 못함: {e})", "", self._score)
             return
 
-        self._write_state(AT=self._started, W=f"{float(w):.2f}", RESULT="진행 중")
-        print(f"[자동 재학습] 시작합니다 - 기여 w {float(w):.2f} < 1.00, "
+        self._write_state(AT=self._started, W=f"{float(w):.2f}", SCORE=self._score,
+                          RESULT="진행 중")
+        print(f"[자동 재학습] 시작합니다 - 판단 점수 {self._score or '-'}, "
+              f"기여 w {float(w):.2f} < 1.00, "
               f"간격 {hours}시간  (기록 {LOG_NAME})")

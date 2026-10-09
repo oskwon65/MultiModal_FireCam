@@ -49,10 +49,6 @@ public:
     virtual BOOL OnInitDialog();
     afx_msg void OnBnClickedDryRun();
     afx_msg void OnBnClickedApply();
-    afx_msg void OnBnClickedDyn();
-    afx_msg void OnBnClickedAuto();
-    afx_msg void OnEnChangeMix();
-    afx_msg void OnBnClickedMixSave();
     afx_msg void OnBnClickedGenDelete();       // 학습모델관리 창을 연다
     afx_msg LRESULT OnGenMgrStart(WPARAM, LPARAM);
 
@@ -82,29 +78,6 @@ private:
     bool m_genMgrOnly = false;             // 학습모델관리만 하려고 열렸는가
     CStatic  m_lblHead, m_lblState;
 
-    // 재생버퍼 동적구성과 기여 문턱. 학습을 돌릴 때 쓰는 값이라 단추 줄 아래에 둔다.
-    // 고친 값은 [설정저장] 을 눌러 확인한 뒤에만 continual_learning.ini 에 쓴다. 자동 재학습은
-    // 감시가 그 파일을 읽어 따르므로 고치자마자 바뀌면 곤란하다. 저장하지 않은 변경이 있으면
-    // 학습 단추는 막고, 닫을 때는 묻는다.
-    CButton  m_chkDyn;
-    CEdit    m_edBandHigh, m_edBandLow;
-    CStatic  m_lblBand;
-    CButton  m_btnMixSave;
-    bool     m_mixDirty = false;     // 저장하지 않은 변경이 있는가
-    void SetMixDirty(bool dirty);
-    bool BandValid(CStringA& err) const;
-    void LoadMixSettings();
-    bool SaveMixSettings();            // 값이 틀리면 사유를 상태줄에 적고 false
-    void UpdateBandEnable();
-
-    // 자동 재학습. 감시(predict_machine/auto_retrain.py)가 읽는 값이라, 학습을 돌리는 단추와
-    // 상관없이 켜고 끄는 즉시 continual_learning.ini 에 쓴다.
-    CButton  m_chkAuto;
-    CEdit    m_edAutoHours;
-    CStatic  m_lblAuto;
-    void LoadAutoSettings();
-    bool SaveAutoSettings();
-    void UpdateAutoEnable();
     CFont    m_font, m_fontMono;
 
     // 진행 표식.
@@ -143,7 +116,8 @@ private:
     // 겹치되, 로그에 WS_CLIPSIBLINGS 를 주어 로그가 판 위를 덮지 못하게
     // 한다. 실행 중에 가려지는 것은 로그뿐이고, 끝나면 판이 사라져 다시
     // 다 보인다.
-    int       m_cliCompact = 0;   // 속창 높이 (실행 중에도 그대로)
+    int       m_cliCompact = 0;   // 평소 속창 높이 (상태줄까지)
+    int       m_cliFull = 0;      // 돌릴 때 속창 높이 (로그 칸까지)
     CProgressCtrl m_progress;
     int       m_target = 0;      // 출력에서 읽은 진행 (0~1000)
     int       m_pos = 0;         // 눈금이 실제로 가 있는 곳
@@ -193,7 +167,6 @@ private:
     void ScanGenerations();           // m_curGen · m_backGen · m_backWhy 갱신
     void FillGenCombo();              // 고를 수 있는 세대를 m_cboStamps 에 채운다
     void RollbackTo(const CStringA& picked);   // 고른 세대로 되돌린다 (묻고 나서)
-    void ShowGenerations();           // 세대 목록을 로그에 적는다
 
     void Run(RunKind kind);
     void SetPhase(int permille);     // 단계가 바뀔 때 목표치를 올린다

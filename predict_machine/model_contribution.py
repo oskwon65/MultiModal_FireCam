@@ -227,7 +227,7 @@ def _abs_fires(v, mask, temp_warn):
 
 def decision_score(conn, db_name, n_cells, mask=None, temp_warn=None,
                    n_tables=WINDOW_TABLES, min_frames=MIN_FRAMES, verbose=True,
-                   score_fn=None, max_samples=MAX_SAMPLES):
+                   score_fn=None, max_samples=MAX_SAMPLES, since=None):
     """
     최근 날짜 테이블 `n_tables` 개의 판단 점수(중앙값). 근거가 모자라면 None.
 
@@ -291,6 +291,9 @@ def decision_score(conn, db_name, n_cells, mask=None, temp_warn=None,
                 f"SELECT time, mscore, hot_list FROM `{db_name}`.`{t}` ORDER BY time"
             )
             for _when, ms, raw in cur.fetchall():
+                # 카메라 자리가 바뀌기 전 프레임은 칸마다 다른 곳을 보고 있었다.
+                if since is not None and _when < since:
+                    continue
                 n_seen += 1
 
                 # 1) 멈춘 프레임 - 직전과 글자까지 같으면 새 관측이 아니다

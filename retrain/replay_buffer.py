@@ -195,12 +195,16 @@ class StratifiedReservoir:
 def collect(conn, db_name, n_cells, target, mask=None,
             seed=None, verbose=True,
             split_days=None, old_weight=None, temp_warn=None,
-            dynamic_mix=True, recent_days=None):
+            dynamic_mix=True, recent_days=None, since=None):
     """
     히스토리 DB 를 훑어 학습용 표본을 만든다.
 
     recent_days
         가장 새 테이블부터 이 일수 안의 테이블만 훑는다. None 이거나 0 이면 전체.
+
+    since (datetime)
+        카메라 자리가 바뀐 시각. 그 앞의 프레임은 칸마다 다른 곳을 보고 있었으므로
+        쓰지 않는다. None 이면 거르지 않는다.
 
     split_days
         옛 시기와 새 시기를 가르는 경계. 가장 새 테이블에서 이 일수 안이 새 시기
@@ -230,6 +234,15 @@ def collect(conn, db_name, n_cells, target, mask=None,
     """
     cur = conn.cursor()
     tables = list_history_tables(cur, db_name)
+
+    # 카메라 자리가 바뀐 뒤의 것만. 그날 테이블 안은 _collect_from 이 시각으로 거른다.
+    if since is not None:
+        day = since.strftime("%Y%m%d")
+        n0 = len(tables)
+        tables = [t for t in tables if t[-8:] >= day]
+        if verbose:
+            print(f"[재생버퍼] 카메라 자리가 바뀐 {since:%Y-%m-%d %H:%M} 이후만 씁니다 "
+                  f"(테이블 {n0 - len(tables)}개 제외)")
 
     # 수집 일수. 옛 시기를 가르기 전에 먼저 자른다.
     if recent_days:
@@ -291,9 +304,9 @@ def collect(conn, db_name, n_cells, target, mask=None,
                   f"새 시기(최근 {split_days}일) {len(tables)}개에서 {n_new:,}건 "
                   f"(기여 가중치 {float(mix_weight):.2f})")
         X_old, info_old = _collect_from(cur, db_name, old_tables, n_cells, n_old,
-                                        mask, seed, verbose, temp_warn)
+                                        mask, seed, verbose, temp_warn, since)
         X_new, info_new = _collect_from(cur, db_name, tables, n_cells, n_new,
-                                        mask, seed, verbose, temp_warn)
+                                        mask, seed, verbose, temp_warn, since)
         cur.close()
         X = np.concatenate([a for a in (X_old, X_new) if len(a)]) \
             if (len(X_old) or len(X_new)) else np.empty((0, n_cells))
@@ -316,14 +329,14 @@ def collect(conn, db_name, n_cells, target, mask=None,
         return X, info
 
     X, info = _collect_from(cur, db_name, tables, n_cells, target,
-                            mask, seed, verbose, temp_warn)
+                            mask, seed, verbose, temp_warn, since)
     cur.close()
     info["mix_weight"] = 1.0 if mix_weight is None else float(mix_weight)
     return X, info
 
 
 def _collect_from(cur, db_name, tables, n_cells, target, mask,
-                  seed, verbose, temp_warn=None):
+                  seed, verbose, temp_warn=None, since=None):
     """
     테이블 묶음 하나에서 target 건을 고르게 뽑는다.
 
@@ -368,6 +381,8 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
     for t in tables:
         cur.execute(f"SELECT time, hot_list FROM `{db_name}`.`{t}`")
         for when, raw in cur:
+            if since is not None and when < since:
+                continue                 # 카메라 자리가 바뀌기 전
             rows_seen += 1
             try:
                 v = np.asarray(json.loads(raw), dtype=np.float64)

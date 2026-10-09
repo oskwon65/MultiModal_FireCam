@@ -683,7 +683,7 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
     sDef.Format("%d", env_conf.updateSeconds);
     m_editRestartMin.SetWindowText(sDef);
 
-    SetWindowText("멀티모달-화재감지-모니터링");
+    SetWindowText("멀티모달_화재감지_분석서버");
     m_nStatusLevel = STATUS_OK;
     m_elapsedSeconds = 0;
 

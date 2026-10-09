@@ -4,7 +4,7 @@
 
 폴더[step_0] -> Filtering_median.py ->폴더[step_1] -> Gen_Learning_Sample.py -> 폴더[step_2]
 
-Filtering_median.py : 서버 수집 데이터의 노이즈 제거
+Filtering_median.py : 관제서버 수집 데이터의 노이즈 제거
 Gen_Learning_Sample.py : 수집데이터를 학습 샘플로 변경
 Show_step_1.py : 노이즈 제거된 형태[step_1]의 내용을 그래프로 확인
 

@@ -7,10 +7,11 @@
 #include "Dlg_Set_MmCam_Env.h"
 #include "afxdialogex.h"
 #include "MmCam_monitoringDlg.h"
-#include "Dlg_CamPos.h"
 #include "Dlg_Retrain.h"
 #include "Dlg_CellBase.h"
 #include "Dlg_OpState.h"
+#include "Dlg_BaseRef.h"
+#include "Dlg_RetrainHist.h"
 
 #include <vector>
 
@@ -27,7 +28,6 @@ IMPLEMENT_DYNAMIC(CDlg_Set_MmCam_Env, CDialogEx)
 extern const char* GetMmCamStartPath();
 
 #define ID_BTN_GET_MASK_SVR				2010
-#define ID_BTN_SET_MASK_CAM_POS		2020
 #define ID_BTN_CLOSE							2000
 
 // 연속 학습 단계 전환 조건
@@ -63,6 +63,8 @@ extern const char* GetMmCamStartPath();
 #define ID_BTN_CELLBASE						2150
 #define ID_BTN_OPNAMES						2153
 #define ID_BTN_GENMGR						2154
+#define ID_BTN_BASEREF						2155
+#define ID_BTN_RTHIST						2156
 #define ID_BTN_BASE_FRESH					2151
 #define ID_BTN_BASE_REBUILD					2152
 
@@ -70,6 +72,7 @@ extern const char* GetMmCamStartPath();
 #define ID_ED_SP_RUNTEMP					2142
 #define ID_CHK_SP_DYN						2144
 #define ID_ED_SP_DAYS						2145
+#define ID_CHK_DYN							2146
 
 // DB 기간 조회 스레드가 끝났음을 알리는 메시지
 #define WM_SPAN_DONE						(WM_APP + 41)
@@ -129,7 +132,6 @@ void CDlg_Set_MmCam_Env::DoDataExchange(CDataExchange* pDX)
 
 BEGIN_MESSAGE_MAP(CDlg_Set_MmCam_Env, CDialogEx)
 	ON_WM_LBUTTONDOWN()
-	ON_BN_CLICKED(ID_BTN_SET_MASK_CAM_POS, &CDlg_Set_MmCam_Env::OnBnClickedButtonChangeMask)
 	ON_BN_CLICKED(ID_BTN_GET_MASK_SVR, &CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask)
 	ON_BN_CLICKED(ID_BTN_CLOSE, &CDlg_Set_MmCam_Env::OnBnClickedClose)
 	ON_BN_CLICKED(ID_BTN_SAVE_STAGE, &CDlg_Set_MmCam_Env::OnBnClickedSaveStage)
@@ -137,6 +139,8 @@ BEGIN_MESSAGE_MAP(CDlg_Set_MmCam_Env, CDialogEx)
 	ON_BN_CLICKED(ID_BTN_CELLBASE, &CDlg_Set_MmCam_Env::OnBnClickedCellBase)
 	ON_BN_CLICKED(ID_BTN_OPNAMES, &CDlg_Set_MmCam_Env::OnBnClickedOpNames)
 	ON_BN_CLICKED(ID_BTN_GENMGR, &CDlg_Set_MmCam_Env::OnBnClickedGenMgr)
+	ON_BN_CLICKED(ID_BTN_BASEREF, &CDlg_Set_MmCam_Env::OnBnClickedBaseRef)
+	ON_BN_CLICKED(ID_BTN_RTHIST, &CDlg_Set_MmCam_Env::OnBnClickedRetrainHist)
 	ON_BN_CLICKED(ID_BTN_BASE_FRESH, &CDlg_Set_MmCam_Env::OnBnClickedBaseFresh)
 	ON_BN_CLICKED(ID_BTN_BASE_REBUILD, &CDlg_Set_MmCam_Env::OnBnClickedBaseRebuild)
 	ON_WM_CTLCOLOR()
@@ -191,7 +195,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 두 버튼의 이름을 하는 일로 바꿨다.
 	//
 	// 예전에는 둘 다 "격자 마스크 초기화 : ..." 로 시작해 같은 기능의 변형
-	// 처럼 보였다. 실제로는 하나는 감시 대상(어느 셀을 볼지)을 서버 것으로
+	// 처럼 보였다. 실제로는 하나는 감시 대상(어느 셀을 볼지)을 관제서버 것으로
 	// 갈아치우고, 다른 하나는 같은 선택을 카메라가 밀린 만큼 옮긴다.
 	// 전혀 다른 일이다.
 	//
@@ -201,7 +205,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 좁아진 대신 높아져 오히려 커 보였다. 한 줄에 들어가는 길이로 맞추고
 	// 자세한 내용은 누른 뒤 안내 문구로 설명한다.
 	//
-	//   서버에서 Mask 받기            -> 서버 Mask 받기
+	//   서버에서 Mask 받기            -> 서버 Mask 받기 -> 관제서버 Mask 받기
 	//   카메라 이동 검사 및 Mask 조정 -> 카메라 이동보정
 	// 설정 영역의 버튼은 모두 같은 너비를 쓴다. 폭이 제각각이면 줄이
 	// 맞지 않아 어수선해 보인다.
@@ -220,12 +224,18 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 
 		m_sepTop.Create("", WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ,
 			CRect(nBase_X, ctrl_btn_top - 10, sepRight, ctrl_btn_top - 8), this);
+
+		// 머리줄(현황 · [저장 완료] 같은 알림)은 두 줄까지 쓴다. .rc 의 자리(위 15 ·
+		// 높이 34)로는 둘째 줄이 이 구분선에 걸려 잘렸다. 조금 올리고 선 바로 위까지 늘린다.
+		if (m_cap_0.GetSafeHwnd())
+			m_cap_0.SetWindowPos(NULL, nBase_X + 2, 4, sepRight - nBase_X - 2,
+				(ctrl_btn_top - 12) - 4, SWP_NOZORDER | SWP_NOACTIVATE);
 	}
 
 	// 맨 윗줄은 "카메라가 지금 어떤가" 하나로 묶는다.
 	//
-	// 잰 값이 왼쪽, 손볼 버튼이 오른쪽이다. [서버 Mask 받기] 는 감시 대상을
-	// 서버 것으로 갈아치우는 전혀 다른 일이라 맨 아래로 내렸다.
+	// 잰 값이 왼쪽, 손볼 버튼이 오른쪽이다. [관제서버 Mask 받기] 는 감시 대상을
+	// 관제서버 것으로 갈아치우는 전혀 다른 일이라 맨 아래로 내렸다.
 	long topRight;
 	{
 		CRect rcC;
@@ -234,15 +244,21 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		if (topRight < nBase_X + 520) topRight = nBase_X + 520;
 	}
 
-	// 이 버튼만 30% 작다. 다른 버튼과 줄을 맞추는 자리가 아니라, 잰 값
+	// 이 버튼은 높이가 30% 작다. 다른 버튼과 줄을 맞추는 자리가 아니라, 잰 값
 	// 옆에 붙어 "이걸 손본다" 는 뜻으로 서 있기 때문이다.
-	const long cam_w = btn_w * 70 / 100;          // 141 -> 98
+	const long cam_w = btn_w * 92 / 100;          // 141 -> 129 ("기준 이미지 변경" 이 들어갈 폭)
 	const long cam_h = mask_btn_h * 70 / 100;     // 30 -> 21
 
-	m_btnSetMask_CamPos.Create("카메라 보정", mask_btn_style,
+	// [기준 이미지]. RGB 틀어짐을 재는 잣대(base_ref.png)를 지금 화면과 견주어
+	// 보고, 사람이 확인한 뒤에만 바꾼다.
+	//
+	// 이 자리에 있던 [카메라 보정] 은 2026-10-08 에 뺐다. 승인해 두면 다음 기동 때
+	// 틀어진 만큼 마스크를 저절로 옮기고 기준 이미지까지 갈아 치웠다. 사람이 보지
+	// 않는 순간에 감시 대상이 바뀌는 것은 너무 민감하다.
+	m_btnBaseRef.Create("기준 이미지 변경", mask_btn_style,
 		CRect(topRight - cam_w, ctrl_btn_top,
 		      topRight, ctrl_btn_top + cam_h),
-		this, ID_BTN_SET_MASK_CAM_POS);
+		this, ID_BTN_BASEREF);
 
 	// 잰 틀어짐 값. 계산은 이미 하고 있었는데 화면에 나오지 않아, 지금
 	// 밀려 있는지 알 길이 없었다.
@@ -274,20 +290,11 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 글자가 17 에서 20 으로 커진 만큼 넓힌다. 그대로 두면 "기준선 최소
 	// 표본수" 같은 라벨이 잘린다.
 	const long lbl_w = 184, ed_w = 92, row_h = 31;
-	const long stage_top = ctrl_btn_top + mask_btn_h + 36;
+	// [카메라 위치 이동] 줄을 맨 아래로 내렸으므로 설정 영역은 머리줄 구분선 바로
+	// 아래에서 시작한다.
+	const long stage_top = ctrl_btn_top + 8;
 	long y = stage_top;
 
-	// 위쪽 마스크 버튼과 성격이 다른 구역이라 선으로 가른다.
-	// 메인 창의 프로세스 목록 구분선과 같은 방식(SS_ETCHEDHORZ)이다.
-	{
-		CRect rcC;
-		GetClientRect(&rcC);
-		long sepRight = rcC.right - nBase_X;
-		if (sepRight < nBase_X + 520) sepRight = nBase_X + 520;
-
-		m_sepStage.Create("", WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ,
-			CRect(nBase_X, y - 8, sepRight, y - 6), this);
-	}
 
 	// 두 칸으로 가른다.
 	//
@@ -454,6 +461,26 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	y += 16;
 	drawRows(rows2 + 3, 1);
 
+	// 재생버퍼 동적구성과 기여 문턱. [재학습] 창에 있던 것을 재학습 조건과 한자리에
+	// 모았다. [설정 저장] 으로 함께 저장한다.
+	//
+	// 기여 문턱은 기여 w 를 정한다. w 는 동적구성을 켰을 때 옛/새 표본 비율을 정하고,
+	// 자동 재학습을 켰을 때는 돌릴지를 정한다(w < 1.00).
+	m_chkDyn.Create("재생버퍼 동적구성 [ w : 1-w ]",
+		WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+		CRect(nBase_X, y + 2, nBase_X + CAP_W, y + 2 + 22), this, ID_CHK_DYN);
+	y += row_h;
+	{
+		const DWORD est_f = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_RIGHT;
+		m_lblBand.Create("기여 문턱 w (상 / 하)", WS_CHILD | WS_VISIBLE | SS_LEFT,
+			CRect(nBase_X, y + 3, nBase_X + lbl_w, y + 3 + 20), this);
+		m_edBandHigh.Create(est_f, CRect(ed2_x1, y, ed2_x1 + ed2_w, y + 22), this,
+			ID_ED_CT_BAND_HIGH);
+		m_edBandLow.Create(est_f, CRect(ed2_x2, y, ed2_x2 + ed2_w, y + 22), this,
+			ID_ED_CT_BAND_LOW);
+		y += row_h;
+	}
+
 	// -------------------------------------------------------------
 	// 재생 버퍼 (이어서)
 	//
@@ -464,7 +491,6 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 진짜 이상을 구분하지 못해, 모델이 틀린 자리가 표본에서 빠지고 다음
 	// 세대도 똑같이 틀렸다. 이제 절대 임계값과 칸별 분위수로 거른다.
 	// -------------------------------------------------------------
-	// 재생버퍼 동적구성과 기여 문턱은 [재학습] 창으로 옮겼다.
 	y += 10;
 
 	// 적용 버튼 하나로 네 묶음을 함께 저장한다.
@@ -477,21 +503,15 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		CRect(nBase_X, y + 6, nBase_X + btn_w, y + 6 + 26),
 		this, ID_BTN_SAVE_STAGE);
 
-	// 재학습은 운용 모델을 바꾸는 일이라 여기서 바로 돌리지 않는다.
-	// 창을 띄워 예행연습 결과를 먼저 보여 준다.
-	m_btnRetrain.Create("재학습", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-		CRect(nBase_X + btn_w + 10, y + 6, nBase_X + btn_w * 2 + 10, y + 6 + 26),
-		this, ID_BTN_RETRAIN);
-
-	// 서버 Mask 받기.
+	// 관제서버 Mask 받기.
 	//
 	// 맨 윗줄에 [카메라 이동보정] 과 나란히 있었는데, 둘은 하는 일이
 	// 전혀 다르다. 저쪽은 같은 선택을 밀린 만큼 옮기는 것이고, 이쪽은
-	// 감시 대상(어느 칸을 볼지) 자체를 서버 것으로 갈아치운다. 자주
+	// 감시 대상(어느 칸을 볼지) 자체를 관제서버 것으로 갈아치운다. 자주
 	// 누를 일도 아니라 맨 아래로 내렸다.
-	m_btnGetMask_Server.Create("서버 Mask 받기", mask_btn_style | WS_TABSTOP,
-		CRect(nBase_X + (btn_w + 10) * 2, y + 6,
-		      nBase_X + (btn_w + 10) * 2 + btn_w, y + 6 + 26),
+	m_btnGetMask_Server.Create("관제서버 Mask 받기", mask_btn_style | WS_TABSTOP,
+		CRect(nBase_X + btn_w + 10, y + 6,
+		      nBase_X + btn_w + 10 + btn_w, y + 6 + 26),
 		this, ID_BTN_GET_MASK_SVR);
 
 	// 설정 영역의 끝을 긋는다. 위쪽 두 구분선과 짝을 이뤄 영역이 어디서
@@ -580,10 +600,14 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		ny += STAGE_H[i] + STAGE_GAP;
 	}
 
-	// 버튼 두 줄. [운전상태명 변경] 과 그 아래 [학습모델관리].
+	// 버튼 네 줄. [운전상태명 변경] · [학습모델관리] · [자동학습 관리] · [재학습 관리].
 	const long opstate_y = ny;
 	ny += 26 + STAGE_GAP;
 	const long genmgr_y = ny;
+	ny += 26 + STAGE_GAP;
+	const long rthist_y = ny;
+	ny += 26 + STAGE_GAP;
+	const long retrain_y = ny;
 	ny += 26 + STAGE_GAP;
 
 	// 2단계 줄 끝에 칸별 기준값을 여는 작은 버튼.
@@ -628,6 +652,17 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		m_btnGenMgr.Create("학습모델관리", WS_CHILD | WS_VISIBLE | WS_TABSTOP
 			| BS_PUSHBUTTON,
 			CRect(bx, genmgr_y, bx + bwn, genmgr_y + 26), this, ID_BTN_GENMGR);
+
+		// 자동 재학습 이력. 판단 점수 · w · 결과를 최근 것부터 모두 본다. 같은 꼴.
+		m_btnRetrainHist.Create("자동학습 관리", WS_CHILD | WS_VISIBLE | WS_TABSTOP
+			| BS_PUSHBUTTON,
+			CRect(bx, rthist_y, bx + bwn, rthist_y + 26), this, ID_BTN_RTHIST);
+
+		// [재학습]. 학습모델 · 이력과 한 무리라 그 아래에 둔다. 운용 모델을 바꾸는
+		// 일이라 여기서 바로 돌리지 않고 창을 띄워 예행연습 결과를 먼저 보여 준다.
+		m_btnRetrain.Create("재학습 관리", WS_CHILD | WS_VISIBLE | WS_TABSTOP
+			| BS_PUSHBUTTON,
+			CRect(bx, retrain_y, bx + bwn, retrain_y + 26), this, ID_BTN_RETRAIN);
 	}
 
 	// 글상자를 z 순서 맨 아래로. 버튼을 다 만든 뒤에 해야 한다 - 자식 창은 만든
@@ -652,6 +687,30 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 				SWP_NOZORDER);
 			m_nContentH = (int)(need + 2 + 12);
 		}
+	}
+
+	// [카메라 위치 이동] 줄은 맨 아래, [설정 저장] 줄과 그 아래 구분선보다 밑에 둔다.
+	//
+	// 설정할 값이 아니라 지금 상태를 알리는 줄이고, 손볼 일([기준 이미지 변경])도
+	// 드물다. 맨 위에 있으면 설정을 고치러 온 사람의 눈을 먼저 잡는다. 구분선이
+	// 오른쪽 열 길이에 따라 내려갈 수 있어, 그 위치가 정해진 뒤에 놓는다.
+	{
+		CRect rs;
+		m_sepBottom.GetWindowRect(&rs);
+		ScreenToClient(&rs);
+		const long sy = rs.bottom + 10;
+
+		CRect rl, rb;
+		m_lblShift.GetWindowRect(&rl);
+		ScreenToClient(&rl);
+		m_btnBaseRef.GetWindowRect(&rb);
+		ScreenToClient(&rb);
+		m_lblShift.SetWindowPos(NULL, rl.left, sy, rl.Width(), rl.Height(),
+			SWP_NOZORDER | SWP_NOACTIVATE);
+		m_btnBaseRef.SetWindowPos(NULL, rb.left, sy + 1, rb.Width(), rb.Height(),
+			SWP_NOZORDER | SWP_NOACTIVATE);
+
+		m_nContentH = (int)(sy + rl.Height() + 4);
 	}
 
 	LoadStageStatus();
@@ -711,6 +770,15 @@ HBRUSH CDlg_Set_MmCam_Env::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
 {
 	HBRUSH hbr = CDialogEx::OnCtlColor(pDC, pWnd, nCtlColor);
 
+	// [카메라 위치 이동] 줄은 이동이 있을 때 적색으로 적는다. 맨 아래에 있어
+	// 눈에 덜 띈다.
+	if (m_shiftAlert && m_lblShift.GetSafeHwnd() &&
+		pWnd->GetSafeHwnd() == m_lblShift.GetSafeHwnd())
+	{
+		pDC->SetTextColor(RGB(220, 0, 0));
+		return hbr;
+	}
+
 	for (int i = 0; i < 3; ++i)
 	{
 		if (!m_lampStage[i].GetSafeHwnd()) continue;
@@ -728,6 +796,14 @@ HBRUSH CDlg_Set_MmCam_Env::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
 		return (HBRUSH)GetStockObject(NULL_BRUSH);
 	}
 	return hbr;
+}
+
+// [카메라 위치 이동] 줄의 적색 여부. 달라졌을 때만 다시 그린다.
+void CDlg_Set_MmCam_Env::SetShiftAlert(bool on)
+{
+	if (m_shiftAlert == on) return;
+	m_shiftAlert = on;
+	if (m_lblShift.GetSafeHwnd()) m_lblShift.Invalidate();
 }
 
 // 등을 새 값으로 바꾼다. 달라졌을 때만 다시 그린다 - 2초마다 부르므로
@@ -757,7 +833,7 @@ std::string CDlg_Set_MmCam_Env::LearnIniPath() const
 
 // continual_learning.ini 에서 읽고, 없으면 env.ini 에서 찾는다.
 //
-// 현장 PC 가 아직 옮기기 전일 수 있다. 그때 기본값으로 떨어지면 화면에
+// 현장 분석서버가 아직 옮기기 전일 수 있다. 그때 기본값으로 떨어지면 화면에
 // 엉뚱한 값이 뜨고, 그대로 [설정 저장] 을 누르면 실제 설정이 바뀐다.
 std::string CDlg_Set_MmCam_Env::LearnRead(const char* key,
                                           const char* def) const
@@ -925,7 +1001,8 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	if (stale) {
 		CStringA down;
 		down.Format("감시 중단\r\n    마지막 기록 %s", updated.c_str());
-		SetIfChanged(m_lblShift, "RGB 틀어짐 : 확인 전");
+		SetShiftAlert(false);
+		SetIfChanged(m_lblShift, "[카메라 위치 이동]  확인 전");
 		SetIfChanged(m_lblStage0, "1단계 절대임계값   " + down);
 		SetIfChanged(m_lblStage1, "2단계 경험임계값   " + down);
 		PlaceBaseButtons(this, m_lblStage1, m_btnBaseFresh, m_btnBaseRebuild);
@@ -936,7 +1013,8 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	}
 
 	if (updated.empty()) {
-		SetIfChanged(m_lblShift, "RGB 틀어짐 : 확인 전");
+		SetShiftAlert(false);
+		SetIfChanged(m_lblShift, "[카메라 위치 이동]  확인 전");
 		SetIfChanged(m_lblStage0, "1단계 절대임계값   집계 대기\r\n    감시 시작 후 첫 기록까지 잠시 걸립니다");
 		SetIfChanged(m_lblStage1, "2단계 경험임계값   집계 대기");
 		PlaceBaseButtons(this, m_lblStage1, m_btnBaseFresh, m_btnBaseRebuild);
@@ -954,6 +1032,8 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	const int s2      = ini_read_int_utf8(st, "STATUS", "STAGE2", 0);
 	const int used    = ini_read_int_utf8(st, "STATUS", "STAGE_USED", -1);
 	const int db_rows = ini_read_int_utf8(st, "STATUS", "DB_ROWS", -1);
+	// 카메라 이동으로 2·3단계 판정과 학습이 멈췄다.
+	const bool halt   = ini_read_int_utf8(st, "STATUS", "SHIFT_HALT", 0) != 0;
 
 
 	CStringA t;
@@ -993,14 +1073,14 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 		const char* old_way = (sstate < 0) ? " · 예전 방식" : "";
 
 		if (sx.empty() || sy.empty())
-			line = "RGB 틀어짐 : 확인 전";
+			line = "[카메라 위치 이동]  확인 전";
 		else if (sstate == 0)
-			line.Format("RGB 틀어짐 : 판정 불가 (기준과 다른 장면)   (%s 기동 시)",
+			line.Format("[카메라 위치 이동]  판정 불가 (기준과 다른 장면)   (%s 기동 시)",
 				sat.c_str());
 		else if (atoi(sx.c_str()) == 0 && atoi(sy.c_str()) == 0)
 			// 짧게 쓴다. 이 줄이 접히면 아래 열화상 줄이 상자 밖으로
 			// 밀려 나가, 2단계가 왜 멈췄는지 화면에서 사라졌다.
-			line.Format("RGB 틀어짐 : 없음   (0칸 · %s · %s%s)",
+			line.Format("[카메라 위치 이동]  없음   (0칸 · %s · %s%s)",
 				px.IsEmpty() ? "-" : (LPCSTR)px,
 				sat.size() > 11 ? sat.substr(11).c_str() : sat.c_str(),
 				old_way);
@@ -1014,10 +1094,19 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 			// 4칸이, 3칸이면 7칸이 감시에서 빠진다.
 			const int nx = abs(atoi(sx.c_str())), ny = abs(atoi(sy.c_str()));
 			const char* warn = (nx >= 2 || ny >= 2) ? "  ※ 현장 조준 확인" : "";
-			line.Format("RGB 틀어짐 : %s   (가로 %+d칸 · 세로 %+d칸 · %s 측정%s)%s",
-				px.IsEmpty() ? "틀어짐" : (LPCSTR)px,
+			line.Format("[카메라 위치 이동]  %s   (가로 %+d칸 · 세로 %+d칸 · %s 측정%s)%s",
+				px.IsEmpty() ? "이동" : (LPCSTR)px,
 				atoi(sx.c_str()), atoi(sy.c_str()), sat.c_str(), old_way, warn);
 		}
+
+		// 이동이 있을 때만 적색. 기동 때 RGB 로 칸 단위 이동을 쟀거나, 운전 중
+		// 열화상 패턴 이동으로 2·3단계가 멈췄을 때다. 뒤의 것은 RGB 줄이
+		// "없음" 이어도 멈춰 있으므로 그 까닭을 덧붙인다.
+		const bool rgb_moved = !sx.empty() && !sy.empty() && sstate != 0 &&
+			(atoi(sx.c_str()) != 0 || atoi(sy.c_str()) != 0);
+		if (halt && !rgb_moved)
+			line += "  · 열화상 이동";
+		SetShiftAlert(rgb_moved || halt);
 
 		sh = line;
 		SetIfChanged(m_lblShift, sh);
@@ -1118,6 +1207,10 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 
 		t += line;
 	}
+	if (halt)
+		t.Format("2단계 경험임계값   중지 (카메라 위치 이동)\r\n"
+			"    판정·누적 멈춤 · 표본 %d/%d · 시간대 %d/%d",
+			samples, min_smp, hours, min_hr);
 	SetIfChanged(m_lblStage1, t);
 	PlaceBaseButtons(this, m_lblStage1, m_btnBaseFresh, m_btnBaseRebuild);
 	if (m_btnCellBase.GetSafeHwnd()) m_btnCellBase.RedrawWindow();
@@ -1125,7 +1218,7 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	// 2단계는 중간이 있다. 아직 모자라도 쌓고 있으면 노랑이다 - 꺼진
 	// 것과 차오르는 중인 것은 할 일이 다르다.
 	SetLamp(m_lampStage[1], m_lampLevel[1],
-		s1 ? 2 : (samples > 0 ? 1 : 0));
+		halt ? 0 : (s1 ? 2 : (samples > 0 ? 1 : 0)));
 
 	// 지금 쓰고 있는 세대와 모델 파일의 시각을 적는다.
 	//
@@ -1150,20 +1243,42 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	{
 		t.Format("3단계 오토인코더   없음\r\n    모델 파일이 아직 없습니다\r\n");
 	}
+	if (halt)
+		t = "3단계 오토인코더   중지 (카메라 위치 이동)\r\n"
+			"    판정·자동 재학습 멈춤\r\n";
 	SetIfChanged(m_lblStage2, t);
 
 	// 3단계도 중간이 있다. 모델은 없지만 재학습에 쓸 자료가 차오르는 중이면
 	// 노랑이다 (DB 행 수를 최소 재학습 조건과 견준다).
 	SetLamp(m_lampStage[2], m_lampLevel[2],
-		s2 ? 2 : (db_rows > 0 ? 1 : 0));
+		halt ? 0 : (s2 ? 2 : (db_rows > 0 ? 1 : 0)));
 
 	// 갱신 시각은 상단 안내줄에 함께 보여준다. 기준선 창의 기간과 건수는 [2단계
 	// 경험임계값] 칸의 "표본 N/3,000" 과 겹쳐서 여기에는 적지 않는다.
+	//
+	// 채점에 쓰이는 단계를 모두 적는다.
+	//
+	//   1단계  절대 임계값이 켜져 있으면 늘 본다 (STAGE0)
+	//   2단계  경험 임계값이 섰으면(STAGE1) 채점에 함께 들어간다
+	//   3단계  오토인코더가 있으면(STAGE_USED 2) 채점한다
+	//
+	// 2·3단계가 다 있으면 predict_machine 이 둘 다 매기고 낮은 쪽을 점수로 쓴다.
+	// STAGE_USED 는 그때도 2 라서, 그 값만 보면 2단계가 빠진 것처럼 읽혔다.
+	CStringA scoring;
+	auto add = [&](const char* n) {
+		if (!scoring.IsEmpty()) scoring += ", ";
+		scoring += n;
+	};
+	if (s0) add("1");
+	if (s1 && used >= 1) add("2");
+	if (used == 2) add("3");
+	scoring = scoring.IsEmpty() ? CStringA("-") : scoring + " 단계";
+
 	CStringA head;
 	head.Format("[%s]  ·  현황 %s  ·  현재 채점 %s",
 		gUserID.c_str(),
 		updated.c_str(),
-		used < 0 ? "-" : (used == 2 ? "3단계" : (used == 1 ? "2단계" : "1단계")));
+		(LPCSTR)scoring);
 
 	// 머리줄은 결과 메시지와 자리를 함께 쓴다. 방금 [설정 저장] 이 남긴
 	// 글이 2초 만에 지워지면 무엇이 저장됐는지 읽을 틈이 없다.
@@ -1304,6 +1419,26 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 		return;
 	}
 
+	// --- 재생버퍼 동적구성 · 기여 문턱 ------------------------------
+	// 점수는 exp(-mse*10) 이라 0 ~ 1 범위다. '하' 가 '상' 보다 낮아야 그 사이에서 w 가
+	// 1 에서 0 으로 내려간다.
+	CString bh, bl;
+	m_edBandHigh.GetWindowTextA(bh);
+	m_edBandLow.GetWindowTextA(bl);
+	const double band_hi = atof(bh), band_lo = atof(bl);
+	if (band_lo <= 0.0 || band_lo >= 1.0 || band_hi <= 0.0 || band_hi > 1.0) {
+		Msg("[ERROR] 기여 문턱은 0 초과 1 이하여야 합니다.");
+		return;
+	}
+	if (band_lo >= band_hi) {
+		Msg("[ERROR] 기여 문턱의 '하' 는 '상' 보다 낮아야 합니다.");
+		return;
+	}
+	const int dyn_mix = (m_chkDyn.GetCheck() == BST_CHECKED) ? 1 : 0;
+	CStringA bhs, bls;
+	bhs.Format("%.2f", band_hi);
+	bls.Format("%.2f", band_lo);
+
 	// 쓰는 곳은 continual_learning.ini 하나다. env.ini 에 옛 값이 남아 있어도 파이썬과
 	// C++ 모두 continual_learning.ini 를 먼저 보므로 이쪽이 이긴다.
 	const std::string ini = LearnIniPath();
@@ -1321,7 +1456,10 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 		&& ini_write_int_utf8(ini, "CONSTANTS", "CONTRIB_MAX_SAMPLES", ct_samples)
 		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_TARGET_SAMPLES", sp_target)
 		// 빈칸 그대로 쓴다. 파이썬 쪽이 빈칸을 '자동' 으로 읽는다.
-		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_BUFFER_DAYS", sp_days);
+		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_BUFFER_DAYS", sp_days)
+		&& ini_write_int_utf8(ini, "CONSTANTS", "RETRAIN_DYNAMIC_MIX", dyn_mix)
+		&& ini_write_utf8(ini, "CONSTANTS", "CONTRIB_BAND_HIGH", (LPCSTR)bhs)
+		&& ini_write_utf8(ini, "CONSTANTS", "CONTRIB_BAND_LOW", (LPCSTR)bls);
 
 	CStringA msg;
 	if (ok) {
@@ -1370,39 +1508,9 @@ void CDlg_Set_MmCam_Env::OnLButtonDown(UINT nFlags, CPoint point)
 
 //---------------------------------------------------------
 
-void CDlg_Set_MmCam_Env::OnBnClickedButtonChangeMask()
-{
-	// 예전에는 누르는 즉시 명령을 넣었다. 되돌릴 방법이 없고 무엇이
-	// 일어나는지도 알 수 없었다. 확인 창에서 켤지 끌지 고르게 한다.
-	CDlg_CamPos dlg(this);
-	dlg.m_bAdjust = TRUE;   // 버튼을 누른 뜻이 보통 "켜겠다" 이므로 미리 켜 둔다
-
-	if (dlg.DoModal() != IDOK) {
-		Msg("[취소] 아무것도 바꾸지 않았습니다.");
-		return;
-	}
-
-	if (dlg.m_bAdjust)
-	{
-		update_db_main_command("ADJST-MG");
-		Msg("[전달] 카메라 위치 보정을 켰습니다 (ADJST-MG). "
-			"'정지' 후 '시작' 시 검사하며, 밀렸으면 Mask 를 함께 옮깁니다. "
-			"이동량이 2칸 이상이면 조정할 수 없습니다.");
-	}
-	else
-	{
-		// 넣어 둔 명령을 거둔다. 켠 뒤 마음이 바뀌었을 때 되돌릴 길이 있어야 한다.
-		update_db_main_command("NOACTION");
-		Msg("[전달] 카메라 위치 보정을 껐습니다 (NOACTION). "
-			"이동이 감지되어도 Mask 를 옮기지 않고 오류로만 기록합니다.");
-	}
-}
-
-//---------------------------------------------------------
-
-// 서버에 해당 URL 이 실제로 있는지 확인한다.
+// 관제서버에 해당 URL 이 실제로 있는지 확인한다.
 //
-// 로컬 마스크를 지우기 전에 반드시 봐야 한다. 서버에 파일이 없는데 지우면
+// 로컬 마스크를 지우기 전에 반드시 봐야 한다. 관제서버에 파일이 없는데 지우면
 // 다음 기동 때 받아오지 못하고, 마스크 없이 채점이 멈춘다.
 static bool UrlExists(const std::string& url)
 {
@@ -1432,15 +1540,15 @@ static bool UrlExists(const std::string& url)
 //---------------------------------------------------------
 // [격자 마스크 초기화 : SVR지정]
 //
-// 로컬 마스크를 지워, 다음 기동 때 서버에서 새로 받게 한다.
+// 로컬 마스크를 지워, 다음 기동 때 관제서버에서 새로 받게 한다.
 //
-// predict_machine 은 로컬 파일이 있으면 서버에 새 마스크가 올라와도
+// predict_machine 은 로컬 파일이 있으면 관제서버에 새 마스크가 올라와도
 // 내려받지 않는다. 그래서 마스크를 바꾸려면 로컬 파일을 먼저 지우는 것이
 // 정해진 절차다.
 //
 // [예전 구현]
 //   grid_select.txt -> mach_area_mask.ini 로 복사했다. 그런데 원본은
-//   서버에도 로컬에도 존재한 적이 없고(HTTP 404), 대상 파일을 읽는
+//   관제서버에도 로컬에도 존재한 적이 없고(HTTP 404), 대상 파일을 읽는
 //   파이썬 코드도 없었다. 눌러도 실패 메시지만 뜨는, 동작한 적 없는
 //   경로였다. 화면에 있는 버튼이 아무 일도 하지 않는 것이 가장 나쁘다.
 //---------------------------------------------------------
@@ -1455,7 +1563,7 @@ void CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask()
 		std::string(GetMmCamStartPath()) + "users\\" + gUserID + "\\";
 	const std::string local_mask = user_path + "hotlist_mask_local.ini";
 
-	// 서버 주소는 현장 설정에서 읽는다.
+	// 관제서버 주소는 현장 설정에서 읽는다.
 	const std::string root_url =
 		ini_read_utf8(StageIniPath(), "NETWORK", "ROOT_URL", "");
 	if (root_url.empty()) {
@@ -1467,10 +1575,10 @@ void CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask()
 	while (!url.empty() && (url.back() == '/' || url.back() == ' ')) url.pop_back();
 	url += "/" + gUserID + "/hotlist_mask_svr.ini";
 
-	Msg("서버에 격자 마스크가 있는지 확인 중...");
+	Msg("관제서버에 격자 마스크가 있는지 확인 중...");
 	if (!UrlExists(url)) {
 		CStringA msg;
-		msg.Format("[중단] 서버에서 마스크를 찾지 못했습니다. 지우지 않았습니다.\r\n%s",
+		msg.Format("[중단] 관제서버에서 마스크를 찾지 못했습니다. 지우지 않았습니다.\r\n%s",
 			url.c_str());
 		Msg(msg);
 		return;
@@ -1481,8 +1589,8 @@ void CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask()
 	if (bHasLocal)
 	{
 		CStringA q;
-		q.Format("현재 격자 마스크를 지우고 서버 것으로 다시 받습니다.\r\n\r\n"
-			"서버 : %s\r\n\r\n"
+		q.Format("현재 격자 마스크를 지우고 관제서버 것으로 다시 받습니다.\r\n\r\n"
+			"관제서버 : %s\r\n\r\n"
 			"지금 쓰던 마스크는 hotlist_mask_local.bak 로 남겨 둡니다.\r\n"
 			"'정지' 후 '시작'을 눌러야 실제로 받아옵니다.\r\n\r\n진행할까요?",
 			url.c_str());
@@ -1492,7 +1600,7 @@ void CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask()
 			return;
 		}
 
-		// 되돌릴 수 있도록 한 벌 남긴다. 서버 마스크가 엉뚱한 것이었을 때
+		// 되돌릴 수 있도록 한 벌 남긴다. 관제서버 마스크가 엉뚱한 것이었을 때
 		// 현장에서 복구할 길이 있어야 한다.
 		const std::string bak = user_path + "hotlist_mask_local.bak";
 		::CopyFileA(local_mask.c_str(), bak.c_str(), FALSE);
@@ -1507,7 +1615,7 @@ void CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask()
 	}
 
 	Msg("[완료] 로컬 마스크를 지웠습니다. "
-		"'정지' 후 '시작'을 누르면 서버에서 새로 받습니다.");
+		"'정지' 후 '시작'을 누르면 관제서버에서 새로 받습니다.");
 }
 
 //---------------------------------------------------------
@@ -1868,6 +1976,10 @@ void CDlg_Set_MmCam_Env::LoadSampleSettings()
 
 	t.Format("%d", LearnReadInt("RETRAIN_BUFFER_DAYS", 0));
 	m_edSpDays.SetWindowTextA(t);
+
+	m_chkDyn.SetCheck(LearnReadInt("RETRAIN_DYNAMIC_MIX", 0) ? BST_CHECKED : BST_UNCHECKED);
+	m_edBandHigh.SetWindowTextA(LearnRead("CONTRIB_BAND_HIGH", DEF_CT_BAND_HIGH).c_str());
+	m_edBandLow.SetWindowTextA(LearnRead("CONTRIB_BAND_LOW", DEF_CT_BAND_LOW).c_str());
 }
 
 //---------------------------------------------------------
@@ -1890,6 +2002,33 @@ void CDlg_Set_MmCam_Env::OnBnClickedRetrain()
 
 	// 재학습이 끝났으면 세대·모델 시각이 바뀌었을 수 있다.
 	LoadStageStatus();
+}
+
+// 자동 재학습 이력을 본다. 읽기만 한다.
+void CDlg_Set_MmCam_Env::OnBnClickedRetrainHist()
+{
+	if (gUserID.empty()) {
+		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		return;
+	}
+
+	CDlg_RetrainHist dlg(&m_stdFont, this);
+	dlg.DoModal();
+}
+
+// RGB 기준 이미지를 지금 화면과 견주어 보고 바꾼다.
+//
+// 감시가 돌고 있어도 된다. 기준은 감시가 기동할 때 한 번 읽을 뿐이라, 바꾸면
+// 다음 시작부터 쓰인다.
+void CDlg_Set_MmCam_Env::OnBnClickedBaseRef()
+{
+	if (gUserID.empty()) {
+		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		return;
+	}
+
+	CDlg_BaseRef dlg(&m_stdFont, this);
+	dlg.DoModal();
 }
 
 // 보관된 학습모델(세대)을 되돌리거나 지운다.

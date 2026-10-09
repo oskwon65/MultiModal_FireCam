@@ -186,7 +186,7 @@ def write(path, baseline, model_ready, user_path,
           db_span=None,
           abs_guard=None, abs_now=None, cells=None, accum=None,
           shift=None, contrib=None, contrib_at=None,
-          op=None, op_now=None):
+          op=None, op_now=None, shift_halt=False):
     """
     현황을 통째로 덮어쓴다.
 
@@ -299,6 +299,9 @@ def write(path, baseline, model_ready, user_path,
         f"SHIFT_DX = {_sf(shift, 'dx')}",
         f"SHIFT_DY = {_sf(shift, 'dy')}",
         f"SHIFT_RESP = {_sf(shift, 'response')}",
+        # 카메라 이동으로 2·3단계 판정과 학습을 멈췄는가 (기동 때 RGB 이동
+        # 또는 운전 중 열화상 패턴 이동). [설정] 창이 두 단계 줄에 적는다.
+        f"SHIFT_HALT = {1 if shift_halt else 0}",
         "",
         f"DB_ROWS = {-1 if db_rows is None else int(db_rows)}",
         f"DB_TABLES = {-1 if db_tables is None else int(db_tables)}",

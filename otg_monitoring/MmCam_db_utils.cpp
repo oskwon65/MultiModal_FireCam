@@ -157,7 +157,7 @@ std::string read_ini_string(const char* section, const char* key, const char* de
 // 둔다.
 // 설치할 때 한 번 정하는 값과 운영하며 만지는 값을 가르기 위해서다.
 //
-// 없으면 env.ini 에서 찾는다. 현장 PC 가 아직 옮기기 전일 수 있고, 그때
+// 없으면 env.ini 에서 찾는다. 현장 분석서버가 아직 옮기기 전일 수 있고, 그때
 // 기본값으로 떨어지면 임계값이 통째로 달라진다.
 // =====================================
 std::string read_learn_string(const char* section, const char* key,

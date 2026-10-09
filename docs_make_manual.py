@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""멀티모달 화재감지 모니터링 시스템 - 설치/구성 매뉴얼 PPTX 생성"""
+"""멀티모달 화재감지 분석서버 - 설치/구성 매뉴얼 PPTX 생성"""
 
 from docs_style import *   # 팔레트 · 글꼴 · 상자 · 카드 · 제목줄
 
@@ -19,7 +19,7 @@ write(tf, [("설치 및 구성 매뉴얼", dict(size=15, bold=True, color=AMBER)
 
 tf = textbox(s, M + 2.05, 2.55, 9.6, 1.5)
 write(tf, [("멀티모달", dict(size=44, bold=True, color=WHITE), dict(space_after=4)),
-           ("화재감지 모니터링 시스템", dict(size=44, bold=True, color=WHITE), dict(space_after=0))])
+           ("화재감지 분석서버", dict(size=44, bold=True, color=WHITE), dict(space_after=0))])
 
 tf = textbox(s, M + 2.05, 4.42, 9.6, 0.4)
 write(tf, [("열화상 · 자세추정 · 이상탐지 통합 감시", dict(size=15, color=RGBColor(0xA8, 0xB6, 0xCC)),
@@ -46,7 +46,7 @@ items = [
     ("otg_monitoring.exe", "감시 프로그램", EMBER,
      ["C++ / MFC 데스크톱 앱", "프로세스 기동 · 정지 · 감시", "DB 상태와 화면 표시"]),
     ("server_to_db.py", "데이터 수집", AMBER,
-     ["서버에서 열화상 · 센서 수신", "8x8 = 64셀로 축약", "MySQL 에 적재"]),
+     ["관제서버에서 열화상 · 센서 수신", "8x8 = 64셀로 축약", "MySQL 에 적재"]),
     ("predict_machine.py", "이상 점수 산출", TEAL,
      ["오토인코더 복원 오차 기반", "scaler + autoencoder 사용", "results_history 에 기록"]),
     ("fall_detection.py", "낙상 · 화재 검출", RGBColor(0x6A, 0x5A, 0xCD),
@@ -75,7 +75,7 @@ s = slide_light(prs)
 title_bar(s, "02  DATA FLOW", "데이터는 이렇게 흐릅니다")
 
 flow = [
-    ("현장 서버", "sangchoo.com", "ir_img.csv\nmain_sensor.inf\nrgb_img.jpg", NAVY_SOFT),
+    ("관제서버", "sangchoo.com", "ir_img.csv\nmain_sensor.inf\nrgb_img.jpg", NAVY_SOFT),
     ("수집", "server_to_db.py", "64셀 축약\nFIFO median", EMBER),
     ("저장", "MySQL 8.0", "<user>_sensor_data\ncurrent_value", AMBER),
     ("분석", "predict_machine\nfall_detection", "이상 점수\n낙상 · 화재", TEAL),
@@ -106,19 +106,19 @@ card(s, M, 5.22, cw2, 1.5, fill=RGBColor(0xFD, 0xF1, 0xEC))
 tf = textbox(s, M + 0.3, 5.42, cw2 - 0.6, 1.1)
 write(tf, [("수집 주기는 현장마다 다릅니다", dict(size=12.5, bold=True, color=EMBER),
             dict(space_after=5)),
-           ("서버의 파일이 갱신되지 않으면 같은 값이 반복 입력되어 점수가 고정됩니다. "
+           ("관제서버의 파일이 갱신되지 않으면 같은 값이 반복 입력되어 점수가 고정됩니다. "
             "센서 타임스탬프(ts)가 최신인지 debug_logs 에서 확인하십시오.",
             dict(size=11, color=INK), dict(space_after=0, line=1.25))], first=False)
 
-# 데이터가 어디까지 가는지 명시한다. 그림만 보면 분석 결과도 서버로
+# 데이터가 어디까지 가는지 명시한다. 그림만 보면 분석 결과도 관제서버로
 # 돌아가는 것처럼 오해하기 쉽고, 실제로 SMS 만 밖으로 나간다.
 rx2 = M + cw2 + 0.3
 card(s, rx2, 5.22, cw2, 1.5, fill=RGBColor(0xEC, 0xF6, 0xF4))
 tf = textbox(s, rx2 + 0.3, 5.42, cw2 - 0.6, 1.1)
-write(tf, [("분석 결과는 서버로 올라가지 않습니다", dict(size=12.5, bold=True, color=TEAL),
+write(tf, [("분석 결과는 관제서버로 올라가지 않습니다", dict(size=12.5, bold=True, color=TEAL),
             dict(space_after=5)),
-           ("점수와 판정 이력은 이 PC 의 MySQL 에만 쌓입니다. 밖으로 나가는 것은 화재 감지 "
-            "시의 SMS 발송뿐입니다. 서버에는 raw 원본이 남으므로 PC 이력이 사라져도 "
+           ("점수와 판정 이력은 분석서버의 MySQL 에만 쌓입니다. 밖으로 나가는 것은 화재 감지 "
+            "시의 SMS 발송뿐입니다. 관제서버에는 raw 원본이 남으므로 분석서버 이력이 사라져도 "
             "재분석은 가능합니다.",
             dict(size=11, color=INK), dict(space_after=0, line=1.25))], first=False)
 page_num(s, 2)
@@ -511,7 +511,7 @@ write(tf, [("운영 시스템이 쓰는 모델은 별도 폴더 D:\\autoencoder 
             dict(size=14, color=MUTED), dict(space_after=0))])
 
 pipe = [
-    ("download_ir_raw.py", "서버 → ir_raw", "현장 서버에서 raw 파일을 내려받습니다."),
+    ("download_ir_raw.py", "관제서버 → ir_raw", "관제서버에서 raw 파일을 내려받습니다."),
     ("conv_raw.py", "ir_raw → step_0", "raw 값을 온도 값으로 변환합니다."),
     ("gen-samples.py", "step_0 → step_1", "160x120 을 64개 격자 값으로 축약합니다."),
     ("apply_median.py", "step_1 → step_2", "median 필터로 노이즈를 제거합니다."),
@@ -1826,7 +1826,7 @@ s = slide_dark(prs)
 title_bar(s, "31  TROUBLESHOOTING", "자주 겪는 문제", dark=True)
 
 probs = [
-    ("점수가 계속 같은 값", "현장 서버의 파일이 갱신되지 않는 경우입니다.",
+    ("점수가 계속 같은 값", "관제서버의 파일이 갱신되지 않는 경우입니다.",
      "debug_logs 의 ts 값을 확인하십시오. 며칠 전 날짜라면 현장 장비의 업로드를 점검합니다."),
     ("점수가 낮게만 유지됨", "카메라 조준이 틀어진 경우입니다.",
      "학습 데이터에서 늘 뜨거웠던 고정 셀이 같은 자리인지 확인합니다. "
@@ -1897,7 +1897,7 @@ page_num(s, 32)
 # 출력 경로는 인자로 바꿀 수 있다 (PowerPoint 가 원본을 열고 있을 때 임시본 생성용)
 import sys
 out = sys.argv[1] if len(sys.argv) > 1 else \
-    r"D:\MultiModal_FireCam\멀티모달_화재감지_모니터링_설치매뉴얼.pptx"
+    r"D:\MultiModal_FireCam\멀티모달_화재감지_분석서버_설치매뉴얼.pptx"
 prs.save(out)
 print("저장 완료:", out)
 print("슬라이드 수:", len(prs.slides.__iter__.__self__._sldIdLst))

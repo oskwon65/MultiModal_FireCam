@@ -52,7 +52,7 @@ sys.path.insert(0, os.path.join(_ROOT, "source"))
 sys.path.insert(0, os.path.join(_ROOT, "predict_machine"))
 sys.path.insert(0, _HERE)
 
-from db_utils import Set_Env_Config, Get_HistoryDB_Config, Connect_History_DB
+from db_utils import Set_Env_Config, Get_HistoryDB_Config, Connect_History_DB, position_since
 from online_baseline import OnlineBaseline, write_reset_note
 
 BASELINE_NAME = "online_baseline.npz"
@@ -114,6 +114,12 @@ def main():
     cur.execute(sql, (db,))
     tables = [r[0] for r in cur.fetchall()]
 
+    # 카메라 자리가 바뀐 뒤의 것만. 그 앞은 칸마다 다른 곳을 보고 있었다.
+    since = position_since(config)
+    if since is not None:
+        tables = [t for t in tables if t[-8:] >= since.strftime("%Y%m%d")]
+        print(f"카메라 자리가 바뀐 {since:%Y-%m-%d %H:%M} 이후만 씁니다")
+
     if args.d_from:
         tables = [t for t in tables if t[-8:] >= args.d_from]
     if args.d_to:
@@ -148,6 +154,8 @@ def main():
     for t in tables:
         cur.execute(f"SELECT `time`, hot_list FROM `{db}`.`{t}` ORDER BY `time`")
         for when, raw in cur.fetchall():
+            if since is not None and when < since:
+                continue
             seen += 1
             try:
                 v = np.asarray(json.loads(raw), dtype=np.float64)

@@ -65,6 +65,7 @@ def _resolve_source_dir():
 sys.path.insert(0, _resolve_source_dir())
 
 from db_utils import (
+    position_since,
     read_from_current_value_median,
     read_people_and_area,
     read_slave_sensor,
@@ -74,9 +75,6 @@ from db_utils import (
     update_db_error_code,
     update_db_hotlist_mask,
     read_db_error_code,
-    read_db_main_command,
-    update_db_main_command,
-    delete_files_of_Base_Img,
     Set_Env_Config,
     Get_SensorDB_Config,
     Get_HistoryDB_Config,
@@ -87,12 +85,9 @@ from db_utils import (
 from cv_utils import (
     Get_Adjusted_HotMask_Position,
     Get_Input_Image_URL,
-    save_base_image,
-    write_base_ref,
-    SHIFT_STATE_LEGACY,
 )
 
-from constants import ERR_CODE, SVR_CMD, LOCAL_HOTLIST_MASK, SVR_HOTLIST_MASK
+from constants import ERR_CODE, LOCAL_HOTLIST_MASK, SVR_HOTLIST_MASK
 
 # 연속 학습 1~2단계. 이 둘은 predict_machine 폴더 안에 있으므로 sys.path[0]
 # (= 이 스크립트의 폴더) 으로 그냥 잡힌다. source 폴더와 달리 경로 조작이
@@ -500,7 +495,7 @@ def Check_Status_of_HotList_Mask(hotlist_mask, x_grid, BASE_IMG_DIR, input_img):
     if abs(shift_x) >= MAX_SHIFT or abs(shift_y) >= MAX_SHIFT:
         print(f"[ERROR] 카메라가 가로 {shift_x:+d}칸 · 세로 {shift_y:+d}칸 밀렸습니다 "
               f"({MAX_SHIFT}칸 이상). 마스크를 믿을 수 없어 중단합니다.")
-        print("        조준을 되돌리거나, [설정] 에서 카메라 이동보정을 승인하십시오.")
+        print("        조준을 되돌린 뒤 다시 시작하십시오. 마스크는 자동으로 옮기지 않습니다.")
         print("Program Terminated")
         sys.exit(1)
 
@@ -517,14 +512,6 @@ def Check_Status_of_HotList_Mask(hotlist_mask, x_grid, BASE_IMG_DIR, input_img):
 
 # ==================================================
 
-def write_file_hotlist_mask(local_path, hotlist_mask):
-    values = np.asarray(hotlist_mask).flatten()
-
-    with open(local_path, "w", newline="\n") as f:
-        for v in values:
-            f.write(f"{int(v)}\n")
-
-# ==================================================
 # Main loop
 # ==================================================
 
@@ -689,7 +676,7 @@ def main_loop(config, sensor_db_config):
         sys.exit(1)
 
     # HotListMask 를 변경하는 경우 먼저 로컬에 존재하는 HotListMask_LocalPath 파일을 제거함
-    # 해당 파일이 없는 경우 서버에서 자동으로 다운로드 받아서 사용함
+    # 해당 파일이 없는 경우 관제서버에서 자동으로 다운로드 받아서 사용함
     # HotListMask_LocalPath 이 존재하는 경우, NAS 에서 새로운 HotListMask 파일이 있어도 다운로드 하지 않음
     if not os.path.exists(HotListMask_LocalPath):
         Download_Grid_Mask_from_SVR(config["ROOT_URL"], config["USER_ID"], HotListMask_LocalPath)
@@ -708,7 +695,7 @@ def main_loop(config, sensor_db_config):
             print("Program Terminated")
             sys.exit(1)
 
-    bShifted, new_hotlist_mask, shift_x, shift_y, shift_inf = \
+    bShifted, _unused_mask, shift_x, shift_y, shift_inf = \
         Check_Status_of_HotList_Mask(cur_hotlist_mask, X_GRID, BASE_IMG_DIR,
                                      input_img)
 
@@ -716,37 +703,20 @@ def main_loop(config, sensor_db_config):
     # 아래 값들은 "언제 잰 것인지" 와 함께 현황 파일에 그대로 실려 나간다.
     shift_checked_at = datetime.now().strftime("%Y-%m-%d %H:%M")
 
+    # 틀어져도 마스크는 옮기지 않는다. 오류 코드만 남긴다.
+    #
+    # 예전에는 관제서버에 ADJST-MG(이동보정 승인)가 들어와 있으면 여기서 마스크를
+    # 그만큼 밀어 저장하고, base_img 를 지운 뒤 이 순간의 프레임을 새 기준으로
+    # 삼았다. 사람이 보지 않는 기동 순간에 감시 대상과 잣대가 한꺼번에 바뀌고,
+    # 승인이 관제서버에 남아 있으면 몇 달 뒤 1칸 밀린 기동에서도 저절로 일어났다.
+    # 2026-10-08 에 뺐다. 마스크는 사람이 [관제서버 Mask 받기] 로, 기준 이미지는
+    # [설정] 의 [기준 이미지] 에서 견주어 보고 바꾼다.
+    hotlist_mask = cur_hotlist_mask
     if bShifted:
-        main_command = read_db_main_command(sensor_db_config)
-        print("Command from Server:", main_command)
-
-        if main_command == SVR_CMD.ADJUST_MACHINE_GRID:  # 카메라 이동으로 이미지의 위치가 전과 다른 경우
-            hotlist_mask = new_hotlist_mask
-            write_file_hotlist_mask(HotListMask_LocalPath, hotlist_mask)
-            delete_files_of_Base_Img(config)
-
-            # 사람이 승인했다 = 지금 보이는 화면이 앞으로의 정상이다.
-            #
-            # 기준 1장 방식으로 넘어온 현장은 여기서 기준을 새로 굳힌다.
-            # 예전 방식으로 도는 현장은 종전대로 밝기 이름으로 한 장을
-            # 남긴다. 기준을 늘리는 곳은 이 자리 하나뿐이어야 한다. 밝기차만
-            # 보고 자동으로 쌓던 규칙이 kict1 의 base_img 에 서로 다른 위치
-            # 네 덩어리를 섞어 놓았다.
-            if shift_inf["state"] != SHIFT_STATE_LEGACY:
-                write_base_ref(BASE_IMG_DIR, input_img)
-            else:
-                save_base_image(BASE_IMG_DIR, input_img)
-
-            update_db_error_code(sensor_db_config, ERR_CODE.NO_ERR)
-            update_db_main_command(sensor_db_config, SVR_CMD.NO_ACTION)
-
-        else:
-            hotlist_mask = cur_hotlist_mask
-            update_db_error_code(sensor_db_config, ERR_CODE.CAMERA_POSITION_SHIFT)
-            print("[WARN] Camera position shifted — error_code updated")
-
+        update_db_error_code(sensor_db_config, ERR_CODE.CAMERA_POSITION_SHIFT)
+        print("[WARN] 카메라가 밀렸습니다 - 마스크는 그대로 두고 오류 코드만 남깁니다")
+        print("[WARN] 재시작 전까지 2·3단계 판정과 학습을 멈춥니다. 1단계만 동작합니다.")
     else:
-        hotlist_mask = cur_hotlist_mask
         update_db_error_code(sensor_db_config, ERR_CODE.NO_ERR)
 
     update_db_hotlist_mask(sensor_db_config, hotlist_mask)
@@ -827,7 +797,10 @@ def main_loop(config, sensor_db_config):
             # peak -1 은 "재지 못했다" 는 뜻이고 0도와 구별된다.
             peak_t, rise_t, abs_cell = -1.0, 0.0, -1
 
-            if cur_error_code == ERR_CODE.NO_ERR:
+            # 카메라 이동 오류 코드는 이 프로그램이 기동할 때 남긴 것이다. 예전에는
+            # 이 코드가 있으면 아래를 통째로 건너뛰어 1단계(절대 임계값)까지
+            # 꺼지고 현황 파일도 멈췄다. 이동 때 멈출 것은 2·3단계뿐이다.
+            if cur_error_code in (ERR_CODE.NO_ERR, ERR_CODE.CAMERA_POSITION_SHIFT):
                 x_full = extract_mach_area(median_hot, hotlist_mask)
                 x_row = np.asarray(x_full, dtype=np.float64).reshape(-1)
 
@@ -862,14 +835,35 @@ def main_loop(config, sensor_db_config):
                 exceed = 0.0
                 worst = -1
 
-                if model is not None and scaler is not None:
+                # --- 화면 이동 감시 --------------------------------------
+                # 마스크 안의 셀만 보는 채점으로는 카메라가 밀린 것을 잡지
+                # 못한다. 실제로 kict1 은 2026-07-13 에 화면이 위1칸·오른3칸
+                # 밀렸는데, 가장 뜨거워진 셀이 마스크 밖이라 채점에는
+                # 걸리지 않았다. 64셀 전체 패턴으로 따로 본다.
+                corr = baseline.scene_shift()
+                scene_ok = corr is None or corr >= SCENE_SHIFT_MIN
+
+                if not scene_ok:
+                    print(f"[화면이동] 기준 패턴과의 상관계수 {corr:.3f} "
+                          f"(기준 {SCENE_SHIFT_MIN}). 카메라 조준을 확인하십시오.")
+
+                # 이동이 보이면 2·3단계는 판정도 학습도 하지 않는다. 마스크가
+                # 설비의 다른 곳을 보는 채로 매긴 점수는 근거가 없다.
+                #   기동 때 RGB 로 잰 이동  재시작 전까지 (루프에서 다시 재지 않는다)
+                #   운전 중 열화상 패턴 이동 조준을 되돌려 상관계수가 회복되면 풀린다
+                shift_halt = bool(bShifted) or not scene_ok
+                if shift_halt:
+                    print("[중지] 카메라 위치 이동 - 2·3단계 판정·학습 중지, "
+                          "1단계만 동작")
+
+                if not shift_halt and model is not None and scaler is not None:
                     score_list, mse_list, valid = normality_score(
                         x_full, hotlist_mask, scaler, model
                     )
                     ae_score = float(np.mean(score_list))
                     machine_mse = float(np.mean(mse_list))
 
-                if baseline.is_ready():
+                if baseline.is_ready() and not shift_halt:
                     bl_score, exceed, worst = baseline.score(x_row, hotlist_mask)
 
                 if ae_score is not None and bl_score is not None:
@@ -904,10 +898,10 @@ def main_loop(config, sensor_db_config):
                     stage_used = 1
                     print(f"[기준선] 초과 {exceed:+.1f}도 (셀 {worst})")
 
-                else:
+                elif not shift_halt:
                     # 1단계. 아직 채점할 근거가 없다. 절대 임계값 경보만
                     # 유효하므로 점수는 -1(미산출)로 둔다. 0.0 으로 두면
-                    # "완전 이상" 으로 오해된다.
+                    # "완전 이상" 으로 오해된다. 이동으로 멈췄을 때도 -1 이다.
                     print(f"[기준선] 누적 중 — {baseline.summary()}")
 
                 # 절대 온도 경보가 꺼져 있으면, 기준선이 쌓이는 대로 권장값을
@@ -919,18 +913,6 @@ def main_loop(config, sensor_db_config):
                               f"ABS_TEMP_WARN={sug[0]:.0f}, ABS_TEMP_ALARM={sug[1]:.0f} "
                               f"(env.ini 에 적은 뒤 재시작하십시오)")
                         suggested_once = True
-
-                # --- 화면 이동 감시 --------------------------------------
-                # 마스크 안의 셀만 보는 채점으로는 카메라가 밀린 것을 잡지
-                # 못한다. 실제로 kict1 은 2026-07-13 에 화면이 위1칸·오른3칸
-                # 밀렸는데, 가장 뜨거워진 셀이 마스크 밖이라 채점에는
-                # 걸리지 않았다. 64셀 전체 패턴으로 따로 본다.
-                corr = baseline.scene_shift()
-                scene_ok = corr is None or corr >= SCENE_SHIFT_MIN
-
-                if not scene_ok:
-                    print(f"[화면이동] 기준 패턴과의 상관계수 {corr:.3f} "
-                          f"(기준 {SCENE_SHIFT_MIN}). 카메라 조준을 확인하십시오.")
 
                 # --- 기준선 누적 -----------------------------------------
                 # [안전 규칙] 다음 두 경우는 기준선에 넣지 않는다.
@@ -945,7 +927,9 @@ def main_loop(config, sensor_db_config):
                 #     고장이 조용히 묻히는 것이 가장 나쁜 결말이다.
                 #     학습은 멈추되 EWMA 는 계속 움직여, 조준을 되돌리면
                 #     경보가 자연히 풀리도록 한다.
-                accum_ok = (abs_level == 0) and scene_ok
+                #
+                #  3) 기동 때 RGB 로 카메라 이동이 잡혔을 때 (2) 와 같은 까닭
+                accum_ok = (abs_level == 0) and not shift_halt
 
                 # 왜 멈췄는지 화면에 적어야 한다. 누적이 멈춘 것은 숫자가
                 # 늘지 않는 것으로만 드러나는데, 그것을 알아채려면 몇 분을
@@ -956,10 +940,12 @@ def main_loop(config, sensor_db_config):
                 # 평균의 상관계수다.
                 if accum_ok:
                     accum_why = ""
-                elif abs_level != 0:
-                    accum_why = "절대 임계값"
-                else:
+                elif bShifted:
+                    accum_why = "카메라 위치 이동"
+                elif not scene_ok:
                     accum_why = "열화상 화면 변함"
+                else:
+                    accum_why = "절대 임계값"
 
                 _now = datetime.now()
                 op_now = opst.classify(x_row)
@@ -1027,7 +1013,8 @@ def main_loop(config, sensor_db_config):
                                     temp_warn=config.get("ABS_TEMP_WARN"),
                                     verbose=False, score_fn=_rs,
                                     n_tables=_nt, min_frames=_mf,
-                                    max_samples=_ms)
+                                    max_samples=_ms,
+                                    since=position_since(config))
                             finally:
                                 _c.close()
                             contrib = (_sc, model_contribution.weight_for(_sc))
@@ -1035,10 +1022,14 @@ def main_loop(config, sensor_db_config):
                         except Exception as e:
                             print(f"[WARN] 기여 가중치 계산 실패: {e}")
 
-                    try:
-                        auto_rt.tick(None if contrib is None else contrib[1])
-                    except Exception as e:
-                        print(f"[WARN] 자동 재학습 확인 실패: {e}")
+                    # 이동 중에는 3단계 재학습도 띄우지 않는다. 틀어진 조준으로
+                    # 쌓인 자료를 정상으로 배우게 된다.
+                    if not shift_halt:
+                        try:
+                            auto_rt.tick(None if contrib is None else contrib[1],
+                                         None if contrib is None else contrib[0])
+                        except Exception as e:
+                            print(f"[WARN] 자동 재학습 확인 실패: {e}")
 
                     stage_status.write(
                         STATUS_PATH, baseline,
@@ -1055,6 +1046,7 @@ def main_loop(config, sensor_db_config):
                                np.asarray(baseline.hi).reshape(-1),
                                np.asarray(hotlist_mask).reshape(-1)),
                         shift=(shift_x, shift_y, shift_checked_at, shift_inf),
+                        shift_halt=shift_halt,
                         contrib=contrib, contrib_at=contrib_at,
                         op=opst, op_now=op_now)
                     status_written_at = _now_t
