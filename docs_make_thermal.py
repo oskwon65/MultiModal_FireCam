@@ -175,18 +175,18 @@ s = slide_light(prs)
 title_bar(s, "01  METHOD", "어떻게 묶었는가")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
-write(tf, [("운용이 점수를 내는 것과 같은 모양으로 줄인 뒤 묶었습니다. "
-            "그래야 \"모델이 무엇을 정상으로 배웠는가\" 와 이어집니다.",
+write(tf, [("운용이 점수를 내는 것과 같은 모양으로 줄인 뒤 묶었음 · "
+            "그래야 \"모델이 무엇을 정상으로 배웠는가\" 와 이어짐",
             dict(size=13.5, color=MUTED), dict(space_after=0))])
 
 steps = [
     ("1", "표집", "954,629개에서 150개마다 하나씩, 6,365개. 날짜가 고르게 들어가도록 "
-     "파일 이름 순으로 건너뛰며 뽑습니다."),
+     "파일 이름 순으로 건너뛰며 뽑음"),
     ("2", "8x8 로 줄이기", "160x120 원본을 20x15 블록으로 나눠 블록마다 최댓값을 "
-     "고릅니다. source/utils.py 의 Conv_LWIR_to_64_Vector 와 같은 규칙입니다."),
-    ("3", "묶기", "64칸 벡터를 그대로 k-means 에 넣습니다. 오토인코더가 보는 것이 "
-     "이 벡터라 같은 것으로 묶어야 합니다."),
-    ("4", "k 고르기", "3~7 을 다 돌려 실루엣으로 봅니다. 눈대중으로 정하지 않습니다."),
+     "고름 · source/utils.py 의 Conv_LWIR_to_64_Vector 와 같은 규칙임"),
+    ("3", "묶기", "64칸 벡터를 그대로 k-means 에 넣음 · 오토인코더가 보는 것이 "
+     "이 벡터라 같은 것으로 묶어야 함"),
+    ("4", "k 고르기", "3~7 을 다 돌려 실루엣으로 봄 · 눈대중으로 정하지 않음"),
 ]
 yy = 2.3
 for num, name, desc in steps:
@@ -201,7 +201,7 @@ bx = M + 7.5
 tf = textbox(s, bx, 2.26, 4.1, 0.3)
 write(tf, [("실루엣", dict(size=13, bold=True, color=INK), dict(space_after=0))])
 tf = textbox(s, bx, 2.58, 4.1, 0.3)
-write(tf, [("높을수록 잘 갈린 것입니다.", dict(size=10.5, color=MUTED),
+write(tf, [("높을수록 잘 갈린 것임", dict(size=10.5, color=MUTED),
             dict(space_after=0))])
 
 sil = [(3, 0.553), (4, 0.453), (5, 0.323), (6, 0.348), (7, 0.319)]
@@ -225,12 +225,12 @@ for k, v in sil:
 
 card(s, bx, 4.85, 4.1, 1.5, fill=RGBColor(0xFD, 0xF1, 0xEC))
 tf = textbox(s, bx + 0.26, 5.0, 3.6, 0.3)
-write(tf, [("셋이 가장 잘 갈립니다", dict(size=12, bold=True, color=EMBER),
+write(tf, [("셋이 가장 잘 갈림", dict(size=12, bold=True, color=EMBER),
             dict(space_after=0))])
 tf = textbox(s, bx + 0.26, 5.34, 3.6, 0.9)
-write(tf, [("자료가 말하는 것은 \"정지 / 가동 / 과열\" 셋입니다. "
+write(tf, [("자료가 말하는 것은 \"정지 / 가동 / 과열\" 셋임 · "
             "여섯으로 나눈 것은 그 안을 더 들여다보려는 것이고, "
-            "새 무늬가 나오지는 않습니다.",
+            "새 무늬가 나오지는 않음",
             dict(size=10.5, color=INK), dict(space_after=0, line=1.25))])
 page_num(s, 1)
 
@@ -239,7 +239,7 @@ s = slide_light(prs)
 title_bar(s, "02  SIX PATTERNS", "여섯 가지를 나란히")
 
 tf = textbox(s, M, 1.68, 8.0, 0.3)
-write(tf, [("칸 색은 그 패턴의 칸별 평균 섭씨입니다. 짙을수록 뜨겁습니다.",
+write(tf, [("칸 색은 그 패턴의 칸별 평균 섭씨임 · 짙을수록 뜨거움",
             dict(size=12, color=MUTED), dict(space_after=0))])
 ramp_legend(s, W - M - 3.2, 1.86, 3.2, HEAT_BINS, HEAT, "섭씨")
 zone_key(s, M, 2.16)
@@ -281,8 +281,8 @@ s = slide_light(prs)
 title_bar(s, "03  DEVIATION", "평균 대비로 보면 무엇이 도는지 보인다")
 
 tf = textbox(s, M, 1.68, 8.2, 0.3)
-write(tf, [("여섯을 표본 수로 가중한 기준에서 얼마나 벗어났는지입니다. "
-            "붉으면 그 패턴에서 유독 뜨거운 칸입니다.",
+write(tf, [("여섯을 표본 수로 가중한 기준에서 얼마나 벗어났는지임 · "
+            "붉으면 그 패턴에서 유독 뜨거운 칸임",
             dict(size=12, color=MUTED), dict(space_after=0))])
 ramp_legend(s, W - M - 3.2, 1.86, 3.2, DIFF_BINS, DIFF, "기준과의 차이 (도)")
 zone_key(s, M, 2.16)
@@ -316,8 +316,8 @@ s = slide_light(prs)
 title_bar(s, "04  NUMBERS", "수치로 견주기")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
-write(tf, [("여섯 중 다섯이 오른쪽 발열부 68~84도입니다. 변하는 것은 "
-            "가운데 등줄기입니다.", dict(size=13.5, color=MUTED), dict(space_after=0))])
+write(tf, [("여섯 중 다섯이 오른쪽 발열부 68~84도임 · 변하는 것은 "
+            "가운데 등줄기임", dict(size=13.5, color=MUTED), dict(space_after=0))])
 
 cols = [(0.0, 2.7, "패턴", PP_ALIGN.LEFT),
         (2.7, 1.1, "표본", PP_ALIGN.RIGHT),
@@ -364,8 +364,8 @@ s = slide_light(prs)
 title_bar(s, "05  WHEN", "언제 나타나는가")
 
 tf = textbox(s, M, 1.72, 11.5, 0.35)
-write(tf, [("0시부터 23시까지 그 패턴이 관측된 표본 수입니다. "
-            "같은 설비라도 도는 시간대가 다릅니다.",
+write(tf, [("0시부터 23시까지 그 패턴이 관측된 표본 수임 · "
+            "같은 설비라도 도는 시간대가 다름",
             dict(size=13.5, color=MUTED), dict(space_after=0))])
 
 bw = (W - 2 * M - 1.2) / 2
@@ -403,7 +403,7 @@ s = slide_light(prs)
 title_bar(s, "06  TEN", "열 갈래로 늘리면")
 
 tf = textbox(s, M, 1.68, 8.2, 0.3)
-write(tf, [("갈래를 늘려 물을 것은 하나입니다. 새 무늬가 나오는가, "
+write(tf, [("갈래를 늘려 물을 것은 하나임 · 새 무늬가 나오는가, "
             "아니면 온도 구간만 쪼개지는가.",
             dict(size=12, color=MUTED), dict(space_after=0))])
 ramp_legend(s, W - M - 3.2, 1.86, 3.2, HEAT_BINS, HEAT, "섭씨")
@@ -450,8 +450,8 @@ for i, t in enumerate(TEN):
                 dict(name=MONO, size=8.5, color=MUTED), dict(space_after=0))])
 
 tf = textbox(s, M, 6.88, 11.5, 0.26)
-write(tf, [("무늬 상관은 평균을 빼고 정규화한 뒤 여섯 갈래와 견준 값입니다. "
-            "1.00 이면 무늬는 그대로고 온도만 다른 것입니다.",
+write(tf, [("무늬 상관은 평균을 빼고 정규화한 뒤 여섯 갈래와 견준 값임 · "
+            "1.00 이면 무늬는 그대로고 온도만 다른 것임",
             dict(size=9.5, color=MUTED), dict(space_after=0))])
 page_num(s, 6)
 
@@ -492,12 +492,12 @@ for a, p in enumerate(PAT):
     yy += 0.42
 
 tf = textbox(s, M, 5.05, 8.4, 0.9)
-write(tf, [("전부 정지는 그대로 남습니다. 평소 가동(61%)이 넷으로 쪼개졌는데 "
-            "넷 다 무늬 상관 0.99~1.00 입니다. 나뉜 기준은 시간대입니다 - "
+write(tf, [("전부 정지는 그대로 남음 · 평소 가동(61%)이 넷으로 쪼개졌는데 "
+            "넷 다 무늬 상관 0.99~1.00 임 · 나뉜 기준은 시간대임 - "
             "새벽 · 낮 · 저녁. 같은 설비가 같은 방식으로 도는데 주변 온도만 "
-            "다릅니다.", dict(size=11, color=INK), dict(space_after=6, line=1.3)),
+            "다름", dict(size=11, color=INK), dict(space_after=6, line=1.3)),
            ("등줄기 가동이 셋으로 갈리면서 그중 하나가 새 무늬로 떨어져 "
-            "나왔습니다.", dict(size=11, bold=True, color=EMBER),
+            "나왔음", dict(size=11, bold=True, color=EMBER),
             dict(space_after=0, line=1.3))])
 
 # 오른쪽 - 새 무늬
@@ -516,11 +516,11 @@ ncell = 0.22
 heat_grid(s, rx + 0.95, 2.48, ncell, NT["grid"])
 
 tf = textbox(s, rx, 4.42, 3.9, 1.15)
-write(tf, [("오른쪽 발열부가 세로로 길어집니다",
+write(tf, [("오른쪽 발열부가 세로로 길어짐",
             dict(size=11.5, bold=True, color=INK), dict(space_after=4)),
-           ("평소에는 행 2-3 에만 있던 열이 행 1 부터 행 6 까지 이어집니다. "
-            "\"오른쪽 확장\" 과 달리 등줄기도 함께 올라옵니다 - 두 계통이 "
-            "동시에 도는 상태입니다.",
+           ("평소에는 행 2-3 에만 있던 열이 행 1 부터 행 6 까지 이어짐 · "
+            "\"오른쪽 확장\" 과 달리 등줄기도 함께 올라옴 - 두 계통이 "
+            "동시에 도는 상태임",
             dict(size=10, color=INK), dict(space_after=0, line=1.25))])
 
 tf = textbox(s, rx, 5.62, 3.9, 0.24)
@@ -539,8 +539,8 @@ s = slide_light(prs)
 title_bar(s, "08  WHICH ONE", "점수 0.05 는 어느 패턴인가")
 
 tf = textbox(s, M, 1.7, 11.5, 0.3)
-write(tf, [("하나로만 재면 틀린 답이 나옵니다. 무늬 · 크기 · 실제 프레임 "
-            "셋으로 봅니다.", dict(size=13, color=MUTED), dict(space_after=0))])
+write(tf, [("하나로만 재면 틀린 답이 나옴 · 무늬 · 크기 · 실제 프레임 "
+            "셋으로 봄", dict(size=13, color=MUTED), dict(space_after=0))])
 
 # 왼쪽 - 오늘 격자
 ccell = 0.26
@@ -557,11 +557,11 @@ write(tf, [(f"전체 {sum(TODAY)/64:.1f}도", dict(name=MONO, size=10, color=INK
 card(s, M - 0.1, 4.85, X * ccell + 0.2, 1.75, fill=PAPER)
 tf = textbox(s, M + 0.06, 5.0, X * ccell - 0.1, 1.5)
 write(tf, [("재는 법", dict(size=10.5, bold=True, color=INK), dict(space_after=4)),
-           ("무늬 - 평균을 빼고 정규화한 상관. 전체가 몇 도인지는 지웁니다.",
+           ("무늬 - 평균을 빼고 정규화한 상관. 전체가 몇 도인지는 지움",
             dict(size=9, color=MUTED), dict(space_after=3, line=1.2)),
-           ("크기 - 칸별 차이. 그 무리 표본의 95%보다 멀면 밖입니다.",
+           ("크기 - 칸별 차이. 그 무리 표본의 95%보다 멀면 밖임",
             dict(size=9, color=MUTED), dict(space_after=3, line=1.2)),
-           ("실제 프레임 - 중심은 평균이라 실제로는 없는 모습일 수 있습니다.",
+           ("실제 프레임 - 중심은 평균이라 실제로는 없는 모습일 수 있음",
             dict(size=9, color=MUTED), dict(space_after=0, line=1.2))])
 
 # 오른쪽 - 열 갈래 표
@@ -595,8 +595,8 @@ for i, r in enumerate(CMP["rows"]):
 
 card(s, tx - 0.1, 6.42, 6.75, 0.5, fill=RGBColor(0xFD, 0xF1, 0xEC))
 tf = textbox(s, tx + 0.06, 6.54, 6.5, 0.3)
-write(tf, [("열 갈래가 모두 밖입니다. 무늬로 가장 닮은 9번도 등줄기가 "
-            "90~96도인데 오늘은 53~59도입니다.",
+write(tf, [("열 갈래가 모두 밖임 · 무늬로 가장 닮은 9번도 등줄기가 "
+            "90~96도인데 오늘은 53~59도임",
             dict(size=10.5, bold=True, color=EMBER), dict(space_after=0))])
 page_num(s, 8)
 
@@ -605,7 +605,7 @@ s = slide_light(prs)
 title_bar(s, "09  NEAREST", "가장 가까운 실제 프레임은 자료의 마지막 이틀")
 
 tf = textbox(s, M, 1.7, 11.5, 0.3)
-write(tf, [("중심이 아니라 표본 6,365개와 하나씩 견줬습니다.",
+write(tf, [("중심이 아니라 표본 6,365개와 하나씩 견줬음",
             dict(size=13, color=MUTED), dict(space_after=0))])
 
 ncell = 0.24
@@ -657,19 +657,19 @@ for dx, cw, lab, al in ((0.0, 1.5, "날짜", PP_ALIGN.LEFT),
 
 card(s, M, 5.0, W - 2 * M, 1.62, fill=RGBColor(0xFD, 0xF1, 0xEC))
 tf = textbox(s, M + 0.3, 5.16, W - 2 * M - 0.6, 0.3)
-write(tf, [("어느 패턴도 아닙니다. 방향만 말하면 자료가 끝나는 무렵의 "
-            "\"식어 가던 평소 가동\" 쪽입니다.",
+write(tf, [("어느 패턴도 아님 · 방향만 말하면 자료가 끝나는 무렵의 "
+            "\"식어 가던 평소 가동\" 쪽임",
             dict(size=13, bold=True, color=EMBER), dict(space_after=0))])
 tf = textbox(s, M + 0.3, 5.52, W - 2 * M - 0.6, 1.0)
 write(tf, [(f"가까운 여섯이 모두 07-03 과 07-04 - 자료의 마지막 이틀이고, "
-            f"그 칸 평균이 전체 기간 중 가장 낮았던 날입니다. 그때 오른쪽이 "
-            f"48~53도였고 오늘은 {zavg(TODAY, BLOCK):.0f}도입니다.",
+            f"그 칸 평균이 전체 기간 중 가장 낮았던 날임 · 그때 오른쪽이 "
+            f"48~53도였고 오늘은 {zavg(TODAY, BLOCK):.0f}도임",
             dict(size=11.5, color=INK), dict(space_after=5, line=1.3)),
-           (f"다만 가장 가까운 것도 거리 {CMP['near'][0]['dist']:.1f} 입니다. "
+           (f"다만 가장 가까운 것도 거리 {CMP['near'][0]['dist']:.1f} 임 · "
             f"표본끼리의 거리가 중앙값 {CMP['pair_median']:.0f}, 하위 25%가 "
             f"{CMP['pair_q25']:.0f} 이니 아무 두 프레임을 집어 온 것과 비슷한 "
-            f"정도입니다. 07-04 이후 두 달 반 동안 이 구간의 자료가 없어 "
-            f"모델이 아래쪽을 배울 기회가 없었습니다.",
+            f"정도임 · 07-04 이후 두 달 반 동안 이 구간의 자료가 없어 "
+            f"모델이 아래쪽을 배울 기회가 없었음",
             dict(size=11.5, color=INK), dict(space_after=0, line=1.3))])
 page_num(s, 9)
 
@@ -679,18 +679,18 @@ title_bar(s, "10  CONCLUSION", "정리", dark=True)
 
 items = [
     ("여섯 중 다섯이 오른쪽 발열부 68~84도",
-     "변하는 것은 가운데 등줄기입니다. 오른쪽이 식는 경우는 전부 정지(8.1%)뿐입니다."),
-    ("식은 자료는 있지만 종류가 다릅니다",
-     "05-18~21 나흘은 화면 전체가 21도입니다. 오늘과 무늬 상관이 0 입니다."),
-    ("오늘은 열 갈래 모두에서 밖입니다",
-     "무늬로 가장 닮은 것도 등줄기가 90도대인데 오늘은 50도대입니다. "
-     "가장 가까운 실제 프레임은 자료 마지막 이틀(07-03·04)이고 거리 51.8 입니다."),
-    ("열로 늘려도 새 무늬는 하나뿐입니다",
+     "변하는 것은 가운데 등줄기임 · 오른쪽이 식는 경우는 전부 정지(8.1%)뿐임"),
+    ("식은 자료는 있지만 종류가 다름",
+     "05-18~21 나흘은 화면 전체가 21도임 · 오늘과 무늬 상관이 0 임"),
+    ("오늘은 열 갈래 모두에서 밖임",
+     "무늬로 가장 닮은 것도 등줄기가 90도대인데 오늘은 50도대임 · "
+     "가장 가까운 실제 프레임은 자료 마지막 이틀(07-03·04)이고 거리 51.8 임"),
+    ("열로 늘려도 새 무늬는 하나뿐임",
      "오른쪽이 세로로 길어지는 오후 상태(3.8%). 나머지 아홉은 온도 구간만 "
-     "쪼갠 것이고, 아홉이 오른쪽 발열부 66~84도입니다."),
-    ("게다가 지금 모델은 step_0 로 배우지 않았습니다",
-     "재학습은 히스토리 DB(07-02~09-24)에서만 재생 버퍼를 만듭니다. "
-     "step_0 는 07-04 에 끝납니다."),
+     "쪼갠 것이고, 아홉이 오른쪽 발열부 66~84도임"),
+    ("게다가 지금 모델은 step_0 로 배우지 않았음",
+     "재학습은 히스토리 DB(07-02~09-24)에서만 재생 버퍼를 만듦 · "
+     "step_0 는 07-04 에 끝남"),
 ]
 yy = 1.95
 for i, (head, body) in enumerate(items):
@@ -705,8 +705,8 @@ for i, (head, body) in enumerate(items):
 card(s, M, 6.45, W - 2 * M, 0.62, fill=NAVY_SOFT)
 tf = textbox(s, M + 0.3, 6.6, W - 2 * M - 0.6, 0.34)
 write(tf, [("점수 0.05 는 모델이 고장난 것이 아니라 처음 보는 모양이라고 "
-            "말하는 중입니다. 설비를 꺼 둔 채로 운용한다면 그 상태 자료가 "
-            "쌓인 뒤에 재학습해야 합니다.",
+            "말하는 중임 · 설비를 꺼 둔 채로 운용한다면 그 상태 자료가 "
+            "쌓인 뒤에 재학습해야 함",
             dict(size=12, bold=True, color=AMBER), dict(space_after=0))])
 page_num(s, 10, dark=True)
 

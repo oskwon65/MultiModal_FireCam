@@ -62,11 +62,11 @@ def check(user_path):
             cur = f.read().strip()
 
     if not cur:
-        return NO_GEN, "승격된 세대가 없습니다. 대조를 건너뜁니다.", []
+        return NO_GEN, "승격된 세대가 없음 · 대조를 건너뜀", []
 
     gen = os.path.join(user_path, GEN_DIR_NAME, cur)
     if not os.path.isdir(gen):
-        return NO_GEN, f"세대 폴더 {cur} 가 없어 대조를 건너뜁니다.", []
+        return NO_GEN, f"세대 폴더 {cur} 가 없어 대조를 건너뜀", []
 
     rows, bad = [], []
     for name in ARTIFACTS:
@@ -87,10 +87,10 @@ def check(user_path):
             bad.append(name)
 
     if not bad:
-        return OK, f"운용 산출물이 세대 {cur} 와 일치합니다.", rows
+        return OK, f"운용 산출물이 세대 {cur} 와 일치함", rows
 
     return (MISMATCH,
-            f"운용 산출물이 세대 {cur} 와 다릅니다: {', '.join(bad)}",
+            f"운용 산출물이 세대 {cur} 와 다름: {', '.join(bad)}",
             rows)
 
 
@@ -107,7 +107,7 @@ def report(user_path, prefix="[산출물]"):
         return False
 
     print("=" * 62)
-    print(f"{prefix} 모델과 스케일러의 짝이 맞지 않습니다")
+    print(f"{prefix} 모델과 스케일러의 짝이 맞지 않음")
     print("=" * 62)
     print(f"  {msg}")
     print()
@@ -116,11 +116,11 @@ def report(user_path, prefix="[산출물]"):
         mark = "" if a == b else "   <= 다름"
         print(f"  {name:<24}{a:>14}{b:>16}{mark}")
     print()
-    print("  스케일러는 입력을 어떤 크기로 바꿔 모델에 넣을지 정한 표입니다.")
-    print("  짝이 어긋나면 멀쩡한 모델도 엉뚱한 점수를 냅니다. 정상 화면을")
-    print("  이상이라고 부르므로, 그대로 두면 진짜 이상을 놓칩니다.")
+    print("  스케일러는 입력을 어떤 크기로 바꿔 모델에 넣을지 정한 표임")
+    print("  짝이 어긋나면 멀쩡한 모델도 엉뚱한 점수를 냄 · 정상 화면을")
+    print("  이상이라고 부르므로, 그대로 두면 진짜 이상을 놓침")
     print()
-    print("  세대 폴더의 것으로 되돌리십시오.")
+    print("  세대 폴더의 것으로 되돌릴 것")
     print("    python retrain/nightly_retrain.py <현장> --rollback <세대>")
     print("=" * 62)
     return True

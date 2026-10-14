@@ -212,7 +212,7 @@ def write(path, baseline, model_ready, user_path,
         return "" if v is None else f"{float(v):.0f}"
 
     lines = [
-        "; 이 파일은 predict_machine 이 자동으로 만듭니다. 직접 고치지 마십시오.",
+        "; 이 파일은 predict_machine 이 자동으로 만듦 · 직접 고치지 말 것",
         "[STATUS]",
         f"UPDATED_AT = {datetime.now():%Y-%m-%d %H:%M:%S}",
         f"BASE_DATE = {_esc(baseline.base_date)}",
@@ -327,7 +327,7 @@ def write(path, baseline, model_ready, user_path,
         os.replace(tmp, path)
         return True
     except Exception as e:
-        print(f"[WARN] 단계 현황을 쓰지 못했습니다: {e}")
+        print(f"[WARN] 단계 현황을 쓰지 못했음: {e}")
         return False
 
 
@@ -342,10 +342,10 @@ def write_error(path, message):
     import datetime
     try:
         with open(path, "w", encoding="utf-8") as f:
-            f.write("; 이 파일은 predict_machine 이 자동으로 만듭니다. "
-                    "직접 고치지 마십시오.\n")
+            f.write("; 이 파일은 predict_machine 이 자동으로 만듦 · "
+                    "직접 고치지 말 것\n")
             f.write("[STATUS]\n")
             f.write(f"UPDATED_AT = {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n")
             f.write(f"FATAL = {message}\n")
     except OSError as e:
-        print(f"[stage_status] 오류를 적지 못했습니다: {e}")
+        print(f"[stage_status] 오류를 적지 못했음: {e}")

@@ -276,10 +276,10 @@ BOOL CDlg_Retrain::OnInitDialog()
     // [재학습 적용] 이 왜 꺼져 있는지 화면에 적어 둔다. 눌리지 않는 버튼을 두고
     // 설명이 없으면 고장으로 오해한다.
     CStringA head;
-    head.Format("[%s]  재학습은 운용 모델을 바꿉니다. 먼저 [예행연습] 으로 결과를 확인하십시오.\r\n"
+    head.Format("[%s]  재학습은 운용 모델을 바꿈 · 먼저 [예행연습] 으로 결과를 확인할 것\r\n"
                 "[재학습 적용] 은 예행연습이 [판정] 승격 을 낸 경우에만 "
-                "켜집니다.\r\n"
-                "보관 세대로 되돌리거나 지우는 것은 [설정] 창의 [학습모델관리] 에서 합니다.",
+                "켜짐\r\n"
+                "보관 세대로 되돌리거나 지우는 것은 [설정] 창의 [학습모델관리] 에서 함",
                 gUserID.c_str());
     m_lblHead.SetWindowTextA(head);
 
@@ -522,7 +522,7 @@ void CDlg_Retrain::ScanGenerations()
     const std::vector<std::string> gens = ListGenerations();
     if (gens.empty())
     {
-        m_backWhy = "보관된 세대가 없습니다. 재학습을 한 번도 하지 않았습니다.";
+        m_backWhy = "보관된 세대가 없음 · 재학습을 한 번도 하지 않았음";
         return;
     }
 
@@ -539,13 +539,13 @@ void CDlg_Retrain::ScanGenerations()
     if (served.empty())
     {
         m_backWhy = "승격 기록(generation_history.txt)이 없어 어느 세대가 "
-                    "실제로 운용되었는지 알 수 없습니다.";
+                    "실제로 운용되었는지 알 수 없음";
         return;
     }
     if (served.size() < 2)
     {
-        m_backWhy.Format("운용에 올라간 세대가 %s 하나뿐입니다. "
-                         "되돌릴 곳이 없습니다.", served.back().c_str());
+        m_backWhy.Format("운용에 올라간 세대가 %s 하나뿐임 · "
+                         "되돌릴 곳이 없음", served.back().c_str());
         return;
     }
 
@@ -559,7 +559,7 @@ void CDlg_Retrain::ScanGenerations()
     if (!onDisk)
     {
         m_backWhy.Format("직전에 운용한 세대 %s 의 폴더가 남아 있지 "
-                         "않습니다.", prev.c_str());
+                         "않음", prev.c_str());
         return;
     }
 
@@ -936,7 +936,7 @@ UINT __cdecl CDlg_Retrain::ThreadProc(LPVOID param)
 
     if (!CreatePipe(&hRead, &hWrite, &sa, 0))
     {
-        CStringA* m = new CStringA("[ERROR] 파이프를 만들지 못했습니다.\r\n");
+        CStringA* m = new CStringA("[ERROR] 파이프를 만들지 못했음\r\n");
         dlg->PostMessage(WM_LOG_LINE, 0, (LPARAM)m);
         dlg->PostMessage(WM_RUN_DONE, exitCode, 0);
         delete ctx;
@@ -958,7 +958,7 @@ UINT __cdecl CDlg_Retrain::ThreadProc(LPVOID param)
                         CREATE_NO_WINDOW, nullptr, GetMmCamStartPath(), &si, &pi))
     {
         CStringA* m = new CStringA;
-        m->Format("[ERROR] 실행하지 못했습니다 (err=%lu)\r\n", GetLastError());
+        m->Format("[ERROR] 실행하지 못했음 (err=%lu)\r\n", GetLastError());
         dlg->PostMessage(WM_LOG_LINE, 0, (LPARAM)m);
         CloseHandle(hWrite); CloseHandle(hRead);
         dlg->PostMessage(WM_RUN_DONE, exitCode, 0);
@@ -1017,7 +1017,7 @@ void CDlg_Retrain::Run(RunKind kind)
 
     if (gUserID.empty())
     {
-        AfxMessageBox(_T("현장(user)이 선택되지 않았습니다."));
+        AfxMessageBox(_T("현장(user)이 선택되지 않았음"));
         return;
     }
 
@@ -1055,7 +1055,7 @@ void CDlg_Retrain::Run(RunKind kind)
     if (back)
     {
         CStringA msg;
-        msg.Format("%s 세대로 되돌립니다.\r\n\r\n", (LPCSTR)m_backGen);
+        msg.Format("%s 세대로 되돌림\r\n\r\n", (LPCSTR)m_backGen);
         AppendLog(msg);
     }
 
@@ -1064,8 +1064,8 @@ void CDlg_Retrain::Run(RunKind kind)
 
     m_busyWhat = back   ? "되돌리는 중" :
                  dryRun ? "예행연습 중" : "재학습 중";
-    m_notice = dryRun ? "예행연습을 시작합니다. 몇 분 걸립니다."
-                      : "재학습을 시작합니다. 몇 분 걸립니다.";
+    m_notice = dryRun ? "예행연습을 시작함 · 몇 분 걸림"
+                      : "재학습을 시작함 · 몇 분 걸림";
 
     // 되돌리기는 파일 몇 개를 옮기고 끝난다. 판을 띄우면 차기도 전에
     // 사라져 오히려 무엇이 일어났는지 알기 어렵다.
@@ -1075,7 +1075,7 @@ void CDlg_Retrain::Run(RunKind kind)
     m_lblState.SetWindowTextA(
         back    ? "되돌리는 중..." :
         dryRun  ? "예행연습 중..." :
-                  "재학습 중... 끝날 때까지 닫지 마십시오.");
+                  "재학습 중... 끝날 때까지 닫지 말 것");
 
     RunCtx* ctx = new RunCtx{ this, std::string((LPCSTR)cmd), (int)kind };
     CWinThread* th = AfxBeginThread(ThreadProc, ctx);
@@ -1086,10 +1086,10 @@ void CDlg_Retrain::OnBnClickedDryRun() { Run(RUN_DRY); }
 
 void CDlg_Retrain::OnBnClickedApply()
 {
-    if (AfxMessageBox(_T("운용 모델을 새 모델로 바꿉니다.\n\n")
+    if (AfxMessageBox(_T("운용 모델을 새 모델로 바꿈\n\n")
                       _T("감도 회귀 시험을 통과한 경우에만 교체되며,\n")
-                      _T("이전 세대는 보관되어 되돌릴 수 있습니다.\n\n")
-                      _T("진행할까요?"),
+                      _T("이전 세대는 보관되어 되돌릴 수 있음\n\n")
+                      _T("진행 여부 확인"),
                       MB_YESNO | MB_ICONQUESTION) != IDYES)
         return;
     Run(RUN_APPLY);
@@ -1238,7 +1238,7 @@ protected:
         const int i = m_list.GetCurSel();
         if (i == LB_ERR || i < 0 || (size_t)i >= m_items.size())
         {
-            AfxMessageBox("되돌릴 세대를 목록에서 한 줄 고르십시오.");
+            AfxMessageBox("되돌릴 세대를 목록에서 한 줄 고를 것");
             return;
         }
         m_rollTo = m_items[(size_t)i].stamp.c_str();
@@ -1253,7 +1253,7 @@ protected:
 
         if (pick.empty())
         {
-            AfxMessageBox("지울 세대에 표시하십시오.");
+            AfxMessageBox("지울 세대에 표시할 것");
             return;
         }
 
@@ -1277,19 +1277,19 @@ protected:
 
         CStringA warn;
         if (hasBack)
-            warn += "직전 세대가 들어 있습니다. 지우면 [되돌리기] 의 기본 대상이 "
-                    "사라집니다.\r\n";
+            warn += "직전 세대가 들어 있음 · 지우면 [되돌리기] 의 기본 대상이 "
+                    "사라짐\r\n";
         if (nServed > 0)
         {
             CStringA w;
-            w.Format("운용된 적 있는 세대 %d개가 들어 있습니다. 지우면 그 세대로 "
-                     "되돌릴 수 없습니다.\r\n", nServed);
+            w.Format("운용된 적 있는 세대 %d개가 들어 있음 · 지우면 그 세대로 "
+                     "되돌릴 수 없음\r\n", nServed);
             warn += w;
         }
         if (!warn.IsEmpty()) warn += "\r\n";
 
         CStringA q;
-        q.Format("세대 %d개를 휴지통으로 옮깁니다.\r\n\r\n%s\r\n%s진행할까요?",
+        q.Format("세대 %d개를 휴지통으로 옮김\r\n\r\n%s\r\n%s진행 여부 확인",
                  (int)pick.size(), (LPCSTR)names, (LPCSTR)warn);
         if (AfxMessageBox(q, MB_YESNO | MB_ICONWARNING) != IDYES) return;
 
@@ -1336,8 +1336,8 @@ protected:
         if (!failed.IsEmpty())
         {
             CStringA m;
-            m.Format("다음 세대는 지우지 못했습니다. 다른 프로그램이 그 폴더의 "
-                     "파일을 쓰고 있을 수 있습니다.\r\n\r\n%s", (LPCSTR)failed);
+            m.Format("다음 세대는 지우지 못했음 · 다른 프로그램이 그 폴더의 "
+                     "파일을 쓰고 있을 수 있음\r\n\r\n%s", (LPCSTR)failed);
             AfxMessageBox(m, MB_ICONERROR);
         }
     }
@@ -1435,9 +1435,9 @@ void CDlg_Retrain::RollbackTo(const CStringA& picked)
 
     if (!ok)
     {
-        CStringA m = "되돌릴 수 없습니다.\r\n\r\n";
+        CStringA m = "되돌릴 수 없음\r\n\r\n";
         m += m_backWhy.IsEmpty()
-             ? "고른 세대를 더는 쓸 수 없습니다. 목록에서 다시 고르십시오."
+             ? "고른 세대를 더는 쓸 수 없음 · 목록에서 다시 고를 것"
              : m_backWhy;
         AfxMessageBox(m);
         SetButtons();
@@ -1457,19 +1457,19 @@ void CDlg_Retrain::RollbackTo(const CStringA& picked)
 
     CStringA warn;
     if (!pickedServed)
-        warn = "이 세대는 운용에 올라간 적이 없습니다. 감도 시험을 거치지 "
-               "않았거나 손으로 넣은 것입니다. 올린 뒤 점수를 확인하십시오."
+        warn = "이 세대는 운용에 올라간 적이 없음 · 감도 시험을 거치지 "
+               "않았거나 손으로 넣은 것임 · 올린 뒤 점수를 확인할 것"
                "\r\n\r\n";
 
     CStringA q;
-    q.Format("고른 세대로 되돌립니다.\r\n\r\n"
+    q.Format("고른 세대로 되돌림\r\n\r\n"
              "    지금  %s\r\n"
              "    이후  %s\r\n\r\n"
-             "경험 임계값(online_baseline.npz)은 그대로 둡니다. 기준선이 "
+             "경험 임계값(online_baseline.npz)은 그대로 둠 · 기준선이 "
              "세는 것은 모델의 오차가 아니라 칸의 온도 그 자체라, 모델을 "
-             "되돌려도 그대로 맞습니다.\r\n\r\n"
+             "되돌려도 그대로 맞음\r\n\r\n"
              "%s"
-             "되돌린 뒤 감시를 다시 시작해야 반영됩니다. 진행할까요?",
+             "되돌린 뒤 감시를 다시 시작해야 반영됨 · 진행 여부 확인",
              (LPCSTR)m_curGen, (LPCSTR)m_backGen, (LPCSTR)warn);
 
     if (AfxMessageBox(q, MB_YESNO | MB_ICONWARNING) != IDYES)
@@ -1550,11 +1550,11 @@ LRESULT CDlg_Retrain::OnRunDone(WPARAM wp, LPARAM lp)
     if (wasDry)
     {
         if (code == 0 && m_bDryPassed)
-            st = "예행연습 완료 · 승격 판정입니다. [재학습 적용] 을 누르면 실제로 교체합니다.";
+            st = "예행연습 완료 · 승격 판정임 · [재학습 적용] 을 누르면 실제로 교체함";
         else if (code == 2)
-            st = "예행연습 보류 · 조건이 아직 모자랍니다. 위 사유를 확인하십시오.";
+            st = "예행연습 보류 · 조건이 아직 모자람 · 위 사유를 확인할 것";
         else
-            st = "예행연습 완료 · 승격 판정이 아니어서 [재학습 적용] 을 켤 수 없습니다.";
+            st = "예행연습 완료 · 승격 판정이 아니어서 [재학습 적용] 을 켤 수 없음";
     }
     else if (wasBack)
     {
@@ -1563,10 +1563,10 @@ LRESULT CDlg_Retrain::OnRunDone(WPARAM wp, LPARAM lp)
         // 이것이 없으면 창에 아무 변화가 없다. 아래 목록은 운용 중인 것을
         // 빼고 보여 주므로 거기서도 알 수 없다.
         if (code == 0)
-            st.Format("되돌렸습니다 · 운용 중 %s · 기준선도 치웠습니다. "
-                      "감시가 10초 안에 갈아 끼웁니다.", (LPCSTR)m_curGen);
+            st.Format("되돌렸음 · 운용 중 %s · 기준선도 치웠음 · "
+                      "감시가 10초 안에 갈아 끼움", (LPCSTR)m_curGen);
         else
-            st = "되돌리지 못했습니다. 위 내용을 확인하십시오.";
+            st = "되돌리지 못했음 · 위 내용을 확인할 것";
         // 모델이 바뀌었으니 앞서 받은 승격 판정은 그 모델 것이 아니다.
         m_bDryPassed = false;
         m_bDryDone = false;
@@ -1574,10 +1574,10 @@ LRESULT CDlg_Retrain::OnRunDone(WPARAM wp, LPARAM lp)
     else
     {
         if (code == 0)
-            st.Format("재학습 완료 · 운용 중 %s 로 교체했습니다. "
-                      "감시가 10초 안에 갈아 끼웁니다.", (LPCSTR)m_curGen);
+            st.Format("재학습 완료 · 운용 중 %s 로 교체했음 · "
+                      "감시가 10초 안에 갈아 끼움", (LPCSTR)m_curGen);
         else
-            st = "재학습이 정상적으로 끝나지 않았습니다. 위 내용을 확인하십시오.";
+            st = "재학습이 정상적으로 끝나지 않았음 · 위 내용을 확인할 것";
         m_bDryPassed = false;   // 한 번 적용한 뒤에는 다시 예행연습부터
         m_bDryDone = false;
     }
@@ -1604,7 +1604,7 @@ void CDlg_Retrain::OnCancel()
 {
     if (m_bRunning)
     {
-        AfxMessageBox(_T("실행 중입니다. 끝난 뒤에 닫으십시오."));
+        AfxMessageBox(_T("실행 중임 · 끝난 뒤에 닫을 것"));
         return;
     }
     CDialogEx::OnCancel();

@@ -662,11 +662,11 @@ def delete_files_of_Base_Img(config):
     print(f"[INFO] base_img directory: {base_dir}")
 
     if not base_dir.exists():
-        print(f'[WARN] "{base_dir}" 폴더가 존재하지 않습니다. 삭제할 이미지가 없습니다.')
+        print(f'[WARN] "{base_dir}" 폴더가 존재하지 않음 · 삭제할 이미지가 없음')
         return
 
     if not base_dir.is_dir():
-        print(f'[WARN] "{base_dir}"는 폴더가 아닙니다.')
+        print(f'[WARN] "{base_dir}"는 폴더가 아님')
         return
 
     patterns = [
@@ -684,7 +684,7 @@ def delete_files_of_Base_Img(config):
             except Exception as e:
                 print(f"[ERROR] 파일 삭제 실패: {img_path} ({e})")
 
-    print(f"[OK] base_img 폴더에서 이미지 {removed}개를 삭제했습니다.")
+    print(f"[OK] base_img 폴더에서 이미지 {removed}개를 삭제했음")
 
 
 # ----------------------------
@@ -731,7 +731,7 @@ def Set_Env_Config(user_ID, verbose=True):
     secret_path = os.path.join(user_path, SECRET_FILE_NAME)
     if not os.path.isfile(secret_path):
         print(f"[ERROR ] SECRET_FILE_NAME not found: {secret_path}")
-        print(f"[ERROR ] users/db_secrets.ini.sample 을 복사해 비밀번호를 채우세요.")
+        print(f"[ERROR ] users/db_secrets.ini.sample 을 복사해 비밀번호를 채울 것")
         sys.exit(1)
 
     config.read(secret_path, encoding="utf-8")
@@ -757,6 +757,18 @@ def Set_Env_Config(user_ID, verbose=True):
         Local_User_Path = Local_Root_Path + "users/" + user_ID + "/"
 
         local_config["SVR_USER_PATH"] = Server_User_Path
+
+        # 운전 상태 동기화 (predict_machine/op_sync.py).
+        #   VIEWER_URL   관제서버 웹 화면 주소. 비면 ROOT_URL 의 kict_samsung 을
+        #                kict_viewer 로 바꿔 쓴다 (http://sangchoo.com/kict_viewer).
+        #   OP_SYNC_KEY  관제서버 설정 화면 [운전 상태] 탭에서 만든 현장 키.
+        #                비면 동기화하지 않는다.
+        _viewer = (config["NETWORK"].get("VIEWER_URL") or "").strip().rstrip("/")
+        if not _viewer:
+            _viewer = local_config["ROOT_URL"].replace("/kict_samsung", "/kict_viewer")
+        local_config["VIEWER_URL"] = _viewer
+        local_config["OP_SYNC_KEY"] = (config["NETWORK"].get("OP_SYNC_KEY") or "").strip()
+
         local_config["HOTLIST_URL"] = Server_User_Path + SVR_IR_IMG_CSV
         local_config["IMG_URL"]     = Server_User_Path + SVR_RGB_IMG_JPG
 
@@ -799,7 +811,7 @@ def Set_Env_Config(user_ID, verbose=True):
             try:
                 local_config[_k] = float(_v) if _v else None
             except ValueError:
-                print(f"[WARN] {_k} 값을 숫자로 읽지 못했습니다: {_v!r}")
+                print(f"[WARN] {_k} 값을 숫자로 읽지 못했음: {_v!r}")
                 local_config[_k] = None
 
         # 연속 학습 단계 전환 조건. 모니터링 프로그램의 [설정] 창에서 바꾼다.
@@ -827,7 +839,7 @@ def Set_Env_Config(user_ID, verbose=True):
             try:
                 local_config[_k] = int(_v) if _v else None
             except ValueError:
-                print(f"[WARN] {_k} 값을 정수로 읽지 못했습니다: {_v!r}")
+                print(f"[WARN] {_k} 값을 정수로 읽지 못했음: {_v!r}")
                 local_config[_k] = None
 
         # 카메라 자리가 바뀐 시각 ("YYYY-MM-DD HH:MM:SS"). 비어 있으면 없음.
@@ -941,5 +953,5 @@ def position_since(config):
             return datetime.strptime(v, fmt)
         except ValueError:
             pass
-    print(f"[WARN] POSITION_SINCE 를 읽지 못했습니다: {v!r}")
+    print(f"[WARN] POSITION_SINCE 를 읽지 못했음: {v!r}")
     return None

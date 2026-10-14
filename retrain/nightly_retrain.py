@@ -319,40 +319,40 @@ def load_dry_run(user_path, user_id):
     d = dryrun_dir(user_path)
     mp = os.path.join(d, "meta.json")
     if not os.path.exists(mp):
-        return None, "예행연습 결과가 없습니다"
+        return None, "예행연습 결과가 없음"
 
     try:
         with open(mp, encoding="utf-8") as f:
             meta = json.load(f)
     except (OSError, ValueError) as e:
-        return None, f"예행연습 기록을 읽지 못했습니다 ({e})"
+        return None, f"예행연습 기록을 읽지 못했음 ({e})"
 
     if meta.get("user") != user_id:
-        return None, "다른 현장의 예행연습 결과입니다"
+        return None, "다른 현장의 예행연습 결과임"
 
     if not meta.get("passed"):
-        return None, "그 예행연습은 승격 판정이 아니었습니다"
+        return None, "그 예행연습은 승격 판정이 아니었음"
 
     for name in ARTIFACTS:
         if not os.path.exists(os.path.join(d, name)):
-            return None, f"예행연습 결과에 {name} 이 없습니다"
+            return None, f"예행연습 결과에 {name} 이 없음"
 
     cur = ""
     cp = os.path.join(user_path, "current_generation.txt")
     if os.path.exists(cp):
         cur = open(cp, encoding="utf-8").read().strip()
     if meta.get("incumbent", "") != cur:
-        return None, (f"그 사이 운용 모델이 바뀌었습니다 "
+        return None, (f"그 사이 운용 모델이 바뀌었음 "
                       f"({meta.get('incumbent') or '없음'} -> {cur or '없음'})")
 
     try:
         made = datetime.strptime(meta["created"], "%Y-%m-%d %H:%M:%S")
     except (KeyError, ValueError):
-        return None, "예행연습 시각을 읽지 못했습니다"
+        return None, "예행연습 시각을 읽지 못했음"
 
     age_h = (datetime.now() - made).total_seconds() / 3600.0
     if age_h > DRYRUN_MAX_AGE_H:
-        return None, (f"예행연습이 {age_h:.1f}시간 전이라 너무 오래됐습니다 "
+        return None, (f"예행연습이 {age_h:.1f}시간 전이라 너무 오래됐음 "
                       f"(기준 {DRYRUN_MAX_AGE_H}시간)")
 
     meta["age_h"] = age_h
@@ -441,7 +441,7 @@ def reset_baseline(user_path, why=""):
     """
     src = os.path.join(user_path, BASELINE_NAME)
     if not os.path.exists(src):
-        print("[기준선] 쌓인 것이 없어 치울 것도 없습니다.")
+        print("[기준선] 쌓인 것이 없어 치울 것도 없음")
         return None
 
     dst_dir = os.path.join(gen_root(user_path), RETIRED_DIR_NAME)
@@ -465,10 +465,10 @@ def reset_baseline(user_path, why=""):
     write_reset_note(user_path, why if why else "부터 쌓는 중")
 
     tail = f" ({why})" if why else ""
-    print(f"[기준선] 치웠습니다{tail} - "
+    print(f"[기준선] 치웠음{tail} - "
           f"{GEN_DIR_NAME}/{RETIRED_DIR_NAME}/{os.path.basename(dst)}")
-    print("[기준선] 다시 쌓는 동안에는 칸별 임계치가 나오지 않습니다. "
-          "절대 온도 임계치는 그대로 작동합니다.")
+    print("[기준선] 다시 쌓는 동안에는 칸별 임계치가 나오지 않음 · "
+          "절대 온도 임계치는 그대로 작동함")
     return dst
 
 
@@ -511,7 +511,7 @@ def archive_incumbent(user_path):
         tries += 1
         if tries > 60:
             print("[경고] 보관할 이름을 찾지 못해 물러나는 운용 모델을 뜨지 "
-                  "못했습니다.")
+                  "못했음")
             return None
         stamp = (base + timedelta(seconds=tries)).strftime("%Y%m%d_%H%M%S")
         dst = os.path.join(gen_root(user_path), stamp)
@@ -522,11 +522,11 @@ def archive_incumbent(user_path):
 
     with open(os.path.join(dst, "report.txt"), "w", encoding="utf-8") as f:
         f.write(f"보관 {datetime.now():%Y-%m-%d %H:%M:%S}\n\n"
-                f"승격 전에 물러나는 운용 모델을 그대로 떠 둔 것입니다. 학습\n"
-                f"후보가 아니므로 감도 회귀 시험 결과가 없습니다.\n\n"
+                f"승격 전에 물러나는 운용 모델을 그대로 떠 둔 것임 · 학습\n"
+                f"후보가 아니므로 감도 회귀 시험 결과가 없음\n\n"
                 f"모델 파일 시각 {base:%Y-%m-%d %H:%M:%S}\n")
 
-    print(f"[보관] 물러나는 운용 모델을 {GEN_DIR_NAME}/{stamp} 로 떠 두었습니다.")
+    print(f"[보관] 물러나는 운용 모델을 {GEN_DIR_NAME}/{stamp} 로 떠 두었음")
     return stamp
 
 
@@ -564,12 +564,12 @@ def activate(user_path, stamp, how="승격"):
     # 있어 아무도 눈치채지 못한다.
     state, msg, rows = artifact_guard.check(user_path)
     if state == artifact_guard.MISMATCH:
-        print(f"[ERROR] 올린 뒤 대조에 실패했습니다: {msg}")
+        print(f"[ERROR] 올린 뒤 대조에 실패했음: {msg}")
         for name, a, b in rows:
             if a != b:
                 print(f"        {name}  운용 {a}  세대 {b}")
         print("        다시 시도하거나, 다른 프로그램이 이 파일을 쥐고 "
-              "있지 않은지 확인하십시오.")
+              "있지 않은지 확인할 것")
         raise RuntimeError(f"activate 실패: {msg}")
 
     append_history(user_path, stamp, how)
@@ -610,7 +610,7 @@ def train(X, input_dim, latent_dim, device, verbose=True,
                        if not dynamic_mix else f"기여 {old_weight:.2f}")
                 print(f"[학습] 웜스타트 ({why}, 학습률 {lr:.5f})")
         except Exception as e:
-            print(f"[경고] 웜스타트 실패, 새로 초기화합니다: {type(e).__name__} {e}")
+            print(f"[경고] 웜스타트 실패, 새로 초기화함: {type(e).__name__} {e}")
     elif verbose:
         print(f"[학습] 새로 초기화 (기여 {old_weight:.2f})")
 
@@ -669,9 +669,9 @@ def load_live_model(user_path, n_cells, latent_dim, device):
         return None, None               # 첫 학습
 
     if not os.path.exists(mp):
-        raise RuntimeError("scaler 는 있는데 autoencoder_final.pth 가 없습니다")
+        raise RuntimeError("scaler 는 있는데 autoencoder_final.pth 가 없음")
     if not os.path.exists(sp):
-        raise RuntimeError("모델은 있는데 scaler.pkl 이 없습니다")
+        raise RuntimeError("모델은 있는데 scaler.pkl 이 없음")
 
     try:
         m = AutoEncoder(n_cells, latent_dim, n_cells).to(device)
@@ -682,7 +682,7 @@ def load_live_model(user_path, n_cells, latent_dim, device):
 
     got = getattr(sc, "n_features_in_", None)
     if got != n_cells:
-        raise RuntimeError(f"scaler 의 차원 {got} 이 격자 {n_cells} 와 다릅니다")
+        raise RuntimeError(f"scaler 의 차원 {got} 이 격자 {n_cells} 와 다름")
 
     return m, sc
 
@@ -736,7 +736,7 @@ def main():
         if os.path.exists(cp):
             cur = open(cp, encoding="utf-8").read().strip()
         if not gens:
-            print("보관된 세대가 없습니다.")
+            print("보관된 세대가 없음")
             return 0
         served = set(served_generations(user_path))
         for g in gens:
@@ -745,8 +745,8 @@ def main():
             print(f"  {g}{tag}")
         if not served:
             print()
-            print(f"  승격 기록({HISTORY_NAME})이 없습니다. 어느 것이 실제로 "
-                  f"운용되었는지 알 수 없습니다.")
+            print(f"  승격 기록({HISTORY_NAME})이 없음 · 어느 것이 실제로 "
+                  f"운용되었는지 알 수 없음")
         return 0
 
     # ---------------- 기준선 치우기 ----------------
@@ -761,7 +761,7 @@ def main():
     if args.rollback:
         gens = list_generations(user_path)
         if not gens:
-            print("[ERROR] 되돌릴 세대가 없습니다.")
+            print("[ERROR] 되돌릴 세대가 없음")
             return 1
 
         if args.rollback != "__prev__":
@@ -776,9 +776,9 @@ def main():
             served = served_generations(user_path)
             if not served:
                 print(f"[ERROR] 승격 기록({HISTORY_NAME})이 없어 직전 세대를 "
-                      f"알 수 없습니다.")
+                      f"알 수 없음")
                 print(f"        --list 로 세대를 확인한 뒤 "
-                      f"--rollback <세대> 로 지정하십시오.")
+                      f"--rollback <세대> 로 지정할 것")
                 return 1
 
             cur = ""
@@ -787,21 +787,21 @@ def main():
                 cur = open(cp, encoding="utf-8").read().strip()
             if cur and served[-1] != cur:
                 print(f"[경고] 기록의 마지막({served[-1]})과 운용 중인 "
-                      f"세대({cur})가 다릅니다. 기록을 기준으로 삼습니다.")
+                      f"세대({cur})가 다름 · 기록을 기준으로 삼음")
 
             if len(served) < 2:
                 print(f"[ERROR] 운용에 올라간 세대가 {served[-1]} 하나뿐이라 "
-                      f"되돌릴 곳이 없습니다.")
+                      f"되돌릴 곳이 없음")
                 print(f"        나머지 세대는 감도 시험에서 막혀 운용된 적이 "
-                      f"없습니다. --rollback <세대> 로 지정하면 그 후보를 "
-                      f"올릴 수는 있습니다.")
+                      f"없음 · --rollback <세대> 로 지정하면 그 후보를 "
+                      f"올릴 수는 있음")
                 return 1
 
             target = served[-2]
             print(f"[되돌리기] 운용 중 {served[-1]} -> 직전 {target}")
 
         if target not in gens:
-            print(f"[ERROR] 그런 세대가 없습니다: {target}")
+            print(f"[ERROR] 그런 세대가 없음: {target}")
             return 1
         activate(user_path, target, how="되돌림")
 
@@ -809,8 +809,8 @@ def main():
         # 산물이 아니라, 여기서 다룰 일이 아니다. 치워야 한다면 그것은
         # 모델이 아니라 카메라가 보는 것이 달라졌다는 뜻이고, 그때는
         # --reset-baseline 을 따로 돌린다.
-        print(f"[OK] {target} 세대로 되돌렸습니다. "
-              f"감시가 곧 알아채고 갈아 끼웁니다(10초 안).")
+        print(f"[OK] {target} 세대로 되돌렸음 · "
+              f"감시가 곧 알아채고 갈아 끼움(10초 안).")
         return 0
 
     # ---------------- 재학습 ----------------
@@ -840,11 +840,11 @@ def main():
     if not args.dry_run and not args.fresh:
         d, info = load_dry_run(user_path, args.user_id)
         if d:
-            print(f"[예행연습] {info['created']} 결과를 그대로 올립니다 "
+            print(f"[예행연습] {info['created']} 결과를 그대로 올림 "
                   f"({info['age_h']*60:.0f}분 전).")
-            print("           같은 자료로 다시 학습하면 다른 모델이 나옵니다. "
-                  "보신 그 모델을 올립니다.")
-            print("           새로 학습하려면 --fresh 를 붙이십시오.")
+            print("           같은 자료로 다시 학습하면 다른 모델이 나옴 · "
+                  "확인한 그 모델을 올림")
+            print("           새로 학습하려면 --fresh 를 붙일 것")
 
             files = {n: os.path.join(d, n) for n in ARTIFACTS
                      if os.path.exists(os.path.join(d, n))}
@@ -861,12 +861,12 @@ def main():
 
             activate(user_path, stamp)
             clear_dry_run(user_path)
-            print(f"[승격] {stamp} 을 운용 모델로 배치했습니다.")
-            print("       감시가 곧 알아채고 갈아 끼웁니다(10초 안). "
-                  "재시작하지 않아도 됩니다.")
+            print(f"[승격] {stamp} 을 운용 모델로 배치했음")
+            print("       감시가 곧 알아채고 갈아 끼움(10초 안). "
+                  "재시작하지 않아도 됨")
             return 0
 
-        print(f"[예행연습] 다시 쓸 결과가 없어 새로 학습합니다 - {info}")
+        print(f"[예행연습] 다시 쓸 결과가 없어 새로 학습함 - {info}")
 
     mask = load_mask(user_path, n_cells)
 
@@ -879,7 +879,7 @@ def main():
         live_model, live_scaler = load_live_model(user_path, n_cells,
                                                   latent_dim, device)
     except RuntimeError as e:
-        print(f"[중단] 운용 모델을 읽지 못했습니다 - {e}")
+        print(f"[중단] 운용 모델을 읽지 못했음 - {e}")
         print()
         print("       흔한 까닭")
         print("         · scaler.pkl 이 이 환경의 numpy 로 안 풀리고 "
@@ -888,7 +888,7 @@ def main():
               "잠재 차원을 바꿨다")
         print("         · 산출물이 복사 도중이거나 깨졌다")
         print()
-        print("       [되돌리기] 로 멀쩡한 세대를 올린 뒤 다시 하십시오.")
+        print("       [되돌리기] 로 멀쩡한 세대를 올린 뒤 다시 할 것")
         return 1
 
     history_db = Get_HistoryDB_Config(config)
@@ -907,7 +907,7 @@ def main():
             rescore = model_contribution.batch_scorer(
                 live_model, live_scaler, mask, device)
         else:
-            print("[기여도] 아직 운용 모델이 없어 DB 에 적힌 점수로 판단합니다.")
+            print("[기여도] 아직 운용 모델이 없어 DB 에 적힌 점수로 판단함")
 
         n_tab, min_fr, max_sm = model_contribution.limits(config)
         dec_score, dec_info = model_contribution.decision_score(
@@ -947,8 +947,8 @@ def main():
         temp_warn = config.get("ABS_TEMP_WARN")
         if temp_warn is None:
             print("[경고] ABS_TEMP_WARN 이 비어 있어 이상 프레임을 걸러낼")
-            print("       잣대가 하나도 없습니다. 들어온 것을 모두 학습합니다.")
-            print("       [설정] 창에서 절대 임계값을 지정하십시오.")
+            print("       잣대가 하나도 없음 · 들어온 것을 모두 학습함")
+            print("       [설정] 창에서 절대 임계값을 지정할 것")
         else:
             print(f"[재생버퍼] 정상 판정 기준 : 절대 임계값 < {temp_warn:.0f}도")
 
@@ -982,15 +982,15 @@ def main():
     min_hours = config.get("RETRAIN_MIN_HOURS") or MIN_HOURS_DEFAULT
 
     if len(X) < min_samples:
-        print(f"[보류] 표본이 {len(X):,}건뿐입니다. 최소 {min_samples:,}건이 필요합니다.")
-        print("       2단계 기준선이 채점을 시작한 뒤부터 정상 프레임이 쌓입니다.")
+        print(f"[보류] 표본이 {len(X):,}건뿐임 · 최소 {min_samples:,}건이 필요함")
+        print("       2단계 기준선이 채점을 시작한 뒤부터 정상 프레임이 쌓임")
         return 2
 
     if info.get("hours", 0) < min_hours:
-        print(f"[보류] 덮은 시간대가 {info.get('hours', 0)}개뿐입니다. "
-              f"최소 {min_hours}개가 필요합니다.")
+        print(f"[보류] 덮은 시간대가 {info.get('hours', 0)}개뿐임 · "
+              f"최소 {min_hours}개가 필요함")
         print("       표본 수는 충분해도 특정 시간대만 배우면 나머지 시간을")
-        print("       이상으로 판정합니다. 감시를 더 돌려 하루 주기를 덮으십시오.")
+        print("       이상으로 판정함 · 감시를 더 돌려 하루 주기를 덮을 것")
         return 2
 
     cut = int(len(X) * (1 - HOLDOUT_RATIO))
@@ -1036,10 +1036,10 @@ def main():
     guard_state, guard_msg, _rows = artifact_guard.check(user_path)
     if guard_state == artifact_guard.MISMATCH:
         print(f"[경고] {guard_msg}")
-        print("       현재 모델을 감도 비교 기준으로 쓰지 않습니다. "
-              "절대 기준만 적용합니다.")
-        print("       운용 모델을 먼저 바로잡으십시오 - "
-              "--rollback <세대> 로 세대 폴더의 것을 올립니다.")
+        print("       현재 모델을 감도 비교 기준으로 쓰지 않음 · "
+              "절대 기준만 적용함")
+        print("       운용 모델을 먼저 바로잡을 것 - "
+              "--rollback <세대> 로 세대 폴더의 것을 올림")
 
     incumbent = None
     if guard_state != artifact_guard.MISMATCH and live_model is not None:
@@ -1049,8 +1049,8 @@ def main():
         except Exception as e:
             # 비교가 빠지면 '세대마다 조금씩 둔해지는 것' 을 못 잡는다.
             # 조용히 넘기지 말고 경고로 남긴다.
-            print(f"[경고] 현재 모델을 시험하지 못했습니다: {type(e).__name__} {e}")
-            print(f"       감도 악화 비교 없이 절대 기준만 적용합니다.")
+            print(f"[경고] 현재 모델을 시험하지 못했음: {type(e).__name__} {e}")
+            print(f"       감도 악화 비교 없이 절대 기준만 적용함")
 
     passed, gate_rows = sensitivity_gate.check(cand, incumbent)
     report = sensitivity_gate.format_report(cand, incumbent, passed, gate_rows)
@@ -1112,7 +1112,7 @@ def main():
         # 승격이면 아무 말도 덧붙이지 않는다. 판정 줄이 결론이고, 그 다음에
         # 무엇을 할지는 [재학습 적용] 단추가 켜지는 것으로 이미 보인다.
         if not passed:
-            print("판정이 승격이 아니라 이 결과를 다시 쓰지 않습니다.")
+            print("판정이 승격이 아니라 이 결과를 다시 쓰지 않음")
         return 0
 
     stamp = save_generation(user_path, files, header + report)
@@ -1122,15 +1122,15 @@ def main():
     print(f"[보관] {GEN_DIR_NAME}/{stamp}")
 
     if not passed:
-        print("[보류] 감도 회귀 시험을 통과하지 못해 운용 모델을 유지합니다.")
-        print(f"       후보는 {GEN_DIR_NAME}/{stamp} 에 남아 있습니다 - "
-              f"왜 막혔는지 보고서로 확인할 수 있습니다.")
+        print("[보류] 감도 회귀 시험을 통과하지 못해 운용 모델을 유지함")
+        print(f"       후보는 {GEN_DIR_NAME}/{stamp} 에 남아 있음 - "
+              f"왜 막혔는지 보고서로 확인할 수 있음")
         return 3
 
     activate(user_path, stamp)
-    print(f"[승격] {stamp} 을 운용 모델로 배치했습니다.")
-    print("       감시가 곧 알아채고 갈아 끼웁니다(10초 안). "
-          "재시작하지 않아도 됩니다.")
+    print(f"[승격] {stamp} 을 운용 모델로 배치했음")
+    print("       감시가 곧 알아채고 갈아 끼움(10초 안). "
+          "재시작하지 않아도 됨")
     return 0
 
 

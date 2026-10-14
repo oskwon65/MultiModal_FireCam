@@ -25,7 +25,7 @@ cursor.execute("SELECT * FROM sensor_data ORDER BY id ASC")
 rows = cursor.fetchall()
 
 if len(rows) == 0:
-    print("⚠️ sensor_data 테이블에 데이터가 없습니다.")
+    print("⚠️ sensor_data 테이블에 데이터가 없음")
     conn.close()
     exit()
 
@@ -57,7 +57,7 @@ WHERE type='table' AND name='median_result';
 exists = cursor.fetchone()
 
 if not exists:
-    print("\n🧱 median_result 테이블이 존재하지 않아 새로 생성합니다.")
+    print("\n🧱 median_result 테이블이 존재하지 않아 새로 생성함")
     columns = ", ".join([f"d{i} REAL" for i in range(1, 17)])
     cursor.execute(f"""
     CREATE TABLE median_result (
@@ -100,7 +100,7 @@ if row:
     print(f"[{formatted}]")
     print(f"🕒 생성 시간: {created_at}")
 else:
-    print("⚠️ median_result 테이블이 비어 있습니다.")
+    print("⚠️ median_result 테이블이 비어 있음")
 
 # ==============================================
 # (7) 연결 종료

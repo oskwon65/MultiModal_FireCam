@@ -118,7 +118,7 @@ def main():
     since = position_since(config)
     if since is not None:
         tables = [t for t in tables if t[-8:] >= since.strftime("%Y%m%d")]
-        print(f"카메라 자리가 바뀐 {since:%Y-%m-%d %H:%M} 이후만 씁니다")
+        print(f"카메라 자리가 바뀐 {since:%Y-%m-%d %H:%M} 이후만 씀")
 
     if args.d_from:
         tables = [t for t in tables if t[-8:] >= args.d_from]
@@ -126,7 +126,7 @@ def main():
         tables = [t for t in tables if t[-8:] <= args.d_to]
 
     if not tables:
-        print("[중단] 그 기간에 히스토리 테이블이 없습니다.")
+        print("[중단] 그 기간에 히스토리 테이블이 없음")
         return 2
 
     # 기간을 안 주면 최근부터 거슬러 올라가며 넉넉히 잡는다.
@@ -143,7 +143,7 @@ def main():
             if got >= want:
                 break
         tables = list(reversed(keep))
-        print(f"기간을 정하지 않아 최근 {len(tables)}일로 잡습니다 "
+        print(f"기간을 정하지 않아 최근 {len(tables)}일로 잡음 "
               f"(약 {got:,}건, 목표의 3배)")
 
     print(f"테이블 {len(tables)}개 ({tables[0][-8:]} ~ {tables[-1][-8:]})")
@@ -186,12 +186,12 @@ def main():
     print(f"처음 쌓은 날 {bl.started_at or '-'}")
 
     if args.dry_run:
-        print("[예행] 저장하지 않았습니다.")
+        print("[예행] 저장하지 않았음")
         return 0
 
     if not bl.is_ready():
-        print("[경고] 이대로 저장해도 2단계는 아직 서지 않습니다. "
-              "--from 을 더 앞으로 잡아 보십시오.")
+        print("[경고] 이대로 저장해도 2단계는 아직 서지 않음 · "
+              "--from 을 더 앞으로 잡아 볼 것")
 
     # 쓰고 있던 것은 지우지 않고 옮겨 둔다. 잘못 잡았으면 되돌릴 수 있어야 한다.
     live = os.path.join(user_path, BASELINE_NAME)
@@ -205,13 +205,13 @@ def main():
             dst_dir, datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             + "_before_rebuild.npz")
         shutil.move(live, dst)
-        print(f"쓰던 기준선은 {os.path.basename(dst)} 로 옮겼습니다.")
+        print(f"쓰던 기준선은 {os.path.basename(dst)} 로 옮겼음")
 
     bl.save(live)
     write_reset_note(user_path,
                      f"DB 에서 되쌓음 ({tables[0][-8:]} ~ {tables[-1][-8:]})")
     print(f"저장 : {live}")
-    print("       감시를 다시 시작해야 반영됩니다.")
+    print("       감시를 다시 시작해야 반영됨")
     return 0
 
 

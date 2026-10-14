@@ -169,7 +169,7 @@ void CDlg_CellBase::Load()
     const std::string updated = ini_read_utf8(st, "STATUS", "UPDATED_AT", "");
     if (updated.empty())
     {
-        m_why = "감시가 아직 기록을 남기지 않았습니다.";
+        m_why = "감시가 아직 기록을 남기지 않았음";
         return;
     }
 
@@ -183,7 +183,7 @@ void CDlg_CellBase::Load()
 
     if (!okNow || !okHi || !okMk)
     {
-        m_why = "칸별 값이 아직 없습니다. 감시를 다시 시작하면 나타납니다.";
+        m_why = "칸별 값이 아직 없음 · 감시를 다시 시작하면 나타남";
         return;
     }
 
@@ -219,7 +219,7 @@ void CDlg_CellBase::Load()
     CStringA s;
     if (!m_ready)
     {
-        s = "2단계가 아직 서지 않아 선이 잠정값입니다.  ";
+        s = "2단계가 아직 서지 않아 선이 잠정값임 · ";
     }
     if (worst >= 0)
     {
@@ -228,7 +228,7 @@ void CDlg_CellBase::Load()
             ? updated.substr(11) : updated;
 
         CStringA t;
-        t.Format("마스크 %d칸 · 넘은 칸 %d개 · 여유 최저 %d번 "
+        t.Format("분석마스크 %d칸 · 넘은 칸 %d개 · 여유 최저 %d번 "
                  "%.0f/%.0f도 (%+.1f) · %s",
                  nmask, over, worst, m_now[worst], m_hi[worst], worstGap,
                  hhmmss.c_str());
@@ -236,7 +236,7 @@ void CDlg_CellBase::Load()
     }
     else
     {
-        s += "마스크로 지정된 칸이 없습니다.";
+        s += "분석마스크로 지정된 칸이 없음";
     }
     m_lblState.SetWindowTextA(s);
 }
@@ -264,7 +264,7 @@ void CDlg_CellBase::DrawGrid(CDC* pDC, const CRect& rc)
         pDC->SelectObject(&m_font);
         pDC->SetTextColor(MUTED_COLOR);
         pDC->TextOutA(rc.left + 14, rc.top + 14,
-            m_why.IsEmpty() ? "읽을 값이 없습니다." : (LPCSTR)m_why);
+            m_why.IsEmpty() ? "읽을 값이 없음" : (LPCSTR)m_why);
         return;
     }
 
@@ -357,7 +357,7 @@ void CDlg_CellBase::DrawGrid(CDC* pDC, const CRect& rc)
         { C_NEAR,    "여유 10% 미만" },
         { C_WATCH,   "여유 30% 미만" },
         { C_OK,      "넉넉함" },
-        { C_OFFMASK, "마스크 밖" },
+        { C_OFFMASK, "분석마스크 밖" },
     };
     int lx = x0;
     const int ly = rc.bottom - pad - legendH + 4;

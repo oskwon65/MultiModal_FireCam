@@ -44,7 +44,7 @@ def load_and_prepare_image(path):
     """이미지 로드 + 그레이스케일(float32) 반환, 컬러도 같이 반환."""
     img_color = cv2.imread(path)
     if img_color is None:
-        raise FileNotFoundError(f"이미지를 읽을 수 없습니다: {path}")
+        raise FileNotFoundError(f"이미지를 읽을 수 없음: {path}")
 
     gray = cv2.cvtColor(img_color, cv2.COLOR_BGR2GRAY)
     gray_f = np.float32(gray)
@@ -283,7 +283,7 @@ def _adjust_with_frozen_ref(ref_path, input_img, hotlist_mask, X_GRID, Y_GRID):
     """기준 1장 방식. 반환 규약은 Get_Adjusted_HotMask_Position 과 같다."""
     ref_img = cv2.imread(ref_path)
     if ref_img is None:
-        print(f"[WARN] 기준 이미지를 읽지 못했습니다: {ref_path}")
+        print(f"[WARN] 기준 이미지를 읽지 못했음: {ref_path}")
         return False, hotlist_mask.copy(), 0, 0, shift_info(SHIFT_STATE_UNSURE)
 
     m = measure_shift_vs_ref(ref_img, input_img)
@@ -293,8 +293,8 @@ def _adjust_with_frozen_ref(ref_path, input_img, hotlist_mask, X_GRID, Y_GRID):
 
     if m is None:
         # 여기서 "이상 없음" 이라고 말하면 안 된다. 잴 수 없었을 뿐이다.
-        print(f"[기준 1장] 판정 불가 - 기준과 같은 장면으로 보기 어렵습니다 "
-              f"(response < {SHIFT_RESP_MIN}). 마스크는 그대로 둡니다.")
+        print(f"[기준 1장] 판정 불가 - 기준과 같은 장면으로 보기 어려움 "
+              f"(response < {SHIFT_RESP_MIN}). 마스크는 그대로 둠")
         print("-" * 50)
         return False, hotlist_mask.copy(), 0, 0, shift_info(SHIFT_STATE_UNSURE)
 
@@ -400,7 +400,7 @@ def save_base_image(BASE_IMG_DIR,input_img):
     cv2.imwrite(save_path, input_img)
     # 예전에는 "폴더가 비어 있어" 라고 적었는데, 이 함수는 폴더가 찬 상태에서
     # 밝기차 20 미만일 때도 불린다. 사실과 다른 안내였다.
-    print(f"[예전 방식] 기준 이미지를 저장했습니다: {save_path}")
+    print(f"[예전 방식] 기준 이미지를 저장했음: {save_path}")
 
 # ----------------------------
 

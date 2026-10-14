@@ -195,6 +195,9 @@
     <ClInclude Include="Dlg_CellBase.h" />
     <ClInclude Include="Dlg_BaseRef.h" />
     <ClInclude Include="Dlg_RetrainHist.h" />
+    <ClInclude Include="Dlg_MaskFetch.h" />
+    <ClInclude Include="Dlg_Confirm2.h" />
+    <ClInclude Include="Dlg_MsgBox.h" />
     <ClInclude Include="Dlg_OpState.h" />
     <ClInclude Include="Dlg_Retrain.h" />
     <ClInclude Include="Dlg_Set_MmCam_Env.h" />
@@ -210,6 +213,9 @@
     <ClCompile Include="Dlg_CellBase.cpp" />
     <ClCompile Include="Dlg_BaseRef.cpp" />
     <ClCompile Include="Dlg_RetrainHist.cpp" />
+    <ClCompile Include="Dlg_MaskFetch.cpp" />
+    <ClCompile Include="Dlg_Confirm2.cpp" />
+    <ClCompile Include="Dlg_MsgBox.cpp" />
     <ClCompile Include="Dlg_OpState.cpp" />
     <ClCompile Include="Dlg_Retrain.cpp" />
     <ClCompile Include="Dlg_Set_MmCam_Env.cpp" />

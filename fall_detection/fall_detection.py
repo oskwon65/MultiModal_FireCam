@@ -195,7 +195,7 @@ def hide_window_by_title(title):
         user32.ShowWindow(hwnd, SW_HIDE)
         return True
     except Exception as e:
-        print(f"[WARN] 뷰어 창을 숨기지 못했습니다: {e}")
+        print(f"[WARN] 뷰어 창을 숨기지 못했음: {e}")
         return False
 
 

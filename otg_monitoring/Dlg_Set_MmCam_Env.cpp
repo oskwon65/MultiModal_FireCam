@@ -12,6 +12,7 @@
 #include "Dlg_OpState.h"
 #include "Dlg_BaseRef.h"
 #include "Dlg_RetrainHist.h"
+#include "Dlg_MaskFetch.h"
 
 #include <vector>
 
@@ -205,7 +206,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 	// 좁아진 대신 높아져 오히려 커 보였다. 한 줄에 들어가는 길이로 맞추고
 	// 자세한 내용은 누른 뒤 안내 문구로 설명한다.
 	//
-	//   서버에서 Mask 받기            -> 서버 Mask 받기 -> 관제서버 Mask 받기
+	//   서버에서 Mask 받기            -> 서버 Mask 받기 -> 관제서버 분석마스크 받기
 	//   카메라 이동 검사 및 Mask 조정 -> 카메라 이동보정
 	// 설정 영역의 버튼은 모두 같은 너비를 쓴다. 폭이 제각각이면 줄이
 	// 맞지 않아 어수선해 보인다.
@@ -234,7 +235,7 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 
 	// 맨 윗줄은 "카메라가 지금 어떤가" 하나로 묶는다.
 	//
-	// 잰 값이 왼쪽, 손볼 버튼이 오른쪽이다. [관제서버 Mask 받기] 는 감시 대상을
+	// 잰 값이 왼쪽, 손볼 버튼이 오른쪽이다. [관제서버 분석마스크 받기] 는 감시 대상을
 	// 관제서버 것으로 갈아치우는 전혀 다른 일이라 맨 아래로 내렸다.
 	long topRight;
 	{
@@ -503,16 +504,30 @@ BOOL CDlg_Set_MmCam_Env::OnInitDialog()
 		CRect(nBase_X, y + 6, nBase_X + btn_w, y + 6 + 26),
 		this, ID_BTN_SAVE_STAGE);
 
-	// 관제서버 Mask 받기.
+	// 관제서버 분석마스크 받기.
 	//
 	// 맨 윗줄에 [카메라 이동보정] 과 나란히 있었는데, 둘은 하는 일이
 	// 전혀 다르다. 저쪽은 같은 선택을 밀린 만큼 옮기는 것이고, 이쪽은
 	// 감시 대상(어느 칸을 볼지) 자체를 관제서버 것으로 갈아치운다. 자주
 	// 누를 일도 아니라 맨 아래로 내렸다.
-	m_btnGetMask_Server.Create("관제서버 Mask 받기", mask_btn_style | WS_TABSTOP,
-		CRect(nBase_X + btn_w + 10, y + 6,
-		      nBase_X + btn_w + 10 + btn_w, y + 6 + 26),
-		this, ID_BTN_GET_MASK_SVR);
+	//
+	// 이름이 "관제서버 분석마스크 받기" 로 길어져 다른 버튼 너비(btn_w)에 들어가지
+	// 않는다. 이 버튼만 글자 폭에 맞춰 넓힌다. 오른쪽은 비어 있다.
+	{
+		const CStringA cap = "관제서버 분석마스크 받기";
+		long w = btn_w;
+		{
+			CClientDC dc(this);
+			CFont* old = dc.SelectObject(&m_stdFont);
+			const long need = dc.GetTextExtent(CString(cap)).cx + 28;
+			if (old) dc.SelectObject(old);
+			if (need > w) w = need;
+		}
+		m_btnGetMask_Server.Create(cap, mask_btn_style | WS_TABSTOP,
+			CRect(nBase_X + btn_w + 10, y + 6,
+			      nBase_X + btn_w + 10 + w, y + 6 + 26),
+			this, ID_BTN_GET_MASK_SVR);
+	}
 
 	// 설정 영역의 끝을 긋는다. 위쪽 두 구분선과 짝을 이뤄 영역이 어디서
 	// 끝나는지 분명해진다.
@@ -1015,7 +1030,7 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	if (updated.empty()) {
 		SetShiftAlert(false);
 		SetIfChanged(m_lblShift, "[카메라 위치 이동]  확인 전");
-		SetIfChanged(m_lblStage0, "1단계 절대임계값   집계 대기\r\n    감시 시작 후 첫 기록까지 잠시 걸립니다");
+		SetIfChanged(m_lblStage0, "1단계 절대임계값   집계 대기\r\n    감시 시작 후 첫 기록까지 잠시 걸림");
 		SetIfChanged(m_lblStage1, "2단계 경험임계값   집계 대기");
 		PlaceBaseButtons(this, m_lblStage1, m_btnBaseFresh, m_btnBaseRebuild);
 		SetIfChanged(m_lblStage2, "3단계 오토인코더   집계 대기");
@@ -1241,7 +1256,7 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 	}
 	else
 	{
-		t.Format("3단계 오토인코더   없음\r\n    모델 파일이 아직 없습니다\r\n");
+		t.Format("3단계 오토인코더   없음\r\n    모델 파일이 아직 없음\r\n");
 	}
 	if (halt)
 		t = "3단계 오토인코더   중지 (카메라 위치 이동)\r\n"
@@ -1295,7 +1310,7 @@ void CDlg_Set_MmCam_Env::LoadStageStatus()
 void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 {
 	if (gUserID.empty()) {
-		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		Msg("[ERROR] 현장(user)이 선택되지 않았음");
 		return;
 	}
 
@@ -1312,19 +1327,19 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	// 터무니없는 값이 들어가면 감시가 영영 시작되지 않거나(너무 큼),
 	// 아무것도 못 배운 상태로 채점을 시작한다(너무 작음). 여기서 막는다.
 	if (base_samples < 100 || base_samples > 1000000) {
-		Msg("[ERROR] 기준선 최소 표본은 100 ~ 1,000,000 사이여야 합니다.");
+		Msg("[ERROR] 기준선 최소 표본은 100 ~ 1,000,000 사이여야 함");
 		return;
 	}
 	if (base_hours < 1 || base_hours > 24) {
-		Msg("[ERROR] 기준선 최소 시간대는 1 ~ 24 사이여야 합니다.");
+		Msg("[ERROR] 기준선 최소 시간대는 1 ~ 24 사이여야 함");
 		return;
 	}
 	if (ae_samples < 1000 || ae_samples > 1000000) {
-		Msg("[ERROR] 재학습 최소 표본은 1,000 ~ 1,000,000 사이여야 합니다.");
+		Msg("[ERROR] 재학습 최소 표본은 1,000 ~ 1,000,000 사이여야 함");
 		return;
 	}
 	if (ae_hours < 1 || ae_hours > 24) {
-		Msg("[ERROR] 재학습 최소 시간대는 1 ~ 24 사이여야 합니다.");
+		Msg("[ERROR] 재학습 최소 시간대는 1 ~ 24 사이여야 함");
 		return;
 	}
 
@@ -1342,8 +1357,8 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	const bool bAbsAnyEmpty = at.IsEmpty() || aa.IsEmpty() || ar.IsEmpty() || arA.IsEmpty();
 
 	if (!bAbsAllEmpty && bAbsAnyEmpty) {
-		Msg("[ERROR] 절대 임계값 네 칸을 모두 채우거나 모두 비우십시오. "
-			"모두 비우면 1단계 경보가 꺼집니다.");
+		Msg("[ERROR] 절대 임계값 네 칸을 모두 채우거나 모두 비울 것 · "
+			"모두 비우면 1단계 경보가 꺼짐");
 		return;
 	}
 
@@ -1353,16 +1368,16 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 
 		// 격자 온도는 0~255 범위다(utils.Conv_LWIR_to_64_Vector 와 같은 기준).
 		if (tw < 1 || tw > 255 || ta < 1 || ta > 255) {
-			Msg("[ERROR] 온도는 1 ~ 255 도 사이여야 합니다.");
+			Msg("[ERROR] 온도는 1 ~ 255 도 사이여야 함");
 			return;
 		}
 		if (rw < 1 || rw > 500 || ra < 1 || ra > 500) {
-			Msg("[ERROR] 상승률은 1 ~ 500 도/분 사이여야 합니다.");
+			Msg("[ERROR] 상승률은 1 ~ 500 도/분 사이여야 함");
 			return;
 		}
 		// 주의선이 경보선보다 높으면 주의가 영영 뜨지 않는다.
 		if (tw >= ta || rw >= ra) {
-			Msg("[ERROR] 주의선은 경보선보다 낮아야 합니다.");
+			Msg("[ERROR] 주의선은 경보선보다 낮아야 함");
 			return;
 		}
 	}
@@ -1381,21 +1396,21 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 
 	// 날짜 테이블 수. 60 이면 두 달이라 "지금도 맞는가" 를 묻는 뜻이 사라진다.
 	if (ct_window < 1 || ct_window > 60) {
-		Msg("[ERROR] 판단 최소 일수는 1 ~ 60 (날짜 테이블 수) 사이여야 합니다.");
+		Msg("[ERROR] 판단 최소 일수는 1 ~ 60 (날짜 테이블 수) 사이여야 함");
 		return;
 	}
 	if (ct_frames < 10 || ct_frames > 1000000) {
-		Msg("[ERROR] 기여도 최소 표본은 10 ~ 1,000,000 사이여야 합니다.");
+		Msg("[ERROR] 기여도 최소 표본은 10 ~ 1,000,000 사이여야 함");
 		return;
 	}
 	if (ct_samples < 100 || ct_samples > 1000000) {
-		Msg("[ERROR] 표본 상한은 100 ~ 1,000,000 사이여야 합니다.");
+		Msg("[ERROR] 표본 상한은 100 ~ 1,000,000 사이여야 함");
 		return;
 	}
 	// 상한이 최소보다 작으면, 판단에 쓰기로 한 최소치보다 적은 표본으로
 	// 점수를 매기게 된다. 앞뒤가 맞지 않는다.
 	if (ct_samples < ct_frames) {
-		Msg("[ERROR] 기여도 최대 표본이 최소 표본보다 작습니다.");
+		Msg("[ERROR] 기여도 최대 표본이 최소 표본보다 작음");
 		return;
 	}
 
@@ -1410,12 +1425,12 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	// 목표가 너무 작으면 시간대를 다 덮지 못하고, 너무 크면 모으는 데만
 	// 오래 걸린다.
 	if (sp_target < 1000 || sp_target > 1000000) {
-		Msg("[ERROR] 재학습 최대 표본 수는 1,000 ~ 1,000,000 사이여야 합니다.");
+		Msg("[ERROR] 재학습 최대 표본 수는 1,000 ~ 1,000,000 사이여야 함");
 		return;
 	}
 	// 0 은 전체. 너무 짧으면 24개 시간대를 다 채우지 못한다.
 	if (sp_days < 0 || sp_days > 3650) {
-		Msg("[ERROR] 재학습 수집 일수는 0(전체) 또는 1 ~ 3650 사이여야 합니다.");
+		Msg("[ERROR] 재학습 수집 일수는 0(전체) 또는 1 ~ 3650 사이여야 함");
 		return;
 	}
 
@@ -1427,11 +1442,11 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 	m_edBandLow.GetWindowTextA(bl);
 	const double band_hi = atof(bh), band_lo = atof(bl);
 	if (band_lo <= 0.0 || band_lo >= 1.0 || band_hi <= 0.0 || band_hi > 1.0) {
-		Msg("[ERROR] 기여 문턱은 0 초과 1 이하여야 합니다.");
+		Msg("[ERROR] 기여 문턱은 0 초과 1 이하여야 함");
 		return;
 	}
 	if (band_lo >= band_hi) {
-		Msg("[ERROR] 기여 문턱의 '하' 는 '상' 보다 낮아야 합니다.");
+		Msg("[ERROR] 기여 문턱의 '하' 는 '상' 보다 낮아야 함");
 		return;
 	}
 	const int dyn_mix = (m_chkDyn.GetCheck() == BST_CHECKED) ? 1 : 0;
@@ -1482,12 +1497,12 @@ void CDlg_Set_MmCam_Env::OnBnClickedSaveStage()
 		spPart.Format("표본 최대 %d%s", sp_target, (LPCSTR)daysPart);
 
 		msg.Format("[저장 완료] 2단계 %d건/%d시간대, 3단계 %d건, %s, %s, %s"
-			"   -  '정지' 후 '시작'을 눌러야 반영됩니다.",
+			"   -  '정지' 후 '시작'을 눌러야 반영됨",
 			base_samples, base_hours, ae_samples,
 			(const char*)absPart, (const char*)ctPart, (const char*)spPart);
 	}
 	else {
-		msg.Format("[ERROR] continual_learning.ini 를 쓰지 못했습니다: %s", ini.c_str());
+		msg.Format("[ERROR] continual_learning.ini 를 쓰지 못했음: %s", ini.c_str());
 	}
 	Msg(msg);
 }
@@ -1507,67 +1522,30 @@ void CDlg_Set_MmCam_Env::OnLButtonDown(UINT nFlags, CPoint point)
 }
 
 //---------------------------------------------------------
-
-// 관제서버에 해당 URL 이 실제로 있는지 확인한다.
+// [관제서버 분석마스크 받기]
 //
-// 로컬 마스크를 지우기 전에 반드시 봐야 한다. 관제서버에 파일이 없는데 지우면
-// 다음 기동 때 받아오지 못하고, 마스크 없이 채점이 멈춘다.
-static bool UrlExists(const std::string& url)
-{
-	HINTERNET hNet = ::InternetOpenA("MmCam", INTERNET_OPEN_TYPE_PRECONFIG,
-		nullptr, nullptr, 0);
-	if (!hNet) return false;
-
-	bool ok = false;
-
-	HINTERNET hUrl = ::InternetOpenUrlA(hNet, url.c_str(), nullptr, 0,
-		INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
-	if (hUrl)
-	{
-		DWORD code = 0, len = sizeof(code), idx = 0;
-		if (::HttpQueryInfoA(hUrl, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
-			&code, &len, &idx))
-		{
-			ok = (code == 200);
-		}
-		::InternetCloseHandle(hUrl);
-	}
-
-	::InternetCloseHandle(hNet);
-	return ok;
-}
-
-//---------------------------------------------------------
-// [격자 마스크 초기화 : SVR지정]
-//
-// 로컬 마스크를 지워, 다음 기동 때 관제서버에서 새로 받게 한다.
-//
-// predict_machine 은 로컬 파일이 있으면 관제서버에 새 마스크가 올라와도
-// 내려받지 않는다. 그래서 마스크를 바꾸려면 로컬 파일을 먼저 지우는 것이
-// 정해진 절차다.
+// 관제서버의 hotlist_mask_svr.ini 를 받아 지금 쓰는 로컬 마스크와 나란히 보이고,
+// 사람이 견주어 본 뒤 그 자리에서 교체한다(CDlg_MaskFetch). 바꾸기 전 것은
+// users/<현장>/mask_history/ 에 시각을 붙여 남기고, 창의 [이전 마스크 보기] 로
+// 지금 것과 견주어 볼 수 있다.
 //
 // [예전 구현]
-//   grid_select.txt -> mach_area_mask.ini 로 복사했다. 그런데 원본은
-//   관제서버에도 로컬에도 존재한 적이 없고(HTTP 404), 대상 파일을 읽는
-//   파이썬 코드도 없었다. 눌러도 실패 메시지만 뜨는, 동작한 적 없는
-//   경로였다. 화면에 있는 버튼이 아무 일도 하지 않는 것이 가장 나쁘다.
+//   로컬 마스크를 지워 두고 다음 기동 때 predict_machine 이 받게 했다. 무엇을
+//   받게 될지 보지 못한 채 지웠고, 남긴 것도 .bak 한 벌뿐이라 두 번 바꾸면
+//   처음 것이 사라졌다.
 //---------------------------------------------------------
 void CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask()
 {
 	if (gUserID.empty()) {
-		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		Msg("[ERROR] 현장(user)이 선택되지 않았음");
 		return;
 	}
-
-	const std::string user_path =
-		std::string(GetMmCamStartPath()) + "users\\" + gUserID + "\\";
-	const std::string local_mask = user_path + "hotlist_mask_local.ini";
 
 	// 관제서버 주소는 현장 설정에서 읽는다.
 	const std::string root_url =
 		ini_read_utf8(StageIniPath(), "NETWORK", "ROOT_URL", "");
 	if (root_url.empty()) {
-		Msg("[ERROR] env.ini 의 [NETWORK] ROOT_URL 이 비어 있습니다.");
+		Msg("[ERROR] env.ini 의 [NETWORK] ROOT_URL 이 비어 있음");
 		return;
 	}
 
@@ -1575,47 +1553,13 @@ void CDlg_Set_MmCam_Env::OnBnClickedButtonGetMask()
 	while (!url.empty() && (url.back() == '/' || url.back() == ' ')) url.pop_back();
 	url += "/" + gUserID + "/hotlist_mask_svr.ini";
 
-	Msg("관제서버에 격자 마스크가 있는지 확인 중...");
-	if (!UrlExists(url)) {
-		CStringA msg;
-		msg.Format("[중단] 관제서버에서 마스크를 찾지 못했습니다. 지우지 않았습니다.\r\n%s",
-			url.c_str());
-		Msg(msg);
-		return;
-	}
+	const std::string user_path =
+		std::string(GetMmCamStartPath()) + "users\\" + gUserID + "\\";
+	const int need = atoi(ini_read_utf8(StageIniPath(), "CONSTANTS",
+		"NUM_OF_MACHINE_CELLS", "0").c_str());
 
-	const bool bHasLocal = (::GetFileAttributesA(local_mask.c_str()) != INVALID_FILE_ATTRIBUTES);
-
-	if (bHasLocal)
-	{
-		CStringA q;
-		q.Format("현재 격자 마스크를 지우고 관제서버 것으로 다시 받습니다.\r\n\r\n"
-			"관제서버 : %s\r\n\r\n"
-			"지금 쓰던 마스크는 hotlist_mask_local.bak 로 남겨 둡니다.\r\n"
-			"'정지' 후 '시작'을 눌러야 실제로 받아옵니다.\r\n\r\n진행할까요?",
-			url.c_str());
-
-		if (AfxMessageBox(q, MB_YESNO | MB_ICONQUESTION) != IDYES) {
-			Msg("[취소] 마스크를 그대로 두었습니다.");
-			return;
-		}
-
-		// 되돌릴 수 있도록 한 벌 남긴다. 관제서버 마스크가 엉뚱한 것이었을 때
-		// 현장에서 복구할 길이 있어야 한다.
-		const std::string bak = user_path + "hotlist_mask_local.bak";
-		::CopyFileA(local_mask.c_str(), bak.c_str(), FALSE);
-
-		if (!::DeleteFileA(local_mask.c_str())) {
-			CStringA msg;
-			msg.Format("[ERROR] 마스크를 지우지 못했습니다 (err %lu): %s",
-				::GetLastError(), local_mask.c_str());
-			Msg(msg);
-			return;
-		}
-	}
-
-	Msg("[완료] 로컬 마스크를 지웠습니다. "
-		"'정지' 후 '시작'을 누르면 관제서버에서 새로 받습니다.");
+	CDlg_MaskFetch dlg(&m_stdFont, this, user_path, url, need);
+	dlg.DoModal();
 }
 
 //---------------------------------------------------------
@@ -1675,7 +1619,7 @@ void CDlg_Set_MmCam_Env::OnBnClickedCellBase()
 {
 	if (gUserID.empty())
 	{
-		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		Msg("[ERROR] 현장(user)이 선택되지 않았음");
 		return;
 	}
 
@@ -1691,12 +1635,12 @@ void CDlg_Set_MmCam_Env::OnBnClickedOpNames()
 {
 	if (gUserID.empty())
 	{
-		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		Msg("[ERROR] 현장(user)이 선택되지 않았음");
 		return;
 	}
 
 	if (EditOpStateNames(this, &m_stdFont, &m_stdFont))
-		Msg("운전 상태 이름을 저장했습니다. 감시가 새 이름을 읽으면(1분 안) 메인 창에도 반영됩니다.");
+		Msg("운전 상태 이름을 저장했음 · 감시가 새 이름을 읽으면(1분 안) 메인 창에도 반영됨");
 }
 
 // ---------------------------------------------------------
@@ -1712,12 +1656,13 @@ void CDlg_Set_MmCam_Env::OnBnClickedOpNames()
 // 되었는지 찍으므로, 그 글을 사람이 읽는 것이 요약을 다시 만드는 것보다
 // 낫다.
 // ---------------------------------------------------------
-void CDlg_Set_MmCam_Env::RunBaseTool(const char* title, const char* script,
+// action 은 확인 창 첫 줄의 동작 이름("재구성" 등), warn 은 "- " 로 시작하는 항목 줄들.
+void CDlg_Set_MmCam_Env::RunBaseTool(const char* title, const char* action, const char* script,
                                      const char* args, const char* warn)
 {
 	if (gUserID.empty())
 	{
-		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		Msg("[ERROR] 현장(user)이 선택되지 않았음");
 		return;
 	}
 
@@ -1725,33 +1670,22 @@ void CDlg_Set_MmCam_Env::RunBaseTool(const char* title, const char* script,
 	if (main != nullptr && main->IsPredictRunning(gUserID.c_str()))
 	{
 		CStringA m;
-		m.Format("감시가 돌고 있어 할 수 없습니다.\r\n\r\n"
+		m.Format("감시가 돌고 있어 할 수 없음\r\n\r\n"
 			"predict_machine 이 경험 임계값을 메모리에 들고 있어, 지금 "
-			"고치면 200건 뒤에 덮어씁니다.\r\n\r\n"
-			"[목록] 에서 %s 의 predict_machine 을 멈춘 뒤 다시 누르십시오.",
+			"고치면 200건 뒤에 덮어씀\r\n\r\n"
+			"[목록] 에서 %s 의 predict_machine 을 멈춘 뒤 다시 누를 것",
 			gUserID.c_str());
 		AfxMessageBox(CString(m), MB_OK | MB_ICONWARNING);
 		return;
 	}
 
-	// 지금 무엇을 버리는지 보여 주고 묻는다.
-	const std::string st = StageIniPath();
-	const int samples = ini_read_int_utf8(st, "STATUS", "SAMPLES", 0);
-	const int hours = ini_read_int_utf8(st, "STATUS", "HOURS", 0);
-	const CStringA wf = StatusUtf8(
-		ini_read_utf8(st, "STATUS", "WINDOW_FROM", ""));
-	const CStringA wt = StatusUtf8(
-		ini_read_utf8(st, "STATUS", "WINDOW_TO", ""));
-
+	// 짧게: 첫 줄에 동작, 그 아래 항목 몇 줄. [예]/[아니오] 가 묻는 말을 대신한다.
+	// 지금 표본 수는 [설정] 창 2단계 줄에 늘 보이므로 여기 다시 적지 않는다.
 	CStringA q;
-	q.Format("[%s] 의 경험 임계값을 다시 세웁니다.\r\n\r\n"
-		"    지금  표본 %d건 · 시간대 %d%s%s%s\r\n\r\n"
-		"%s\r\n\r\n"
-		"쓰던 것은 지우지 않고 model_generations\\_retired_baseline 에 "
-		"옮기므로 되돌릴 수 있습니다.\r\n\r\n진행할까요?",
-		gUserID.c_str(), samples, hours,
-		wf.IsEmpty() ? "" : " (창 ", wf.IsEmpty() ? "" : (LPCSTR)wf,
-		wf.IsEmpty() ? "" : (" ~ " + wt + ")"), warn);
+	q.Format("[%s] 경험 임계값 %s\r\n\r\n"
+		"%s\r\n"
+		"- 기존 값은 _retired_baseline 에 보관 (복구 가능)",
+		gUserID.c_str(), action, warn);
 
 	if (AfxMessageBox(CString(q), MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2)
 	    != IDYES)
@@ -1771,34 +1705,31 @@ void CDlg_Set_MmCam_Env::RunBaseTool(const char* title, const char* script,
 	if (!CreateProcessA(nullptr, line.data(), nullptr, nullptr, FALSE,
 		CREATE_NEW_CONSOLE, nullptr, GetMmCamStartPath(), &si, &pi))
 	{
-		Msg("[ERROR] 도구를 실행하지 못했습니다.");
+		Msg("[ERROR] 도구를 실행하지 못했음");
 		return;
 	}
 	CloseHandle(pi.hThread);
 	CloseHandle(pi.hProcess);
 
 	CStringA done;
-	done.Format("%s 를 시작했습니다. 창에서 결과를 확인하십시오.\r\n\r\n"
-		"끝난 뒤 [시작] 으로 감시를 다시 켜야 반영됩니다.", title);
+	done.Format("%s 를 시작했음 · 창에서 결과를 확인할 것\r\n\r\n"
+		"끝난 뒤 [시작] 으로 감시를 다시 켜야 반영됨", title);
 	Msg(done);
 }
 
 void CDlg_Set_MmCam_Env::OnBnClickedBaseFresh()
 {
-	RunBaseTool("현재부터쌓기", "retrain\\nightly_retrain.py",
+	RunBaseTool("현재부터쌓기", "초기화", "retrain\\nightly_retrain.py",
 		" --reset-baseline",
-		"지금까지 쌓은 것을 비우고 이 순간부터 다시 쌓습니다. 조건을 "
-		"채울 때까지(30초 주기면 하루 남짓) 2단계가 꺼집니다.\r\n"
-		"마스크를 다시 떴거나 카메라를 옮겼을 때 쓰십시오.");
+		"- 비우고 지금부터 다시 쌓음 → 다시 설 때까지 2단계 꺼짐 (30초 주기면 하루 남짓)\r\n"
+		"- 분석마스크를 다시 떴거나 카메라를 옮겼을 때 사용");
 }
 
 void CDlg_Set_MmCam_Env::OnBnClickedBaseRebuild()
 {
-	RunBaseTool("DB에서되쌓기", "retrain\\rebuild_baseline.py", "",
-		"히스토리 DB 에 이미 적힌 지난 프레임으로 한 번에 다시 쌓습니다. "
-		"2단계가 바로 섭니다.\r\n"
-		"다만 화면 틀어짐은 가리지 못합니다 - DB 에는 격자만 남습니다. "
-		"카메라를 옮긴 적이 있으면 쓰지 마십시오.");
+	RunBaseTool("DB에서되쌓기", "재구성", "retrain\\rebuild_baseline.py", "",
+		"- 히스토리 DB 에서 재구성 → 2단계 바로 사용\r\n"
+		"- 카메라 이동 후 사용 금지 (DB 로 틀어짐 판별 불가)");
 }
 
 // ---------------------------------------------------------
@@ -1993,7 +1924,7 @@ void CDlg_Set_MmCam_Env::LoadSampleSettings()
 void CDlg_Set_MmCam_Env::OnBnClickedRetrain()
 {
 	if (gUserID.empty()) {
-		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		Msg("[ERROR] 현장(user)이 선택되지 않았음");
 		return;
 	}
 
@@ -2008,7 +1939,7 @@ void CDlg_Set_MmCam_Env::OnBnClickedRetrain()
 void CDlg_Set_MmCam_Env::OnBnClickedRetrainHist()
 {
 	if (gUserID.empty()) {
-		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		Msg("[ERROR] 현장(user)이 선택되지 않았음");
 		return;
 	}
 
@@ -2023,7 +1954,7 @@ void CDlg_Set_MmCam_Env::OnBnClickedRetrainHist()
 void CDlg_Set_MmCam_Env::OnBnClickedBaseRef()
 {
 	if (gUserID.empty()) {
-		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		Msg("[ERROR] 현장(user)이 선택되지 않았음");
 		return;
 	}
 
@@ -2039,7 +1970,7 @@ void CDlg_Set_MmCam_Env::OnBnClickedBaseRef()
 void CDlg_Set_MmCam_Env::OnBnClickedGenMgr()
 {
 	if (gUserID.empty()) {
-		Msg("[ERROR] 현장(user)이 선택되지 않았습니다.");
+		Msg("[ERROR] 현장(user)이 선택되지 않았음");
 		return;
 	}
 

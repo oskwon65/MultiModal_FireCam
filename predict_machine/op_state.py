@@ -56,12 +56,13 @@ class OpStates:
         self._recent_dev = []
         self._recent_t = []
         self._path = os.path.join(user_path, FILE_NAME)
+        self._n_cells = int(n_cells)
         self._mtime = None
         self._names_checked = 0.0
 
         p = self._path
         if not os.path.exists(p):
-            self.info = f"{FILE_NAME} 이 없습니다 (retrain/make_op_states.py 로 만듭니다)"
+            self.info = f"{FILE_NAME} 이 없음 (retrain/make_op_states.py 로 만듦)"
             return
 
         try:
@@ -71,14 +72,14 @@ class OpStates:
             names = [s["name"] for s in d["states"]]
             cen = np.asarray([s["center"] for s in d["states"]], dtype=np.float64)
         except Exception as e:
-            self.info = f"{FILE_NAME} 을 읽지 못했습니다: {type(e).__name__} {e}"
+            self.info = f"{FILE_NAME} 을 읽지 못했음: {type(e).__name__} {e}"
             return
 
         if cen.ndim != 2 or cen.shape[1] != cells.size:
-            self.info = f"{FILE_NAME} 의 중심 차원이 칸 수와 맞지 않습니다"
+            self.info = f"{FILE_NAME} 의 중심 차원이 칸 수와 맞지 않음"
             return
         if cells.size and int(cells.max()) >= n_cells:
-            self.info = f"{FILE_NAME} 이 다른 격자 크기로 만들어졌습니다"
+            self.info = f"{FILE_NAME} 이 다른 격자 크기로 만들어졌음"
             return
 
         # 기준선이 없는 옛 파일도 받는다. 그때는 낯섦을 말하지 않는다.
@@ -102,6 +103,7 @@ class OpStates:
         고른 중심까지의 거리는 last_dev 에 남긴다 - 이름만으로는 억지로
         붙은 것인지 알 수 없기 때문이다.
         """
+        self._refresh_names()       # 고친 분류표(1분에 한 번 확인)
         if not self.ok:
             return None
         v = np.asarray(x, dtype=np.float64).reshape(-1)
@@ -152,27 +154,47 @@ class OpStates:
         return n / len(self._recent_dev)
 
     def _refresh_names(self):
-        """사람이 화면에서 고친 이름을 다시 읽는다. 1분에 한 번만 본다.
+        """고친 분류표를 다시 읽는다. 1분에 한 번만 본다.
 
-        이름은 운전 상태 창의 [이름 바꾸기] 로 op_states.json 에 고쳐 쓴다.
-        중심은 그대로이므로 이름만 갈아 끼운다 - 상태 수가 달라졌으면 분류표
-        자체가 바뀐 것이라 손대지 않는다(감시를 다시 시작해야 한다).
+        이름은 운전 상태 창의 [이름 바꾸기] 로, 이름과 온도 패턴(중심)은 관제서버
+        설정 화면에서 고친다(op_sync.py 가 받아 op_states.json 에 쓴다). 이름 ·
+        중심 · 상태 수가 모두 바뀔 수 있으므로 통째로 다시 읽는다. 상태 수가
+        달라지면 최근 구성(recent_mix)은 옛 번호라 비운다.
         """
         now = time.time()
-        if not self.ok or now - self._names_checked < 60:
+        if now - self._names_checked < 60:
             return
         self._names_checked = now
+        self.reload_if_changed()
+
+    def reload_if_changed(self):
+        """파일이 바뀌었으면 이름 · 중심 · 기준선을 다시 읽는다. 바꿨으면 True."""
         try:
             m = os.path.getmtime(self._path)
             if m == self._mtime:
-                return
+                return False
             with open(self._path, encoding="utf-8") as f:
-                names = [s["name"] for s in json.load(f)["states"]]
+                d = json.load(f)
+            cells = np.asarray(d["cells"], dtype=np.intp)
+            names = [s["name"] for s in d["states"]]
+            cen = np.asarray([s["center"] for s in d["states"]], dtype=np.float64)
         except Exception:
-            return              # 쓰는 중이거나 깨졌으면 다음에 다시 본다
+            return False        # 쓰는 중이거나 깨졌으면 다음에 다시 본다
+        if cen.ndim != 2 or cen.shape[1] != cells.size or not names:
+            return False
+        if not cells.size or int(cells.max()) >= self._n_cells:
+            return False
         self._mtime = m
-        if len(names) == len(self.names):
-            self.names = names
+        if len(names) != len(self.names):
+            self._recent, self._recent_dev, self._recent_t = [], [], []
+        self.names = names
+        self.centers = cen
+        self.cells = cells
+        self.dev = [float(s.get("dev", 0.0)) for s in d["states"]]
+        self.far = [float(s.get("far", 0.0)) for s in d["states"]]
+        self.info = f"{len(names)}가지 · {d.get('period', '')} 자료"
+        self.ok = True          # 기동 때 파일이 없었다가 관제서버에서 받은 경우
+        return True
 
     def name_of(self, i):
         self._refresh_names()

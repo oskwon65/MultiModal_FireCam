@@ -178,7 +178,7 @@ class AutoRetrain:
                       encoding="utf-8") as f:
                 f.write(f"{started}\t{ended}\t{w}\t{result}\t{gen}\t{score}\n")
         except OSError as e:
-            print(f"[WARN] 자동 재학습 이력을 쓰지 못했습니다: {e}")
+            print(f"[WARN] 자동 재학습 이력을 쓰지 못했음: {e}")
 
     def _write_state(self, section="LAST", **kv):
         cp = _read_ini(self._state_path())
@@ -188,10 +188,10 @@ class AutoRetrain:
             cp.set(section, k, str(v))
         try:
             with open(self._state_path(), "w", encoding="utf-8") as f:
-                f.write("; 자동 재학습이 남기는 기록입니다. 직접 고치지 마십시오.\n")
+                f.write("; 자동 재학습이 남기는 기록임 · 직접 고치지 말 것\n")
                 cp.write(f)
         except OSError as e:
-            print(f"[WARN] 자동 재학습 기록을 쓰지 못했습니다: {e}")
+            print(f"[WARN] 자동 재학습 기록을 쓰지 못했음: {e}")
 
     # ---- 돌리기 -----------------------------------------------------
 
@@ -225,7 +225,7 @@ class AutoRetrain:
                       gen_after if promoted else "", self._score)
 
         self._write_state(DONE_AT=ended, RESULT=text)
-        print(f"[자동 재학습] 끝났습니다 - {text}  (자세한 내용 {LOG_NAME})")
+        print(f"[자동 재학습] 끝났음 - {text}  (자세한 내용 {LOG_NAME})")
 
     def tick(self, w, score=None):
         """
@@ -278,7 +278,7 @@ class AutoRetrain:
         except OSError as e:
             self.proc = None
             self.log = None
-            print(f"[WARN] 자동 재학습을 시작하지 못했습니다: {e}")
+            print(f"[WARN] 자동 재학습을 시작하지 못했음: {e}")
             # 시작하지 못한 것도 시도로 센다. 안 그러면 10분마다 같은 실패가 되풀이된다.
             self._write_state(AT=self._started, W=f"{float(w):.2f}",
                               SCORE=self._score, RESULT=f"시작 실패: {e}")
@@ -288,6 +288,6 @@ class AutoRetrain:
 
         self._write_state(AT=self._started, W=f"{float(w):.2f}", SCORE=self._score,
                           RESULT="진행 중")
-        print(f"[자동 재학습] 시작합니다 - 판단 점수 {self._score or '-'}, "
+        print(f"[자동 재학습] 시작함 - 판단 점수 {self._score or '-'}, "
               f"기여 w {float(w):.2f} < 1.00, "
               f"간격 {hours}시간  (기록 {LOG_NAME})")

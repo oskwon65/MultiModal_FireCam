@@ -28,7 +28,7 @@ def clear_history_db(history_db_config):
     tables = [row[0] for row in cur.fetchall()]
 
     if not tables:
-        print("[INFO] 삭제할 history 테이블이 없습니다.")
+        print("[INFO] 삭제할 history 테이블이 없음")
         cur.close(); conn.close()
         return
 
@@ -36,10 +36,10 @@ def clear_history_db(history_db_config):
     for t in tables:
         print(f"  {t}")
 
-    answer = input("\n위 테이블을 모두 삭제하시겠습니까? [y/N]: ").strip().lower()
+    answer = input("\n위 테이블을 모두 삭제할지 확인 [y/N]: ").strip().lower()
 
     if answer not in ("y", "yes"):
-        print("[SKIP] 취소되었습니다.")
+        print("[SKIP] 취소되었음")
         cur.close(); conn.close()
         return
 
@@ -79,11 +79,11 @@ def reset_sensor_db(sensor_db_config):
 
     answer = input(
         "current_value 테이블을 DROP 후 새 스키마로 재생성하고 "
-        "thermal_queue를 비우시겠습니까? [y/N]: "
+        "thermal_queue를 비울지 확인 [y/N]: "
     ).strip().lower()
 
     if answer not in ("y", "yes"):
-        print("[SKIP] 취소되었습니다.")
+        print("[SKIP] 취소되었음")
         return
 
     conn = mysql.connector.connect(**sensor_db_config)

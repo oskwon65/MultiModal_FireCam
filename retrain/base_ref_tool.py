@@ -4,6 +4,7 @@ RGB 기준 이미지(base_img/base_ref.png)를 사람이 보고 바꾸기 위한
 
   python retrain/base_ref_tool.py cj_busan_1 capture
   python retrain/base_ref_tool.py cj_busan_1 relocate
+  python retrain/base_ref_tool.py cj_busan_1 recount 20
 
 지금 RGB 화면을 관제서버에서 한 장 받아 base_img/_candidate.png 로 두고, 기준
 이미지와 견준 결과를 base_img/_candidate.ini 에 적는다. [설정] 창의 [기준 이미지]
@@ -53,6 +54,14 @@ RGB 기준 이미지(base_img/base_ref.png)를 사람이 보고 바꾸기 위한
 감시를 멈춘 상태에서만 한다 - 돌고 있으면 메모리의 기준선과 모델이 그대로 남는다.
 [설정] 창이 그것을 확인한 뒤 부른다.
 
+[설비 칸 수를 바꾸면 - recount]
+
+관제서버 설정 화면에서 admin 이 칸 수를 바꾸고 그 칸 수로 마스크를 다시 저장하면,
+[관제서버 분석마스크 받기] 창이 칸 수가 달라진 것을 보고 사람에게 확인한 뒤 부른다.
+감시하는 칸이 바뀌므로 relocate 와 같이 2 · 3단계를 내리고 POSITION_SINCE 를 적은
+뒤 env.ini 의 NUM_OF_MACHINE_CELLS 를 새 칸 수로 고친다. 옮긴 모델은
+model_generations/_retired_recount/<시각>/ 에 둔다. 결과는 users/<현장>/_recount.ini.
+
 [재는 방법]
 
 감시가 기동할 때와 같다(cv_utils.measure_shift_vs_ref - 위상 상관). 다만 일치도가
@@ -83,6 +92,7 @@ from cv_utils import (Get_Input_Image_URL, base_ref_path, crop_to_same_size,
 CANDIDATE_IMG = "_candidate.png"
 CANDIDATE_INI = "_candidate.ini"
 RELOCATE_INI = "_relocate.ini"     # relocate 결과. [설정] 창이 읽는다
+RECOUNT_INI = "_recount.ini"       # recount 결과 (users/<현장>/). [관제서버 분석마스크 받기] 창이 읽는다
 
 MODEL_FILES = ("autoencoder_final.pth", "scaler.pkl", "scaler.npz")
 BASELINE_FILE = "online_baseline.npz"
@@ -187,12 +197,12 @@ def capture(user_id):
     img = Get_Input_Image_URL(config["IMG_URL"])
     if img is None:
         write_result(out_ini, OK=0, AT=at,
-                     MSG="현재 화면을 받지 못했습니다 (관제서버 RGB 이미지)")
-        print("[실패] 현재 화면을 받지 못했습니다")
+                     MSG="현재 화면을 받지 못했음 (관제서버 RGB 이미지)")
+        print("[실패] 현재 화면을 받지 못했음")
         return 2
 
     if not cv2.imwrite(out_img, img):
-        write_result(out_ini, OK=0, AT=at, MSG="현재 화면을 저장하지 못했습니다")
+        write_result(out_ini, OK=0, AT=at, MSG="현재 화면을 저장하지 못했음")
         return 2
 
     h, w = img.shape[:2]
@@ -204,8 +214,8 @@ def capture(user_id):
     cur_q = quality(img)
     if ref is None:
         write_result(out_ini, OK=1, AT=at, HAS_REF=0, W=w, H=h, MEAN=f"{mean:.0f}",
-                     MSG="기준 이미지가 없습니다", **check_fields(checks(cur_q)))
-        print("[알림] 기준 이미지가 없습니다. 현재 화면만 받았습니다.")
+                     MSG="기준 이미지가 없음", **check_fields(checks(cur_q)))
+        print("[알림] 기준 이미지가 없음 · 현재 화면만 받았음")
         return 0
 
     dx, dy, resp = measure(ref, img)
@@ -225,6 +235,12 @@ def capture(user_id):
 
 def set_position_since(ini_path, stamp):
     """continual_learning.ini 의 POSITION_SINCE 를 고친다. 주석과 순서는 그대로 둔다."""
+    set_const_value(ini_path, "POSITION_SINCE", stamp)
+
+
+def set_const_value(ini_path, name, value):
+    """ini 의 [CONSTANTS] 안 name 값을 고친다. 주석과 순서는 그대로 둔다."""
+    stamp = value
     with open(ini_path, "rb") as f:
         data = f.read()
     eol = "\r\n" if b"\r\n" in data else "\n"       # 원래 줄끝을 지킨다
@@ -234,12 +250,12 @@ def set_position_since(ini_path, stamp):
         key = ln.split("=", 1)[0].strip()
         if ln.strip().startswith("["):
             if in_const and not done:
-                out.append(f"POSITION_SINCE = {stamp}")
+                out.append(f"{name} = {stamp}")
                 done = True
             in_const = ln.strip().upper() == "[CONSTANTS]"
-        if in_const and key == "POSITION_SINCE":
+        if in_const and key == name:
             if not done:
-                out.append(f"POSITION_SINCE = {stamp}")
+                out.append(f"{name} = {stamp}")
                 done = True
             continue
         out.append(ln)
@@ -247,10 +263,10 @@ def set_position_since(ini_path, stamp):
         if in_const:
             while out and out[-1] == "":
                 out.pop()
-            out.append(f"POSITION_SINCE = {stamp}")
+            out.append(f"{name} = {stamp}")
             out.append("")
         else:
-            out += ["[CONSTANTS]", f"POSITION_SINCE = {stamp}", ""]
+            out += ["[CONSTANTS]", f"{name} = {stamp}", ""]
     with open(ini_path, "w", encoding="utf-8", newline="") as f:
         f.write(eol.join(out))
 
@@ -258,6 +274,34 @@ def set_position_since(ini_path, stamp):
 def relocate(user_id):
     """칸 단위로 밀린 채 기준을 바꾼 뒤 2 · 3단계를 내린다. 위 [relocate] 참고."""
     config = Set_Env_Config(user_id, verbose=False)
+    return _retire(config, "_retired_position", "카메라 자리가 바뀌어",
+                   os.path.join(config["BASE_IMG_DIR"], RELOCATE_INI))
+
+
+def recount(user_id, cells):
+    """
+    설비 칸 수(마스크의 1 개수)를 바꾼다. 위 [recount] 참고.
+
+    2 · 3단계를 relocate 와 같이 내리고, POSITION_SINCE 를 적고, env.ini 의
+    NUM_OF_MACHINE_CELLS 를 cells 로 고친다. 마스크 교체는 부른 쪽([관제서버 Mask
+    받기] 창)이 이 도구가 성공한 뒤에 한다.
+    """
+    if not 1 <= cells <= 64:
+        print(f"[recount] 칸 수는 1~64 여야 함: {cells}")
+        return 2
+    config = Set_Env_Config(user_id, verbose=False)
+    up = config["LOCAL_USER_PATH"]
+    old = int(config.get("NUM_OF_MACHINE_CELLS") or 0)
+    rc = _retire(config, "_retired_recount", f"설비 칸 수가 바뀌어({old} -> {cells})",
+                 os.path.join(up, RECOUNT_INI),
+                 extra=lambda: (set_const_value(os.path.join(up, "env.ini"),
+                                                "NUM_OF_MACHINE_CELLS", str(cells)),
+                                f"설비 칸 수를 {old} -> {cells} 칸으로 바꿨음 (env.ini)")[1])
+    return rc
+
+
+def _retire(config, retired_dir, why, result_path, extra=None):
+    """2 · 3단계를 내리고 POSITION_SINCE 를 적는다. relocate · recount 가 같이 쓴다."""
     up = config["LOCAL_USER_PATH"]
     now = datetime.now()
     stamp = now.strftime("%Y%m%d_%H%M%S")
@@ -267,7 +311,7 @@ def relocate(user_id):
 
     # 3단계 - 운용 모델을 옮기고 세대 표시를 비운다. 세대를 그대로 두면 감시가
     # 시작할 때 파일과 세대를 대조하다 어긋남으로 멈춘다.
-    dst = os.path.join(gen_root, "_retired_position", stamp)
+    dst = os.path.join(gen_root, retired_dir, stamp)
     moved = []
     for name in MODEL_FILES:
         src = os.path.join(up, name)
@@ -284,11 +328,11 @@ def relocate(user_id):
             f.write("")
     if moved:
         with open(os.path.join(dst, "note.txt"), "w", encoding="utf-8") as f:
-            f.write(f"{since} 카메라 자리가 바뀌어 내렸다. 운용 세대 {gen_was or '-'}\n")
-        done.append(f"3단계 모델을 내렸습니다 (세대 {gen_was or '-'} -> "
-                    f"model_generations\\_retired_position\\{stamp})")
+            f.write(f"{since} {why} 내렸다. 운용 세대 {gen_was or '-'}\n")
+        done.append(f"3단계 모델을 내렸음 (세대 {gen_was or '-'} -> "
+                    f"model_generations\\{retired_dir}\\{stamp})")
     else:
-        done.append("3단계 모델이 없어 내릴 것이 없습니다")
+        done.append("3단계 모델이 없어 내릴 것이 없음")
 
     # 2단계 - 경험 임계값을 치우고 사유를 남긴다.
     bl = os.path.join(up, BASELINE_FILE)
@@ -296,22 +340,25 @@ def relocate(user_id):
         rd = os.path.join(gen_root, "_retired_baseline")
         os.makedirs(rd, exist_ok=True)
         shutil.move(bl, os.path.join(rd, stamp + ".npz"))
-        done.append(f"2단계 경험 임계값을 치웠습니다 (model_generations\\_retired_baseline\\{stamp}.npz)")
+        done.append(f"2단계 경험 임계값을 치웠음 (model_generations\\_retired_baseline\\{stamp}.npz)")
     else:
-        done.append("2단계 경험 임계값이 없어 치울 것이 없습니다")
-    write_reset_note(up, "카메라 자리가 바뀌어 처음부터 쌓는 중", since)
+        done.append("2단계 경험 임계값이 없어 치울 것이 없음")
+    write_reset_note(up, f"{why} 처음부터 쌓는 중", since)
 
     # 기간 - 그 앞의 프레임은 쓰지 않는다.
     set_position_since(os.path.join(up, "continual_learning.ini"), since)
-    done.append(f"재학습 · 기여도 · 되쌓기는 {since} 이후 자료만 씁니다")
+    done.append(f"재학습 · 기여도 · 되쌓기는 {since} 이후 자료만 씀")
+
+    if extra is not None:
+        done.append(extra())
 
     cp = configparser.ConfigParser(interpolation=None)
     cp.optionxform = str
     cp["RESULT"] = {"OK": "1", "AT": since, "N": str(len(done))}
     for i, d in enumerate(done, 1):
         cp["RESULT"][f"L{i}"] = d
-        print("[relocate]", d)
-    with open(os.path.join(config["BASE_IMG_DIR"], RELOCATE_INI), "w", encoding="utf-8") as f:
+        print(f"[{retired_dir.strip('_')}]", d)
+    with open(result_path, "w", encoding="utf-8") as f:
         cp.write(f)
     return 0
 
@@ -319,10 +366,15 @@ def relocate(user_id):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("user_id")
-    ap.add_argument("action", choices=["capture", "relocate"])
+    ap.add_argument("action", choices=["capture", "relocate", "recount"])
+    ap.add_argument("cells", nargs="?", type=int, help="recount 의 새 칸 수")
     args = ap.parse_args()
     if args.action == "relocate":
         return relocate(args.user_id)
+    if args.action == "recount":
+        if args.cells is None:
+            ap.error("recount 에는 새 칸 수가 필요함")
+        return recount(args.user_id, args.cells)
     return capture(args.user_id)
 
 

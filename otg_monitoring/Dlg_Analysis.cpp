@@ -187,10 +187,10 @@ BOOL CDlg_Analysis::OnInitDialog()
     SendMessageToDescendants(WM_SETFONT, (WPARAM)m_font.GetSafeHandle(), TRUE);
 
     CStringA head;
-    head.Format("[%s]  히스토리 DB 를 한 시간 단위로 묶었습니다. 위는 점수, "
-                "아래는 마스크 칸의 온도입니다.\r\n"
-                "축이 다르므로 겹치지 않고 위아래로 나눕니다. 가로 위치가 "
-                "같으면 같은 시각입니다.",
+    head.Format("[%s]  히스토리 DB 를 한 시간 단위로 묶었음 · 위는 점수, "
+                "아래는 분석마스크 칸의 온도임\r\n"
+                "축이 다르므로 겹치지 않고 위아래로 나눔 · 가로 위치가 "
+                "같으면 같은 시각임",
                 gUserID.c_str());
     m_lblHead.SetWindowTextA(head);
 
@@ -321,8 +321,8 @@ void CDlg_Analysis::Load()
     MYSQL* conn = connect_history_db(&dbName);
     if (conn == nullptr)
     {
-        SetState("히스토리 DB 에 접속할 수 없습니다. env.ini 와 db_secrets.ini 를 "
-                 "확인하십시오.");
+        SetState("히스토리 DB 에 접속할 수 없음 · env.ini 와 db_secrets.ini 를 "
+                 "확인할 것");
         m_chart.Invalidate();
         m_loading = false;
         return;
@@ -364,8 +364,8 @@ void CDlg_Analysis::Load()
     if (tables.empty())
     {
         mysql_close(conn);
-        SetState("그 기간에 히스토리 테이블이 없습니다. 기간을 늘려 "
-                 "보십시오.");
+        SetState("그 기간에 히스토리 테이블이 없음 · 기간을 늘려 "
+                 "볼 것");
         m_chart.Invalidate();
         m_loading = false;
         return;
@@ -456,7 +456,7 @@ void CDlg_Analysis::Load()
 
     if (m_pts.empty())
     {
-        SetState("그 기간에 산출된 점수가 없습니다.");
+        SetState("그 기간에 산출된 점수가 없음");
         m_chart.Invalidate();
         m_loading = false;
         return;
@@ -486,7 +486,7 @@ void CDlg_Analysis::Load()
               (unsigned)m_pts.size(), total,
               lo, sum / m_pts.size(), m_pts.back().avg,
               tpeak, m_pts.back().hasT ? m_pts.back().tmax : 0.0,
-              maskIn.empty() ? "  (마스크 없음 · 64칸 전체)" : "");
+              maskIn.empty() ? "  (분석마스크 없음 · 64칸 전체)" : "");
     SetState(st);
 
     m_chart.Invalidate();
@@ -636,7 +636,7 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
         CRect r1(px, topY - 24, px + 340, topY - 1);
         mem.DrawTextA("점수", &r1, DT_LEFT | DT_SINGLELINE);
         CRect r2(px, botY - 24, px + 340, botY - 1);
-        mem.DrawTextA("마스크 칸 온도 (섭씨)", &r2, DT_LEFT | DT_SINGLELINE);
+        mem.DrawTextA("분석마스크 칸 온도 (섭씨)", &r2, DT_LEFT | DT_SINGLELINE);
         mem.SelectObject(pOld);
     }
 
@@ -724,7 +724,7 @@ void CDlg_Analysis::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
     {
         mem.SetTextColor(MUTED_COLOR);
         CRect rcT(px, topY, px + pw, botY + ph);
-        mem.DrawTextA("보여 줄 점수가 없습니다.", &rcT,
+        mem.DrawTextA("보여 줄 점수가 없음", &rcT,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         pDC->BitBlt(lpDIS->rcItem.left, lpDIS->rcItem.top, w, h, &mem, 0, 0,
                     SRCCOPY);

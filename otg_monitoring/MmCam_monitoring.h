@@ -34,6 +34,9 @@ public:
 public:
 	virtual BOOL InitInstance();
 
+	// AfxMessageBox 를 설정 영역과 같은 글꼴의 알림창(Dlg_MsgBox)으로 돌린다.
+	virtual int DoMessageBox(LPCTSTR lpszPrompt, UINT nType, UINT nIDPrompt) override;
+
 // 구현입니다.
 
 	DECLARE_MESSAGE_MAP()

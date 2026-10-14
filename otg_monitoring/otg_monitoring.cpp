@@ -6,6 +6,7 @@
 #include "framework.h"
 #include "MmCam_monitoring.h"
 #include "MmCam_monitoringDlg.h"
+#include "Dlg_MsgBox.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -37,6 +38,13 @@ CMmCammonitoringApp theApp;
 
 
 // CMmCammonitoringApp 초기화
+
+// 앱 안의 모든 AfxMessageBox 가 여기를 거친다. 기본 메시지 상자는 시스템 글꼴
+// 크기로만 그려져 설정 영역과 글꼴 크기가 달랐다 - 같은 글꼴의 알림창으로 돌린다.
+int CMmCammonitoringApp::DoMessageBox(LPCTSTR lpszPrompt, UINT nType, UINT /*nIDPrompt*/)
+{
+	return KictMessageBox(nullptr, lpszPrompt, nullptr, nType);
+}
 
 BOOL CMmCammonitoringApp::InitInstance()
 {
@@ -86,8 +94,8 @@ BOOL CMmCammonitoringApp::InitInstance()
 	}
 	else if (nResponse == -1)
 	{
-		TRACE(traceAppMsg, 0, "경고: 대화 상자를 만들지 못했으므로 애플리케이션이 예기치 않게 종료됩니다.\n");
-		TRACE(traceAppMsg, 0, "경고: 대화 상자에서 MFC 컨트롤을 사용하는 경우 #define _AFX_NO_MFC_CONTROLS_IN_DIALOGS를 수행할 수 없습니다.\n");
+		TRACE(traceAppMsg, 0, "경고: 대화 상자를 만들지 못했으므로 애플리케이션이 예기치 않게 종료됨\n");
+		TRACE(traceAppMsg, 0, "경고: 대화 상자에서 MFC 컨트롤을 사용하는 경우 #define _AFX_NO_MFC_CONTROLS_IN_DIALOGS를 수행할 수 없음\n");
 	}
 
 	// 위에서 만든 셸 관리자를 삭제합니다.

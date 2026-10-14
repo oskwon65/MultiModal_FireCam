@@ -96,6 +96,7 @@ from abs_threshold import AbsoluteThreshold, LEVEL_ALARM, LEVEL_WARN, level_name
 from online_baseline import OnlineBaseline, SCENE_SHIFT_MIN
 import stage_status
 import op_state
+import op_sync
 import model_contribution
 import artifact_guard
 from auto_retrain import AutoRetrain
@@ -251,7 +252,7 @@ def load_scaler(path):
         if not os.path.exists(npz_path):
             raise RuntimeError(
                 f"[scaler] {path} 는 이 환경의 numpy 버전과 호환되지 않는 pickle이고, "
-                f"대체 파일 {npz_path} 도 없습니다."
+                f"대체 파일 {npz_path} 도 없음"
             ) from e
 
         # npz가 pkl보다 "의미 있게" 오래됐다면(=pkl이 재학습으로 갱신된 뒤 npz를 안 만든 경우),
@@ -265,9 +266,9 @@ def load_scaler(path):
         stale_by = os.path.getmtime(path) - os.path.getmtime(npz_path)
         if stale_by > STALE_TOLERANCE_SEC:
             raise RuntimeError(
-                f"[scaler] {npz_path} 가 {path} 보다 {stale_by:.0f}초 오래됐습니다. "
-                f"scaler.pkl이 재학습으로 갱신된 뒤 scaler.npz를 다시 만들지 않은 것으로 보입니다. "
-                f"otg 환경에서 scaler.npz를 다시 생성하세요."
+                f"[scaler] {npz_path} 가 {path} 보다 {stale_by:.0f}초 오래됐음 · "
+                f"scaler.pkl이 재학습으로 갱신된 뒤 scaler.npz를 다시 만들지 않은 것으로 보임 · "
+                f"otg 환경에서 scaler.npz를 다시 생성할 것"
             )
 
         data = np.load(npz_path)
@@ -378,12 +379,12 @@ def load_live_artifacts(user_path, input_dim, latent_dim, output_dim, device):
     """
     state, msg, _rows = artifact_guard.check(user_path)
     if state == artifact_guard.MISMATCH:
-        return None, None, f"산출물 짝이 어긋납니다 - {msg}"
+        return None, None, f"산출물 짝이 어긋남 - {msg}"
 
     mp = os.path.join(user_path, "autoencoder_final.pth")
     sp = os.path.join(user_path, "scaler.pkl")
     if not (os.path.exists(mp) and os.path.exists(sp)):
-        return None, None, "모델 파일이 없습니다"
+        return None, None, "모델 파일이 없음"
 
     try:
         m = AutoEncoder(input_dim, latent_dim, output_dim).to(device)
@@ -394,7 +395,7 @@ def load_live_artifacts(user_path, input_dim, latent_dim, output_dim, device):
 
     if getattr(sc, "n_features_in_", None) != input_dim:
         return None, None, (f"scaler 의 차원이 {getattr(sc, 'n_features_in_', None)} "
-                            f"로 INPUT_DIM({input_dim})과 다릅니다")
+                            f"로 INPUT_DIM({input_dim})과 다름")
 
     return m, sc, ""
 
@@ -448,7 +449,7 @@ def extract_mach_area(median_hot, mask):
         print(
             f"[FATAL] MACH_AREA_MASK length mismatch: "
             f"\n expected {LENGTH_HOTLIST} (X_GRID*Y_GRID), got {mask.shape[0]}. "
-            f"\n hotlist_mask_local.ini 또는 DB의 mask_list 길이를 확인하세요."
+            f"\n hotlist_mask_local.ini 또는 DB의 mask_list 길이를 확인할 것"
         )
         print("Program Terminated")
         sys.exit(1)
@@ -467,7 +468,7 @@ def extract_mach_area(median_hot, mask):
             f"[FATAL] MACH_AREA_MASK ones count ({ones_count}) != "
             f"\n NUM_OF_MACHINE_CELLS ({NUM_OF_MACHINE_CELLS}). "
             f"\n env.ini 의 NUM_OF_MACHINE_CELLS 값을 hotlist_mask 의 1 개수와 맞추거나, "
-            f"\n hotlist_mask 를 다시 작성하세요."
+            f"\n hotlist_mask 를 다시 작성할 것"
         )
         print("Program Terminated")
         sys.exit(1)
@@ -493,9 +494,9 @@ def Check_Status_of_HotList_Mask(hotlist_mask, x_grid, BASE_IMG_DIR, input_img):
 
     MAX_SHIFT = 2
     if abs(shift_x) >= MAX_SHIFT or abs(shift_y) >= MAX_SHIFT:
-        print(f"[ERROR] 카메라가 가로 {shift_x:+d}칸 · 세로 {shift_y:+d}칸 밀렸습니다 "
-              f"({MAX_SHIFT}칸 이상). 마스크를 믿을 수 없어 중단합니다.")
-        print("        조준을 되돌린 뒤 다시 시작하십시오. 마스크는 자동으로 옮기지 않습니다.")
+        print(f"[ERROR] 카메라가 가로 {shift_x:+d}칸 · 세로 {shift_y:+d}칸 밀렸음 "
+              f"({MAX_SHIFT}칸 이상). 마스크를 믿을 수 없어 중단함")
+        print("        조준을 되돌린 뒤 다시 시작할 것 · 마스크는 자동으로 옮기지 않음")
         print("Program Terminated")
         sys.exit(1)
 
@@ -554,8 +555,8 @@ def main_loop(config, sensor_db_config):
     if artifact_guard.report(config["LOCAL_USER_PATH"]):
         stage_status.write_error(
             os.path.join(config["LOCAL_USER_PATH"], "stage_status.ini"),
-            "모델과 스케일러의 짝이 맞지 않아 시작하지 않았습니다. "
-            "세대 폴더의 것으로 되돌리십시오.")
+            "모델과 스케일러의 짝이 맞지 않아 시작하지 않았음 · "
+            "세대 폴더의 것으로 되돌릴 것")
         sys.exit(2)
 
     history_db_config = Get_HistoryDB_Config(config)
@@ -597,11 +598,11 @@ def main_loop(config, sensor_db_config):
 
     if not abs_guard.enabled:
         print("[STAGE 1] 경고 — 절대 임계값이 지정되지 않아 1단계 경보가")
-        print("          동작하지 않습니다. 설비의 정상 가동 온도를 확인해")
+        print("          동작하지 않음 · 설비의 정상 가동 온도를 확인해")
         print("          env.ini 의 [CONSTANTS] 에 ABS_TEMP_WARN/ALARM 과")
-        print("          ABS_RISE_WARN/ALARM 을 지정하십시오.")
-        print("          값을 모르면 하루쯤 돌려 기준선이 쌓이기를 기다리십시오.")
-        print("          아래에 이 현장에서 관측된 권장값을 출력합니다.")
+        print("          ABS_RISE_WARN/ALARM 을 지정할 것")
+        print("          값을 모르면 하루쯤 돌려 기준선이 쌓이기를 기다릴 것")
+        print("          아래에 이 현장에서 관측된 권장값을 출력함")
 
     BASELINE_PATH = os.path.join(config["LOCAL_USER_PATH"], "online_baseline.npz")
     baseline = OnlineBaseline.load(
@@ -618,12 +619,17 @@ def main_loop(config, sensor_db_config):
     print(f"[운전상태] {opst.info}")
     op_now = None
 
+    # 관제서버와 운전 상태 맞추기 (지금 상태 올리기 · 분류표 주고받기). 따로 도는
+    # 스레드라 관제서버가 느리거나 꺼져 있어도 감시는 막히지 않는다.
+    opsync = op_sync.OpSync(config)
+    opsync.start()
+
     model = None
     scaler = None
 
     if not os.path.exists(MODEL_PATH) or not os.path.exists(SCALER_PATH):
-        print("[STAGE 3] 오토인코더 없음 — 1~2단계로 동작합니다.")
-        print("          데이터가 쌓이면 히스토리 DB로 학습해 배치하십시오.")
+        print("[STAGE 3] 오토인코더 없음 — 1~2단계로 동작함")
+        print("          데이터가 쌓이면 히스토리 DB로 학습해 배치할 것")
     else:
         try:
             m = AutoEncoder(INPUT_DIM, LATENT_DIM, OUTPUT_DIM).to(device)
@@ -640,7 +646,7 @@ def main_loop(config, sensor_db_config):
                 print(
                     f"[STAGE 3] scaler 의 n_features_in_="
                     f"{getattr(sc, 'n_features_in_', None)} 가 INPUT_DIM({INPUT_DIM})과 "
-                    f"다릅니다. 오토인코더를 쓰지 않고 1~2단계로 동작합니다."
+                    f"다름 · 오토인코더를 쓰지 않고 1~2단계로 동작함"
                 )
             else:
                 model, scaler = m, sc
@@ -648,7 +654,7 @@ def main_loop(config, sensor_db_config):
                       f"(INPUT_DIM={INPUT_DIM}, LATENT_DIM={LATENT_DIM})")
 
         except Exception as e:
-            print(f"[STAGE 3] 오토인코더를 읽지 못해 1~2단계로 동작합니다: {e}")
+            print(f"[STAGE 3] 오토인코더를 읽지 못해 1~2단계로 동작함: {e}")
 
     baseline_dirty = 0
     suggested_once = False
@@ -689,8 +695,8 @@ def main_loop(config, sensor_db_config):
         if cur_ones_count != NUM_OF_MACHINE_CELLS:
             print(
                 f"\n[FATAL] {HotListMask_LocalPath} 의 1 개수({cur_ones_count})가 "
-                f"\nNUM_OF_MACHINE_CELLS({NUM_OF_MACHINE_CELLS})와 다릅니다. "
-                f"\nenv.ini 의 NUM_OF_MACHINE_CELLS 값을 확인하거나 hotlist_mask 를 다시 작성하세요."
+                f"\nNUM_OF_MACHINE_CELLS({NUM_OF_MACHINE_CELLS})와 다름 · "
+                f"\nenv.ini 의 NUM_OF_MACHINE_CELLS 값을 확인하거나 hotlist_mask 를 다시 작성할 것"
             )
             print("Program Terminated")
             sys.exit(1)
@@ -709,13 +715,13 @@ def main_loop(config, sensor_db_config):
     # 그만큼 밀어 저장하고, base_img 를 지운 뒤 이 순간의 프레임을 새 기준으로
     # 삼았다. 사람이 보지 않는 기동 순간에 감시 대상과 잣대가 한꺼번에 바뀌고,
     # 승인이 관제서버에 남아 있으면 몇 달 뒤 1칸 밀린 기동에서도 저절로 일어났다.
-    # 2026-10-08 에 뺐다. 마스크는 사람이 [관제서버 Mask 받기] 로, 기준 이미지는
+    # 2026-10-08 에 뺐다. 마스크는 사람이 [관제서버 분석마스크 받기] 로, 기준 이미지는
     # [설정] 의 [기준 이미지] 에서 견주어 보고 바꾼다.
     hotlist_mask = cur_hotlist_mask
     if bShifted:
         update_db_error_code(sensor_db_config, ERR_CODE.CAMERA_POSITION_SHIFT)
-        print("[WARN] 카메라가 밀렸습니다 - 마스크는 그대로 두고 오류 코드만 남깁니다")
-        print("[WARN] 재시작 전까지 2·3단계 판정과 학습을 멈춥니다. 1단계만 동작합니다.")
+        print("[WARN] 카메라가 밀렸음 - 마스크는 그대로 두고 오류 코드만 남김")
+        print("[WARN] 재시작 전까지 2·3단계 판정과 학습을 멈춤 · 1단계만 동작함")
     else:
         update_db_error_code(sensor_db_config, ERR_CODE.NO_ERR)
 
@@ -757,13 +763,13 @@ def main_loop(config, sensor_db_config):
                         baseline_dirty = 0
 
                         _gen = _fp.split("|")[0] or "이름 없음"
-                        print(f"[STAGE 3] 운용 모델이 바뀌어 다시 읽었습니다 - "
+                        print(f"[STAGE 3] 운용 모델이 바뀌어 다시 읽었음 - "
                               f"세대 {_gen}")
                         print(f"[STAGE 2] 경험 임계값 — {baseline.summary()}")
                     else:
                         # 복사 도중이면 여기로 온다. 지문을 갱신하지 않으므로
                         # 다음 차례에 다시 본다.
-                        print(f"[STAGE 3] 새 모델을 아직 읽지 못했습니다 - {_why}")
+                        print(f"[STAGE 3] 새 모델을 아직 읽지 못했음 - {_why}")
 
             cur_error_code = read_db_error_code(sensor_db_config)
 
@@ -845,7 +851,7 @@ def main_loop(config, sensor_db_config):
 
                 if not scene_ok:
                     print(f"[화면이동] 기준 패턴과의 상관계수 {corr:.3f} "
-                          f"(기준 {SCENE_SHIFT_MIN}). 카메라 조준을 확인하십시오.")
+                          f"(기준 {SCENE_SHIFT_MIN}). 카메라 조준을 확인할 것")
 
                 # 이동이 보이면 2·3단계는 판정도 학습도 하지 않는다. 마스크가
                 # 설비의 다른 곳을 보는 채로 매긴 점수는 근거가 없다.
@@ -879,13 +885,13 @@ def main_loop(config, sensor_db_config):
                     if (abs(gap) >= SCORE_DIVERGENCE_WARN
                             and max(ae_score, bl_score) >= SCORE_NORMAL_SIDE):
                         if gap < 0:
-                            print(f"[불일치] 오토인코더만 낮습니다({abs(gap):.2f}). "
+                            print(f"[불일치] 오토인코더만 낮음({abs(gap):.2f}). "
                                   f"셀 온도는 정상 범위이므로 설비 이상보다 "
-                                  f"카메라 조준·모델 쪽을 먼저 확인하십시오.")
+                                  f"카메라 조준·모델 쪽을 먼저 확인할 것")
                         else:
-                            print(f"[불일치] 기준선만 낮습니다({abs(gap):.2f}). "
+                            print(f"[불일치] 기준선만 낮음({abs(gap):.2f}). "
                                   f"셀 {worst} 가 전례 없는 온도인데 오토인코더는 "
-                                  f"정상으로 봅니다. 모델 감도를 확인하십시오.")
+                                  f"정상으로 봄 · 모델 감도를 확인할 것")
 
                 elif ae_score is not None:
                     machine_score = ae_score
@@ -911,7 +917,7 @@ def main_loop(config, sensor_db_config):
                     if sug:
                         print(f"[STAGE 1] 권장 임계값 — 관측된 정상 최고온도 기준으로 "
                               f"ABS_TEMP_WARN={sug[0]:.0f}, ABS_TEMP_ALARM={sug[1]:.0f} "
-                              f"(env.ini 에 적은 뒤 재시작하십시오)")
+                              f"(env.ini 에 적은 뒤 재시작할 것)")
                         suggested_once = True
 
                 # --- 기준선 누적 -----------------------------------------
@@ -949,6 +955,9 @@ def main_loop(config, sensor_db_config):
 
                 _now = datetime.now()
                 op_now = opst.classify(x_row)
+                opsync.update_now(opst.name_of(op_now), op_now, opst.last_dev,
+                                  opst.far_of(op_now), 100.0 * opst.recent_odd(),
+                                  opst.recent_mix())
 
                 if baseline.update(x_row, hour=_now.hour, accum=accum_ok,
                                    day=_now.strftime("%Y-%m-%d")):

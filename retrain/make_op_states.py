@@ -80,7 +80,7 @@ def load_mask(user_path, n_cells):
     with open(p, encoding="utf-8") as f:
         v = [int(x) for x in f.read().replace(",", " ").split()]
     if len(v) != n_cells:
-        raise RuntimeError(f"마스크 칸 수가 {len(v)} 로 격자 {n_cells} 와 다릅니다")
+        raise RuntimeError(f"마스크 칸 수가 {len(v)} 로 격자 {n_cells} 와 다름")
     return np.asarray(v, dtype=np.int32)
 
 
@@ -130,7 +130,7 @@ def main():
     conn.close()
 
     if len(X) < args.sample // 2:
-        print(f"[중단] 프레임이 {len(X):,}건뿐입니다. 더 모은 뒤 다시 하십시오.")
+        print(f"[중단] 프레임이 {len(X):,}건뿐임 · 더 모은 뒤 다시 할 것")
         return 2
 
     X = np.asarray(X)
@@ -146,12 +146,12 @@ def main():
         with open(p, encoding="utf-8") as f:
             old = json.load(f)
         if [int(i) for i in old["cells"]] != [int(i) for i in np.flatnonzero(sel)]:
-            print("[중단] 지금 마스크가 분류표를 만들 때와 다릅니다.")
+            print("[중단] 지금 마스크가 분류표를 만들 때와 다름")
             return 2
         centers = np.asarray([s["center"] for s in old["states"]],
                              dtype=np.float64)
         names = [s["name"] for s in old["states"]]
-        print(f"중심 {len(names)}개를 그대로 둡니다 ({old.get('made', '?')} 만듦)")
+        print(f"중심 {len(names)}개를 그대로 둠 ({old.get('made', '?')} 만듦)")
     else:
         from sklearn.cluster import KMeans
 
@@ -177,7 +177,7 @@ def main():
                 old_names = []
             if len(old_names) == args.k and old_names != names:
                 names = old_names
-                print("쓰던 이름을 이어 씁니다. 처음 이름으로 돌리려면 --reset-names")
+                print("쓰던 이름을 이어 씀 · 처음 이름으로 돌리려면 --reset-names")
 
     # 프레임마다 가장 가까운 중심과 그 거리.
     #
@@ -191,7 +191,7 @@ def main():
     for i in range(len(centers)):
         m = lab == i
         if not m.any():
-            print(f"[경고] '{names[i]}' 에 속한 프레임이 없습니다.")
+            print(f"[경고] '{names[i]}' 에 속한 프레임이 없음")
         states.append({
             "id": i,
             "name": names[i],
@@ -231,7 +231,7 @@ def main():
               f"{s['far']:>8.1f}도")
     print()
     print(f"저장 : {p}")
-    print("       predict_machine 을 다시 시작하면 화면에 나타납니다.")
+    print("       predict_machine 을 다시 시작하면 화면에 나타남")
     return 0
 
 

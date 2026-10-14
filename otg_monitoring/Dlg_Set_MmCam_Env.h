@@ -113,7 +113,7 @@ public:
     afx_msg void OnBnClickedBaseFresh();
     afx_msg void OnBnClickedBaseRebuild();
     afx_msg LRESULT OnSpanDone(WPARAM wp, LPARAM lp);   // DB 기간 조회가 끝났다
-    void RunBaseTool(const char* title, const char* script,
+    void RunBaseTool(const char* title, const char* action, const char* script,
                      const char* args, const char* warn);
 
 private:

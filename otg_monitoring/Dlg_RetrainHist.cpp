@@ -173,11 +173,11 @@ void CDlg_RetrainHist::OnSaveAuto()
 
     CStringA ask;
     if (on)
-        ask.Format("자동 재학습을 켭니다 (%d시간 간격).\r\n\r\n"
+        ask.Format("자동 재학습을 켬 (%d시간 간격).\r\n\r\n"
                    "기여 w 가 1.00 미만이면 학습하고, 감도 시험을 통과하면 모델을 바로 "
-                   "교체합니다. 감시가 저장하는 즉시 따릅니다.\r\n\r\n저장할까요?", hrs);
+                   "교체함 · 감시가 저장하는 즉시 따름\r\n\r\n저장할지 확인", hrs);
     else
-        ask = "자동 재학습을 끕니다.\r\n\r\n저장할까요?";
+        ask = "자동 재학습을 끔\r\n\r\n저장할지 확인";
     if (AfxMessageBox(ask, MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
         return;
 
@@ -186,7 +186,7 @@ void CDlg_RetrainHist::OnSaveAuto()
     if (!(ini_write_int_utf8(ini, "CONSTANTS", "AUTO_RETRAIN", on)
           && ini_write_int_utf8(ini, "CONSTANTS", "AUTO_RETRAIN_HOURS", hrs)))
     {
-        AfxMessageBox("continual_learning.ini 를 쓰지 못했습니다.", MB_ICONERROR);
+        AfxMessageBox("continual_learning.ini 를 쓰지 못했음", MB_ICONERROR);
         return;
     }
     LoadAuto();
@@ -196,7 +196,7 @@ void CDlg_RetrainHist::OnSaveAuto()
 void CDlg_RetrainHist::OnCancel()
 {
     if (m_dirty &&
-        AfxMessageBox("자동 재학습 설정을 저장하지 않았습니다. 그대로 닫을까요?",
+        AfxMessageBox("자동 재학습 설정을 저장하지 않았음 · 그대로 닫을지 확인",
                       MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
         return;
     CDialogEx::OnCancel();

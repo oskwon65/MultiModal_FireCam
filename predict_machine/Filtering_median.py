@@ -13,7 +13,7 @@ os.makedirs(output_folder, exist_ok=True)
 file_list = [f for f in os.listdir(input_folder) if f.endswith(".ini")]
 file_list.sort()
 
-print(f"총 {len(file_list)}개의 파일을 처리합니다.\n")
+print(f"총 {len(file_list)}개의 파일을 처리함\n")
 
 
 # ============================================
@@ -96,4 +96,4 @@ for idx, file_name in enumerate(file_list, start=1):
     plt.pause(3)
     plt.close()
     '''
-print("\n✅ 모든 파일 처리 및 저장이 완료되었습니다.")
+print("\n✅ 모든 파일 처리 및 저장이 완료되었음")

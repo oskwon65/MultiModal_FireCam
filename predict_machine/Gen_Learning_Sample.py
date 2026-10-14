@@ -14,7 +14,7 @@ os.makedirs(output_folder, exist_ok=True)
 file_list = [f for f in os.listdir(input_folder) if f.endswith("_new.ini")]
 file_list.sort()
 
-print(f"총 {len(file_list)}개의 파일을 처리합니다.\n")
+print(f"총 {len(file_list)}개의 파일을 처리함\n")
 
 # -----------------------------
 # (2) 파일별 처리
@@ -49,7 +49,7 @@ for file_name in file_list:
                     pass
 
     if not region_data:
-        print("⚠️ 데이터가 없습니다. (skip)")
+        print("⚠️ 데이터가 없음 · (skip)")
         continue
 
     # -----------------------------
@@ -80,4 +80,4 @@ for file_name in file_list:
 
         print(f"  ➕ {output_name} 저장 완료 ({len(values_at_idx)}개 값)")
 
-print("\n✅ 모든 파일의 순번별 데이터 분리 및 저장이 완료되었습니다.")
+print("\n✅ 모든 파일의 순번별 데이터 분리 및 저장이 완료되었음")

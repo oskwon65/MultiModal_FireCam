@@ -254,7 +254,7 @@ def decision_score(conn, db_name, n_cells, mask=None, temp_warn=None,
         )
         tables = [r[0] for r in cur.fetchall()]
         if not tables:
-            return None, {"reason": "히스토리 테이블이 없습니다"}
+            return None, {"reason": "히스토리 테이블이 없음"}
 
         # 빈 날을 건너뛰어 옛 테이블을 끌어오지 않는다.
         #
@@ -271,7 +271,7 @@ def decision_score(conn, db_name, n_cells, mask=None, temp_warn=None,
             kept = [t for t in tables if t[-8:] >= edge]
             if len(kept) < len(tables) and verbose:
                 print(f"[기여도] 빈 날이 있어 테이블 "
-                      f"{len(tables) - len(kept)}개를 뺐습니다 "
+                      f"{len(tables) - len(kept)}개를 뺐음 "
                       f"({edge} 보다 옛것)")
             tables = kept
         except ValueError:
@@ -333,7 +333,7 @@ def decision_score(conn, db_name, n_cells, mask=None, temp_warn=None,
                 "period": f"{sorted(tables)[0][-8:]} ~ {sorted(tables)[-1][-8:]}"}
 
         if len(scores) < min_frames:
-            info["reason"] = (f"쓸 만한 표본이 {len(scores)}건뿐입니다 "
+            info["reason"] = (f"쓸 만한 표본이 {len(scores)}건뿐임 "
                               f"(최소 {min_frames})")
             if verbose:
                 print(f"[기여도] 판단 보류 - {info['reason']}")
@@ -360,11 +360,11 @@ def decision_score(conn, db_name, n_cells, mask=None, temp_warn=None,
                 # 모델을 버리는 쪽이 더 위험하다.
                 info["rescore_error"] = f"{type(e).__name__} {e}"
                 if verbose:
-                    print(f"[경고] 다시 매기지 못해 DB 에 적힌 점수를 씁니다: "
+                    print(f"[경고] 다시 매기지 못해 DB 에 적힌 점수를 씀: "
                           f"{info['rescore_error']}")
         elif score_fn is None and verbose:
-            print("[기여도] DB 에 적힌 점수를 그대로 씁니다 - 기간 중에 모델이 "
-                  "바뀌었으면 지금 모델의 점수가 아닙니다.")
+            print("[기여도] DB 에 적힌 점수를 그대로 씀 - 기간 중에 모델이 "
+                  "바뀌었으면 지금 모델의 점수가 아님")
 
         return med, info
     finally:

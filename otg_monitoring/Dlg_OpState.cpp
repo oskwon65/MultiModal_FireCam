@@ -342,14 +342,14 @@ BOOL CDlg_OpState::OnInitDialog()
     {
         m_btnNames.EnableWindow(FALSE);
         m_lblHead.SetWindowTextA(m_madeInfo);
-        SetState("운전 상태 분류표가 없습니다. retrain/make_op_states.py 로 "
-                 "만든 뒤 다시 여십시오.");
+        SetState("운전 상태 분류표가 없음 · retrain/make_op_states.py 로 "
+                 "만든 뒤 다시 열 것");
         return TRUE;
     }
 
     CStringA head;
-    head.Format("[%s]  열화상 마스크 %u칸의 온도 분포로 운전 상태를 %u가지로 "
-                "나눴습니다. 가르는 것은 최고 온도와 칸 사이 벌어짐입니다.\r\n"
+    head.Format("[%s]  열화상 분석마스크 %u칸의 온도 분포로 운전 상태를 %u가지로 "
+                "나눴음 · 가르는 것은 최고 온도와 칸 사이 벌어짐임\r\n"
                 "분류표 %s",
                 gUserID.c_str(), (unsigned)m_cells.size(),
                 (unsigned)m_states.size(), (LPCSTR)m_madeInfo);
@@ -376,7 +376,7 @@ bool CDlg_OpState::LoadStates()
         FILE* f = nullptr;
         if (fopen_s(&f, path.c_str(), "rb") != 0 || f == nullptr)
         {
-            m_madeInfo = "op_states.json 이 없습니다";
+            m_madeInfo = "op_states.json 이 없음";
             return false;
         }
         char buf[4096];
@@ -417,7 +417,7 @@ bool CDlg_OpState::LoadStates()
     p = 0;
     if (!jSeek(txt, p, "states"))
     {
-        m_madeInfo = "op_states.json 에 상태가 없습니다";
+        m_madeInfo = "op_states.json 에 상태가 없음";
         return false;
     }
 
@@ -446,7 +446,7 @@ bool CDlg_OpState::LoadStates()
 
     if (m_cells.empty() || m_states.empty())
     {
-        m_madeInfo = "op_states.json 을 읽지 못했습니다";
+        m_madeInfo = "op_states.json 을 읽지 못했음";
         return false;
     }
     return true;
@@ -471,7 +471,7 @@ void CDlg_OpState::ShowNow()
 
     CStringA t;
     if (name.IsEmpty())
-        t = "지금   감시가 돌고 있지 않습니다";
+        t = "지금   감시가 돌고 있지 않음";
     else if (mix.IsEmpty())
         t.Format("지금   %s", (LPCSTR)name);
     else
@@ -546,8 +546,8 @@ protected:
                      SWP_NOMOVE | SWP_NOZORDER);
         CenterWindow();
 
-        m_lbl.Create("비율이 큰 상태부터 차례입니다. 설비에 맞는 이름으로 고치십시오.\r\n"
-                     "감시를 다시 시작하지 않아도 1분 안에 감시 쪽 이름도 바뀝니다.",
+        m_lbl.Create("비율이 큰 상태부터 차례임 · 설비에 맞는 이름으로 고칠 것\r\n"
+                     "감시를 다시 시작하지 않아도 1분 안에 감시 쪽 이름도 바뀜",
                      WS_CHILD | WS_VISIBLE | SS_LEFT, CRect(M, M, W - M, M + 42), this);
         if (m_font) m_lbl.SetFont(m_font);
 
@@ -618,16 +618,16 @@ protected:
 
             CStringA why;
             if (s.IsEmpty())
-                why = "비어 있습니다.";
+                why = "비어 있음";
             else if (s.FindOneOf("\"\\") >= 0)
-                why = "따옴표(\")와 역빗금(\\)은 쓸 수 없습니다.";
+                why = "따옴표(\")와 역빗금(\\)은 쓸 수 없음";
             else
                 for (int c = 0; c < s.GetLength(); ++c)
-                    if ((unsigned char)s[c] < 0x20) { why = "제어 문자가 있습니다."; break; }
+                    if ((unsigned char)s[c] < 0x20) { why = "제어 문자가 있음"; break; }
 
             // 같은 이름이 둘이면 화면에서 두 상태를 가릴 수 없다.
             for (size_t k = 0; why.IsEmpty() && k < out.size(); ++k)
-                if (out[k] == s) why.Format("%d번째와 이름이 같습니다.", (int)k + 1);
+                if (out[k] == s) why.Format("%d번째와 이름이 같음", (int)k + 1);
 
             if (!why.IsEmpty())
             {
@@ -699,7 +699,7 @@ static bool SaveOpStateNames(const std::vector<CStringA>& names, CStringA& err)
         FILE* f = nullptr;
         if (fopen_s(&f, path.c_str(), "rb") != 0 || f == nullptr)
         {
-            err = "op_states.json 을 열 수 없습니다.";
+            err = "op_states.json 을 열 수 없음";
             return false;
         }
         char buf[4096];
@@ -711,7 +711,7 @@ static bool SaveOpStateNames(const std::vector<CStringA>& names, CStringA& err)
     size_t p = 0;
     if (!jSeek(txt, p, "states"))
     {
-        err = "op_states.json 에 상태가 없습니다.";
+        err = "op_states.json 에 상태가 없음";
         return false;
     }
 
@@ -730,8 +730,8 @@ static bool SaveOpStateNames(const std::vector<CStringA>& names, CStringA& err)
     }
     if (k != names.size())
     {
-        err.Format("op_states.json 의 상태 수(%d)가 화면(%d)과 다릅니다. "
-                   "창을 다시 여십시오.", (int)k, (int)names.size());
+        err.Format("op_states.json 의 상태 수(%d)가 화면(%d)과 다름 · "
+                   "창을 다시 열 것", (int)k, (int)names.size());
         return false;
     }
 
@@ -740,7 +740,7 @@ static bool SaveOpStateNames(const std::vector<CStringA>& names, CStringA& err)
         FILE* f = nullptr;
         if (fopen_s(&f, tmp.c_str(), "wb") != 0 || f == nullptr)
         {
-            err = "임시 파일을 만들 수 없습니다.";
+            err = "임시 파일을 만들 수 없음";
             return false;
         }
         const size_t w = fwrite(txt.data(), 1, txt.size(), f);
@@ -748,7 +748,7 @@ static bool SaveOpStateNames(const std::vector<CStringA>& names, CStringA& err)
         if (!ok)
         {
             DeleteFileA(tmp.c_str());
-            err = "임시 파일을 다 쓰지 못했습니다.";
+            err = "임시 파일을 다 쓰지 못했음";
             return false;
         }
     }
@@ -756,7 +756,7 @@ static bool SaveOpStateNames(const std::vector<CStringA>& names, CStringA& err)
                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
     {
         DeleteFileA(tmp.c_str());
-        err.Format("op_states.json 을 바꿔 놓지 못했습니다 (오류 %lu).",
+        err.Format("op_states.json 을 바꿔 놓지 못했음 (오류 %lu).",
                    GetLastError());
         return false;
     }
@@ -792,7 +792,7 @@ void CDlg_OpState::OnBnClickedNames()
     // 비율을 센 기간. 날짜는 자료가 있는 첫날과 끝날, 일수는 자료가 있는 날 수다.
     CStringA period;
     if (m_days.empty() || m_total <= 0)
-        period = "기간 안에 읽은 프레임이 없어 비율을 셀 수 없습니다.";
+        period = "기간 안에 읽은 프레임이 없어 비율을 셀 수 없음";
     else
     {
         auto ymd = [](const std::string& d) {
@@ -820,7 +820,7 @@ void CDlg_OpState::OnBnClickedNames()
     CStringA err;
     if (!SaveOpStateNames(names, err))
     {
-        AfxMessageBox("이름을 저장하지 못했습니다.\r\n\r\n" + err, MB_ICONERROR);
+        AfxMessageBox("이름을 저장하지 못했음\r\n\r\n" + err, MB_ICONERROR);
         return;
     }
 
@@ -828,7 +828,7 @@ void CDlg_OpState::OnBnClickedNames()
     for (size_t i = 0; i < names.size(); ++i) m_states[i].name = names[i];
     m_cards.Invalidate();
     m_grid.Invalidate();
-    SetState("상태 이름을 저장했습니다. 위 '지금' 줄은 감시가 새 이름을 읽은 뒤(1분 안) 바뀝니다.");
+    SetState("상태 이름을 저장했음 · 위 '지금' 줄은 감시가 새 이름을 읽은 뒤(1분 안) 바뀜");
 }
 
 // 설정 창에서 부르는 길. DB 를 훑지 않고 op_states.json 만 읽는다.
@@ -845,8 +845,8 @@ bool EditOpStateNames(CWnd* parent, CFont* font, CFont* hintFont)
         FILE* f = nullptr;
         if (fopen_s(&f, path.c_str(), "rb") != 0 || f == nullptr)
         {
-            AfxMessageBox("운전 상태 분류표(op_states.json)가 없습니다.\r\n"
-                          "retrain/make_op_states.py 로 만든 뒤 다시 하십시오.");
+            AfxMessageBox("운전 상태 분류표(op_states.json)가 없음\r\n"
+                          "retrain/make_op_states.py 로 만든 뒤 다시 할 것");
             return false;
         }
         char buf[4096];
@@ -883,7 +883,7 @@ bool EditOpStateNames(CWnd* parent, CFont* font, CFont* hintFont)
     }
     if (st.empty())
     {
-        AfxMessageBox("op_states.json 에서 상태를 읽지 못했습니다.");
+        AfxMessageBox("op_states.json 에서 상태를 읽지 못했음");
         return false;
     }
 
@@ -934,7 +934,7 @@ bool EditOpStateNames(CWnd* parent, CFont* font, CFont* hintFont)
     CStringA err;
     if (!SaveOpStateNames(names, err))
     {
-        AfxMessageBox("이름을 저장하지 못했습니다.\r\n\r\n" + err, MB_ICONERROR);
+        AfxMessageBox("이름을 저장하지 못했음\r\n\r\n" + err, MB_ICONERROR);
         return false;
     }
     return true;
@@ -1033,8 +1033,8 @@ void CDlg_OpState::Load()
     MYSQL* conn = connect_history_db(&dbName);
     if (conn == nullptr)
     {
-        m_summary = "히스토리 DB 에 접속할 수 없습니다. env.ini 와 "
-                    "db_secrets.ini 를 확인하십시오.";
+        m_summary = "히스토리 DB 에 접속할 수 없음 · env.ini 와 "
+                    "db_secrets.ini 를 확인할 것";
         SetState(m_summary);
         m_cards.Invalidate();
         m_grid.Invalidate();
@@ -1078,8 +1078,8 @@ void CDlg_OpState::Load()
     if (tables.empty())
     {
         mysql_close(conn);
-        m_summary = "그 기간에 히스토리 테이블이 없습니다. 기간을 늘려 "
-                    "보십시오.";
+        m_summary = "그 기간에 히스토리 테이블이 없음 · 기간을 늘려 "
+                    "볼 것";
         SetState(m_summary);
         m_cards.Invalidate();
         m_grid.Invalidate();
@@ -1219,7 +1219,7 @@ void CDlg_OpState::Load()
 
     if (m_days.empty())
     {
-        m_summary = "그 기간에 읽을 프레임이 없습니다. 기간을 늘려 보십시오.";
+        m_summary = "그 기간에 읽을 프레임이 없음 · 기간을 늘려 볼 것";
     }
     else
     {
@@ -1241,7 +1241,7 @@ void CDlg_OpState::Load()
             }
 
         m_summary.Format("%s ~ %s  ·  %u일  ·  %ld프레임  ·  낯선 시간 "
-                         "%d / %d  ·  칸에 마우스를 올리면 그 시간이 나옵니다",
+                         "%d / %d  ·  칸에 마우스를 올리면 그 시간이 나옴",
                          m_days.front().ymd.c_str(), m_days.back().ymd.c_str(),
                          (unsigned)m_days.size(), m_total, odd, have);
     }
@@ -1549,7 +1549,7 @@ void CDlg_OpState::DrawGrid(CDC* pDC, const CRect& rc)
     if (shown < rows)
     {
         CStringA t;
-        t.Format("(자리가 모자라 최근 %d일만 보입니다)", shown);
+        t.Format("(자리가 모자라 최근 %d일만 보임)", shown);
         pDC->SetTextColor(MUTED_COLOR);
         const CSize sz = pDC->GetTextExtent(t);
         pDC->TextOutA(rc.right - pad - sz.cx, rc.bottom - pad - 14, t);

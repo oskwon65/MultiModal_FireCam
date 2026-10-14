@@ -241,7 +241,7 @@ def collect(conn, db_name, n_cells, target, mask=None,
         n0 = len(tables)
         tables = [t for t in tables if t[-8:] >= day]
         if verbose:
-            print(f"[재생버퍼] 카메라 자리가 바뀐 {since:%Y-%m-%d %H:%M} 이후만 씁니다 "
+            print(f"[재생버퍼] 카메라 자리가 바뀐 {since:%Y-%m-%d %H:%M} 이후만 씀 "
                   f"(테이블 {n0 - len(tables)}개 제외)")
 
     # 수집 일수. 옛 시기를 가르기 전에 먼저 자른다.
@@ -286,7 +286,7 @@ def collect(conn, db_name, n_cells, target, mask=None,
         elif not new_tables:
             # 새 시기에 자료가 없으면 비율을 논할 수 없다. 있는 것으로 뽑는다.
             if verbose:
-                print("[재생버퍼] 판단 구간에 자료가 없어 전체에서 뽑습니다")
+                print("[재생버퍼] 판단 구간에 자료가 없어 전체에서 뽑음")
             old_tables = []
         else:
             tables = new_tables
@@ -432,7 +432,7 @@ def _collect_from(cur, db_name, tables, n_cells, target, mask,
         print(f"           {info['drawn']:,}건 표집, 날짜 {info['days']}일 균등 · "
               f"{info['hours']}개 시간대")
         if info["drawn"] < target:
-            print(f"           (목표 {target:,}건에 못 미칩니다. 중복 복제 대신 "
-                  f"있는 만큼만 씁니다)")
+            print(f"           (목표 {target:,}건에 못 미침 · 중복 복제 대신 "
+                  f"있는 만큼만 씀)")
 
     return X, info

@@ -194,10 +194,10 @@ void CDlg_BaseRef::ShowResult()
 
     CStringA r;
     if (!m_haveCur)
-        r = m_msg.IsEmpty() ? CStringA("[현재 화면 찍기] 를 누르면 지금 RGB 화면을 받아 기준과 견줍니다.")
-                            : "찍지 못했습니다 - " + m_msg;
+        r = m_msg.IsEmpty() ? CStringA("[현재 화면 찍기] 를 누르면 지금 RGB 화면을 받아 기준과 견줌")
+                            : "찍지 못했음 - " + m_msg;
     else if (!m_haveRef)
-        r = "기준 이미지가 없습니다. 현재 화면을 보고 괜찮으면 기준으로 정하십시오.";
+        r = "기준 이미지가 없음 · 현재 화면을 보고 괜찮으면 기준으로 정할 것";
     else
     {
         r.Format("이동  가로 %+.1fpx (%+d칸) · 세로 %+.1fpx (%+d칸)    일치도 %.3f",
@@ -209,13 +209,13 @@ void CDlg_BaseRef::ShowResult()
         for (const Check& c : m_chkQ) if (!c.ok) ++badQ;
         for (const Check& c : m_chkS) if (!c.ok) ++badS;
         if (badQ > 0)
-            r.AppendFormat("\r\n화질 조건 %d개를 맞추지 못해 기준으로 쓸 수 없습니다 (왼쪽 표). "
-                           "화면이 나아진 뒤 [현재 화면 찍기] 로 다시 찍으십시오.", badQ);
+            r.AppendFormat("\r\n화질 조건 %d개를 맞추지 못해 기준으로 쓸 수 없음 (왼쪽 표). "
+                           "화면이 나아진 뒤 [현재 화면 찍기] 로 다시 찍을 것", badQ);
         else if (badS > 0)
-            r += "\r\n위치 이동 기준을 맞추지 못합니다 (오른쪽 표). 바꾸면 카메라 자리가 바뀐 것으로 보고 "
-                 "2·3단계를 내립니다.";
+            r += "\r\n위치 이동 기준을 맞추지 못함 (오른쪽 표). 바꾸면 카메라 자리가 바뀐 것으로 보고 "
+                 "2·3단계를 내림";
         else
-            r += "\r\n조건을 모두 맞춥니다. 두 그림이 같은 설비를 같은 자리에 담고 있는지 눈으로 보고 바꾸십시오.";
+            r += "\r\n조건을 모두 맞춤 · 두 그림이 같은 설비를 같은 자리에 담고 있는지 눈으로 보고 바꿀 것";
     }
     m_lblResult.SetWindowTextA(r);
     // 화질이 기준으로 쓸 수 없으면 바꾸지 못한다. 그런 기준으로는 다음 기동부터
@@ -252,9 +252,9 @@ BOOL CDlg_BaseRef::OnInitDialog()
     m_fontBig.CreateFontIndirect(&lf);
 
     CStringA head;
-    head.Format("[%s]  카메라 위치 이동을 재는 잣대입니다. 두 그림을 견주어 보고, 현재 화면이 "
-                "기준으로 알맞을 때만 바꾸십시오.\r\n초록 선은 격자, 붉은 테두리는 점수가 "
-                "보는 칸입니다. 바꾼 기준은 감시를 다시 시작할 때부터 쓰입니다.",
+    head.Format("[%s]  카메라 위치 이동을 재는 잣대임 · 두 그림을 견주어 보고, 현재 화면이 "
+                "기준으로 알맞을 때만 바꿀 것\r\n초록 선은 격자, 붉은 테두리는 점수가 "
+                "보는 칸임 · 바꾼 기준은 감시를 다시 시작할 때부터 쓰임",
                 gUserID.c_str());
     m_lblHead.Create(head, WS_CHILD | WS_VISIBLE | SS_LEFT, CRect(M, M, W - M, M + headH), this);
 
@@ -275,7 +275,7 @@ BOOL CDlg_BaseRef::OnInitDialog()
     const int wQ = (W - 2 * M - gap) * 58 / 100;
     const int xS = M + wQ + gap;
 
-    m_capQ.Create("화질 적합도   하나라도 부적합이면 기준으로 쓸 수 없습니다",
+    m_capQ.Create("화질 적합도   하나라도 부적합이면 기준으로 쓸 수 없음",
                   WS_CHILD | WS_VISIBLE | SS_LEFT, CRect(M, yLstCap, M + wQ, yLstCap + capH), this);
     m_lstQ.Create(lst, CRect(M, yLst, M + wQ, yLst + lstH), this, ID_BR_CHECKS);
     m_lstQ.SetExtendedStyle(lstx);
@@ -288,7 +288,7 @@ BOOL CDlg_BaseRef::OnInitDialog()
         m_lstQ.InsertColumn(4, _T("판정"), LVCFMT_CENTER, cw * 18 / 100);
     }
 
-    m_capS.Create("위치 이동 기준   부적합이면 2·3단계를 내리고 바꿉니다",
+    m_capS.Create("위치 이동 기준   부적합이면 2·3단계를 내리고 바꿈",
                   WS_CHILD | WS_VISIBLE | SS_LEFT, CRect(xS, yLstCap, W - M, yLstCap + capH), this);
     m_lstS.Create(lst, CRect(xS, yLst, W - M, yLst + lstH), this, ID_BR_CHECKS2);
     m_lstS.SetExtendedStyle(lstx);
@@ -375,7 +375,7 @@ void CDlg_BaseRef::OnCustomDrawChecks(NMHDR* pNMHDR, LRESULT* pResult)
 // 지금 RGB 화면을 받아 기준과 견준다. 몇 초 걸린다(파이썬과 OpenCV 를 띄운다).
 void CDlg_BaseRef::OnCapture()
 {
-    m_lblResult.SetWindowTextA("현재 화면을 받아 기준과 견주는 중입니다 ...");
+    m_lblResult.SetWindowTextA("현재 화면을 받아 기준과 견주는 중임 ...");
     m_lblResult.UpdateWindow();
     m_btnCapture.EnableWindow(FALSE);
     m_btnReplace.EnableWindow(FALSE);
@@ -404,7 +404,7 @@ void CDlg_BaseRef::OnCapture()
     LoadImages();
     ReadResult();
     if (!ran && m_msg.IsEmpty())
-        m_msg = "도구를 실행하지 못했거나 1분 안에 끝나지 않았습니다";
+        m_msg = "도구를 실행하지 못했거나 1분 안에 끝나지 않았음";
     m_btnCapture.EnableWindow(TRUE);
     ShowResult();
 }
@@ -422,7 +422,7 @@ void CDlg_BaseRef::OnReplace()
             warn.AppendFormat("    %s  %s  (조건 %s)\r\n", (LPCSTR)c.name, (LPCSTR)c.cur,
                               (LPCSTR)c.rule);
     if (!warn.IsEmpty())
-        warn = "다음 조건을 맞추지 못합니다.\r\n" + warn + "\r\n";
+        warn = "다음 조건을 맞추지 못함\r\n" + warn + "\r\n";
 
     // 칸 단위로 밀렸거나 같은 장면으로 볼 수 없으면, 기준을 바꾸는 것은 카메라
     // 자리를 새로 정하는 일이다. 같은 칸이 설비의 다른 곳을 보므로 옛 자리로 배운
@@ -440,7 +440,7 @@ void CDlg_BaseRef::OnReplace()
             AfxMessageBox("[카메라 위치 이동 발견됨]\r\n\r\n"
                           "- 2·3 분석 단계 초기화\r\n"
                           "- 기준 이미지 교체\r\n"
-                          "감시 프로그램을 정지한 뒤 [기준으로 교체]를 다시 누르십시오.",
+                          "감시 프로그램을 정지한 뒤 [기준으로 교체]를 다시 누를 것",
                           MB_ICONWARNING);
             return;
         }
@@ -453,7 +453,7 @@ void CDlg_BaseRef::OnReplace()
                  "- 2·3 분석 단계 초기화 (다시 설 때까지 1단계만 동작)\r\n"
                  "- 재학습은 지금 이후 자료만 사용\r\n"
                  "- 기준 이미지 교체\r\n\r\n"
-                 "진행할까요?",
+                 "진행 여부 확인",
                  m_cellX, m_cellY, m_resp);
         if (AfxMessageBox(q, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
             return;
@@ -485,9 +485,9 @@ void CDlg_BaseRef::OnReplace()
         const std::string ri = BaseDir() + "_relocate.ini";
         if (code != 0 || ini_read_utf8(ri, "RESULT", "OK", "0") != "1")
         {
-            AfxMessageBox("2·3단계를 내리지 못했습니다. 기준 이미지도 바꾸지 않았습니다.\r\n\r\n"
+            AfxMessageBox("2·3단계를 내리지 못했음 · 기준 이미지도 바꾸지 않았음\r\n\r\n"
                           "명령 창에서 python retrain\\base_ref_tool.py <현장> relocate 를 "
-                          "돌려 원인을 확인하십시오.", MB_ICONERROR);
+                          "돌려 원인을 확인할 것", MB_ICONERROR);
             return;
         }
         // 끝난 뒤 알림에는 언제부터의 자료를 쓰는지만 적는다. 옮긴 곳의 경로는
@@ -499,9 +499,9 @@ void CDlg_BaseRef::OnReplace()
     else
     {
         CStringA q;
-        q.Format("현재 화면(%s)을 RGB 기준 이미지로 정합니다.\r\n\r\n%s"
-                 "쓰던 기준은 base_img\\unused 로 옮겨 둡니다. 새 기준은 감시를 다시 "
-                 "시작할 때부터 쓰입니다.\r\n\r\n진행할까요?",
+        q.Format("현재 화면(%s)을 RGB 기준 이미지로 정함\r\n\r\n%s"
+                 "쓰던 기준은 base_img\\unused 로 옮겨 둠 · 새 기준은 감시를 다시 "
+                 "시작할 때부터 쓰임\r\n\r\n진행 여부 확인",
                  (LPCSTR)m_curAt, (LPCSTR)warn);
         if (AfxMessageBox(q, MB_YESNO | (warn.IsEmpty() ? MB_ICONQUESTION : MB_ICONWARNING)
                           | MB_DEFBUTTON2) != IDYES)
@@ -526,7 +526,7 @@ void CDlg_BaseRef::OnReplace()
         if (!MoveFileExA(ref.c_str(), backup, MOVEFILE_WRITE_THROUGH))
         {
             CStringA m;
-            m.Format("쓰던 기준을 옮기지 못했습니다 (오류 %lu). 아무것도 바꾸지 않았습니다.",
+            m.Format("쓰던 기준을 옮기지 못했음 (오류 %lu). 아무것도 바꾸지 않았음",
                      GetLastError());
             AfxMessageBox(m, MB_ICONERROR);
             LoadImages(); ShowResult();
@@ -538,9 +538,9 @@ void CDlg_BaseRef::OnReplace()
         const DWORD e = GetLastError();
         if (!backup.IsEmpty()) MoveFileExA(backup, ref.c_str(), 0);   // 되돌린다
         CStringA m;
-        m.Format("새 기준을 놓지 못했습니다 (오류 %lu). 쓰던 기준을 되돌려 놓았습니다.", e);
+        m.Format("새 기준을 놓지 못했음 (오류 %lu). 쓰던 기준을 되돌려 놓았음", e);
         if (!m_relocated.IsEmpty())
-            m += "\r\n\r\n2·3단계는 이미 내렸습니다. 기준 이미지를 다시 바꾸거나, 치운 파일을 model_generations 에서 되돌려 놓으십시오.";
+            m += "\r\n\r\n2·3단계는 이미 내렸음 · 기준 이미지를 다시 바꾸거나, 치운 파일을 model_generations 에서 되돌려 놓을 것";
         AfxMessageBox(m, MB_ICONERROR);
         LoadImages(); ShowResult();
         return;
@@ -554,15 +554,15 @@ void CDlg_BaseRef::OnReplace()
 
     // 짧게 쓴다. 쓰던 것을 어디로 옮겼는지는 묻지 않는 한 필요 없다 - 지우지 않았다는
     // 것만 알면 된다.
-    CStringA done = "기준 이미지를 바꿨습니다.\r\n\r\n";
+    CStringA done = "기준 이미지를 바꿨음\r\n\r\n";
     if (!m_relocated.IsEmpty())
         done += "- 2·3 분석 단계 초기화\r\n"
                 "- 재학습은 " + m_relocated + " 이후 자료만 사용\r\n";
     if (!backup.IsEmpty() || !m_relocated.IsEmpty())
         done += "- 쓰던 것은 지우지 않고 보관\r\n";
-    done += "\r\n감시를 다시 시작하면 새 기준으로 잽니다.";
+    done += "\r\n감시를 다시 시작하면 새 기준으로 잼";
     if (!m_relocated.IsEmpty())
-        done += "\r\n3단계는 새 자리 자료가 모인 뒤 [재학습] 으로 다시 세우십시오.";
+        done += "\r\n3단계는 새 자리 자료가 모인 뒤 [재학습] 으로 다시 세울 것";
     AfxMessageBox(done, MB_ICONINFORMATION);
 }
 
@@ -626,9 +626,9 @@ void CDlg_BaseRef::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDIS)
         CDC* dc = CDC::FromHandle(lpDIS->hDC);
         const CRect rc(lpDIS->rcItem);
         if (nIDCtl == ID_BR_REF)
-            DrawPic(dc, rc, m_imgRef, "기준 이미지가 없습니다");
+            DrawPic(dc, rc, m_imgRef, "기준 이미지가 없음");
         else
-            DrawPic(dc, rc, m_imgCur, "아직 찍지 않았습니다");
+            DrawPic(dc, rc, m_imgCur, "아직 찍지 않았음");
         return;
     }
     CDialogEx::OnDrawItem(nIDCtl, lpDIS);

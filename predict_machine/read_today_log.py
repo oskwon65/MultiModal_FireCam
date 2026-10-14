@@ -39,7 +39,7 @@ def read_log_db(target_date=None):
 
     # DB 존재 확인
     if not os.path.exists(db_path):
-        print(f"❌ 지정한 DB 파일이 없습니다: {db_path}")
+        print(f"❌ 지정한 DB 파일이 없음: {db_path}")
         return
 
     # DB 연결 및 데이터 읽기
@@ -51,7 +51,7 @@ def read_log_db(target_date=None):
         rows = cursor.fetchall()
 
         if not rows:
-            print(f"⚠️ {db_filename} 파일에는 아직 기록된 로그가 없습니다.")
+            print(f"⚠️ {db_filename} 파일에는 아직 기록된 로그가 없음")
             return
 
         print(f"📘 [{db_filename}] 데이터 내용:")

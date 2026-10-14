@@ -674,7 +674,7 @@ class OnlineBaseline:
             d = np.load(path)
 
             if int(d["n_cells"]) != n_cells:
-                print(f"[WARN] {path} 의 셀 수가 달라 기준선을 새로 시작합니다.")
+                print(f"[WARN] {path} 의 셀 수가 달라 기준선을 새로 시작함")
                 return fresh(f"격자 칸 수가 달라짐 "
                              f"({int(d['n_cells'])} → {n_cells})")
 
@@ -717,12 +717,12 @@ class OnlineBaseline:
                     "hist": d["hist"].astype(np.uint32),
                     "hours_seen": int(d["hours_seen"]),
                 }
-                print(f"[INFO] 옛 기준선({obj._legacy['count']:,}건)을 읽었습니다. "
-                      f"최근 창이 찰 때까지 이 값으로 채점합니다.")
+                print(f"[INFO] 옛 기준선({obj._legacy['count']:,}건)을 읽었음 · "
+                      f"최근 창이 찰 때까지 이 값으로 채점함")
             obj._recompute_hi()
 
         except Exception as e:
-            print(f"[WARN] 기준선을 읽지 못해 새로 시작합니다: {e}")
+            print(f"[WARN] 기준선을 읽지 못해 새로 시작함: {e}")
             return fresh(f"파일을 읽지 못함 ({type(e).__name__})")
 
         return obj

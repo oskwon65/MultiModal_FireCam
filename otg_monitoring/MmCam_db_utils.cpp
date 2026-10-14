@@ -204,7 +204,7 @@ std::string read_secret_string(const char* section, const char* key, const char*
 
     if (!file_exists(secret_path.c_str())) {
         std::string msg = "(read_secret_string) File Not Found: " + secret_path
-            + "\n\nusers\\db_secrets.ini.sample 을 복사해 비밀번호를 채우세요.";
+            + "\n\nusers\\db_secrets.ini.sample 을 복사해 비밀번호를 채울 것";
         AfxMessageBox(msg.c_str());
         std::exit(EXIT_FAILURE);
     }

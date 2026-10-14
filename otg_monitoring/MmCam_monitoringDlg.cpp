@@ -18,6 +18,7 @@
 #include <Wbemidl.h>
 #include <comdef.h>
 #include "Dlg_Set_MmCam_Env.h"
+#include "Dlg_MsgBox.h"
 #include "Dlg_Analysis.h"
 
 #pragma comment(lib, "wbemuuid.lib")
@@ -683,7 +684,7 @@ BOOL CMmCammonitoringDlg::OnInitDialog()
     sDef.Format("%d", env_conf.updateSeconds);
     m_editRestartMin.SetWindowText(sDef);
 
-    SetWindowText("멀티모달_화재감지_분석서버");
+    SetWindowText("분석서버 [멀티모달_화재감지]");
     m_nStatusLevel = STATUS_OK;
     m_elapsedSeconds = 0;
 
@@ -896,7 +897,7 @@ void CMmCammonitoringDlg::KillOrphanedProcesses()
         // 누군가 확인을 누를 때까지 프로그램 전체가 멈춘다. 무인 재시작이
         // 막히므로 모달 창 대신 로그와 상태줄에만 남긴다.
         CString msg;
-        msg.Format(_T("[INFO] 이전 실행에서 남은 유령 프로세스 %d개를 정리했습니다."), killedCount);
+        msg.Format(_T("[INFO] 이전 실행에서 남은 유령 프로세스 %d개를 정리했음"), killedCount);
         LogEvent(CStringA(msg));
 
         if (m_lbStatus_0.GetSafeHwnd())
@@ -1010,7 +1011,7 @@ void CMmCammonitoringDlg::OnBnClickedCMD()
         {
             delete m_pDlgSet;
             m_pDlgSet = nullptr;
-            AfxMessageBox(_T("[ERROR] 설정 영역을 열 수 없습니다."));
+            AfxMessageBox(_T("[ERROR] 설정 영역을 열 수 없음"));
             return;
         }
 
@@ -1069,7 +1070,7 @@ void CMmCammonitoringDlg::OnBnClickedFolder()
     if (reinterpret_cast<INT_PTR>(hr) <= 32)
     {
         CString msg;
-        msg.Format(_T("[ERROR] 폴더를 열 수 없습니다: %s"), CString(log_path.c_str()));
+        msg.Format(_T("[ERROR] 폴더를 열 수 없음: %s"), CString(log_path.c_str()));
         AfxMessageBox(msg);
     }
 }
@@ -1089,9 +1090,9 @@ void CMmCammonitoringDlg::ShutdownAll()
     if (running > 0)
     {
         CString ask;
-        ask.Format(_T("실행 중인 프로세스 %d개가 함께 종료됩니다.\n\n정말 종료하시겠습니까?"), running);
+        ask.Format(_T("실행 중인 프로세스 %d개가 함께 종료됨\n\n정말 종료할지 확인"), running);
 
-        if (MessageBox(ask, _T("종료 확인"),
+        if (KictMessageBox(this, ask, _T("종료 확인"),
             MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
         {
             LogEvent("종료 취소 (사용자가 아니오 선택)");
@@ -1255,18 +1256,18 @@ void CMmCammonitoringDlg::WarnIfArtifactsMismatch(const CString& userId)
 
     CStringA msg;
     msg.Format(
-        "%s 의 모델과 스케일러의 짝이 맞지 않습니다.\r\n\r\n"
+        "%s 의 모델과 스케일러의 짝이 맞지 않음\r\n\r\n"
         "%s\r\n"
-        "스케일러는 입력을 어떤 크기로 바꿔 모델에 넣을지 정한 표입니다. "
-        "짝이 어긋나면 멀쩡한 모델도 엉뚱한 점수를 냅니다. 이 현장은 "
-        "[시작] 을 눌러도 뜨지 않습니다.\r\n\r\n"
+        "스케일러는 입력을 어떤 크기로 바꿔 모델에 넣을지 정한 표임 · "
+        "짝이 어긋나면 멀쩡한 모델도 엉뚱한 점수를 냄 · 이 현장은 "
+        "[시작] 을 눌러도 뜨지 않음\r\n\r\n"
         "고치는 방법\r\n"
         "    python retrain\\nightly_retrain.py %s --rollback <세대>\r\n\r\n"
-        "세대는 [재학습] 창에서 볼 수 있습니다.",
+        "세대는 [재학습] 창에서 볼 수 있음",
         (LPCSTR)userId, (LPCSTR)detail, (LPCSTR)userId);
 
     LogEvent(CString("[WARN] 현장 전환 - 산출물 짝 불일치 ") + userId);
-    MessageBox(msg, _T("산출물 짝이 맞지 않습니다"), MB_OK | MB_ICONWARNING);
+    KictMessageBox(this, msg, _T("산출물 짝이 맞지 않음"), MB_OK | MB_ICONWARNING);
 }
 
 // ---------------------------------------------------------
@@ -1276,7 +1277,7 @@ void CMmCammonitoringDlg::OnBnClickedAnalysis()
 {
     if (gUserID.empty())
     {
-        AfxMessageBox(_T("현장(user)이 선택되지 않았습니다."));
+        AfxMessageBox(_T("현장(user)이 선택되지 않았음"));
         return;
     }
 
@@ -1310,23 +1311,23 @@ void CMmCammonitoringDlg::OnBnClickedStartAll()
         {
             CStringA msg;
             msg.Format(
-                "모델과 스케일러의 짝이 맞지 않는 현장이 있습니다.\r\n\r\n"
+                "모델과 스케일러의 짝이 맞지 않는 현장이 있음\r\n\r\n"
                 "%s\r\n"
                 "스케일러는 입력을 어떤 크기로 바꿔 모델에 넣을지 정한 "
-                "표입니다. 짝이 어긋나면 멀쩡한 모델도 엉뚱한 점수를 냅니다. "
+                "표임 · 짝이 어긋나면 멀쩡한 모델도 엉뚱한 점수를 냄 · "
                 "정상 화면을 이상이라고 부르므로, 그대로 두면 진짜 이상을 "
-                "놓칩니다.\r\n\r\n"
+                "놓침\r\n\r\n"
                 "고치는 방법\r\n"
                 "    python retrain\\nightly_retrain.py <현장> "
                 "--rollback <세대>\r\n\r\n"
-                "이 현장을 빼고 나머지만 시작할까요?\r\n"
-                "    예   - 나머지 현장만 시작합니다\r\n"
-                "    아니오 - 아무것도 시작하지 않습니다",
+                "이 현장을 빼고 나머지만 시작할지 확인\r\n"
+                "    예   - 나머지 현장만 시작함\r\n"
+                "    아니오 - 아무것도 시작하지 않음",
                 (LPCSTR)detail);
 
             LogEvent("[WARN] 산출물 짝 불일치 - " + CString(detail));
 
-            if (MessageBox(msg, _T("산출물 짝이 맞지 않습니다"),
+            if (KictMessageBox(this, msg, _T("산출물 짝이 맞지 않음"),
                            MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
             {
                 LogEvent("기동 취소 (사용자가 아니오 선택)");
@@ -1614,7 +1615,7 @@ void CMmCammonitoringDlg::UpdateOpState()
 
     CStringA g;
     if (!s2)
-        g = "학습 모델 : 3단계 없음 (모델 파일이 아직 없습니다)";
+        g = "학습 모델 : 3단계 없음 (모델 파일이 아직 없음)";
     else if (gen.IsEmpty())
         g.Format("학습 모델 : 세대 모름   ·   파일 %s",
             mat.IsEmpty() ? "-" : (LPCSTR)mat);
